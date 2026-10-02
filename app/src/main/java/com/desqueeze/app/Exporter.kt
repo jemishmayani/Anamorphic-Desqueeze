@@ -35,15 +35,21 @@ data class ExportResult(val name: String, val width: Int, val height: Int, val n
 class Exporter(private val ctx: Context, private val settings: Settings, private val luts: LutManager) {
 
     fun targetSize(v: VideoInfo, squeeze: Float, mime: String): Triple<Int, Int, String?> {
-        var w = even(v.displayW * squeeze); var h = even(v.displayH.toFloat())
-        val (maxW, maxH) = encoderMax(mime, w > h)
-        var note: String? = null
-        if (w > maxW || h > maxH) {
-            val s = minOf(maxW.toFloat() / w, maxH.toFloat() / h)
-            note = "Encoder max is ${maxW}×${maxH}; output scaled from ${w}×${h} (aspect preserved)."
-            w = even(w * s); h = even(h * s)
+        val w0 = even(v.displayW * squeeze); val h0 = even(v.displayH.toFloat())
+        return fitToEncoder(w0, h0, mime)
+    }
+
+    /** Shrinks (keeping aspect) until a hardware encoder accepts the size. */
+    fun fitToEncoder(w0: Int, h0: Int, mime: String): Triple<Int, Int, String?> {
+        fun fits(w: Int, h: Int) = (DeviceCaps.maxWidthAt(mime, h) ?: 0) >= w
+        if (fits(w0, h0)) return Triple(w0, h0, null)
+        var s = 0.99f
+        while (s > 0.25f) {
+            val w = even(w0 * s); val h = even(h0 * s)
+            if (fits(w, h)) return Triple(w, h, "Scaled to ${w}×${h} to fit this phone's encoder (shape kept).")
+            s -= 0.01f
         }
-        return Triple(w, h, note)
+        return Triple(w0, h0, null)
     }
 
     suspend fun export(job: ExportJob, onProgress: (Int) -> Unit): ExportResult {
@@ -132,17 +138,5 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         fun even(f: Float) = (f.roundToInt() / 2) * 2
         fun hasEncoder(mime: String) = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
             .any { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
-        /** Largest frame the best hardware encoder for [mime] accepts. */
-        fun encoderMax(mime: String, landscape: Boolean): Pair<Int, Int> {
-            var best = 1920 to 1080
-            for (ci in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos) {
-                if (!ci.isEncoder || ci.supportedTypes.none { it.equals(mime, true) }) continue
-                val vc = ci.getCapabilitiesForType(mime).videoCapabilities ?: continue
-                val w = vc.supportedWidths.upper; val h = vc.supportedHeights.upper
-                if (w.toLong() * h > best.first.toLong() * best.second) best = w to h
-            }
-            val (a, b) = best
-            return if (landscape) maxOf(a, b) to minOf(a, b) else minOf(a, b) to maxOf(a, b)
-        }
     }
 }
