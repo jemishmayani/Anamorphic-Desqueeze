@@ -20,6 +20,12 @@ jobs:
         with:
           name: AnamorphicDesqueeze-apk
           path: app/build/outputs/apk/release/*.apk
+      - name: Publish APK to apk branch
+        run: |
+          mkdir /tmp/a && cp app/build/outputs/apk/release/*.apk /tmp/a/AnamorphicDesqueeze.apk
+          cd /tmp/a && git init -q -b apk && git add -A
+          git -c user.name=ci -c user.email=ci@x commit -qm "apk ${{ github.sha }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
       - name: Save log on failure
         if: failure()
         run: |
