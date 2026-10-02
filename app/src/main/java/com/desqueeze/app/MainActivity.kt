@@ -61,10 +61,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val settings = Settings(this); val luts = LutManager(this)
         val state = AppState(settings, luts)
+        val crashFile = java.io.File(filesDir, "last_crash.txt")
+        if (crashFile.exists()) { state.crashLog = crashFile.readText(); crashFile.delete() }
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                crashFile.writeText("Version ${packageManager.getPackageInfo(packageName, 0).versionName}, " +
+                    "${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}\n\n" + e.stackTraceToString().take(6000))
+            } catch (_: Throwable) {}
+            previous?.uncaughtException(t, e)
+        }
         setContent {
             val dark = when (state.theme) { ThemeMode.DARK -> true; ThemeMode.LIGHT -> false; else -> isSystemInDarkTheme() }
             AppTheme(dark) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    state.crashLog?.let { log -> CrashDialog(log) { state.crashLog = null } }
                     BackHandler(state.screen != Screen.Main) {
                         state.screen = if (state.screen == Screen.Limits) Screen.Settings else Screen.Main
                     }
@@ -148,14 +159,38 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                 SqueezeChips(st)
                 if (v != null) {
                     val mime = if (settings.codec == Codec.HEVC) "video/hevc" else "video/avc"
-                    val (w, h, note) = remember(v, st.squeeze, settings.codec) { exporter.targetSize(v, st.squeeze, mime) }
+                    val fit by produceState<Triple<Int, Int, String?>?>(null, v, st.squeeze, settings.codec, st.mode) {
+                        value = if (st.mode == ExportMode.LOSSLESS) null
+                                else withContext(Dispatchers.Default) { exporter.targetSize(v, st.squeeze, mime) }
+                    }
+                    val dispW = Exporter.even(v.displayW * st.squeeze)
                     Spacer(Modifier.height(4.dp))
-                    Text("${v.displayW} × ${v.displayH}  becomes  $w × $h", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-                    Text(note ?: "Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall,
-                        color = if (note != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (st.mode == ExportMode.LOSSLESS) {
+                        Text("${v.displayW} × ${v.displayH}  displays as  $dispW × ${v.displayH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
+                        Text("Pixels untouched. Any squeeze works at full resolution.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        val f = fit
+                        Text(if (f == null) "Checking this phone's encoder…" else "${v.displayW} × ${v.displayH}  becomes  ${f.first} × ${f.second}",
+                            style = MaterialTheme.typography.bodyMedium.merge(Mono))
+                        Text(f?.third ?: "Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall,
+                            color = if (f?.third != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
 
+            Section("Export method") {
+                MethodToggle(st.mode, enabled = !st.busy) { st.mode = it; settings.mode = it }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (st.mode == ExportMode.LOSSLESS)
+                        "Copies your file untouched and tags it with the squeeze as pixel aspect ratio, like setting it in DaVinci Resolve. Instant, bit-identical 10-bit D-Log. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag."
+                    else
+                        "Renders new, wider pixels so every app shows it de-squeezed, and lets you apply a LUT. Slower, re-compressed, and limited by this phone's encoder size.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            AnimatedVisibility(st.mode == ExportMode.REENCODE) {
             Section("Color") {
                 PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
                     listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
@@ -170,6 +205,7 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
             }
 
             if (st.status.isNotEmpty() && !st.busy)
@@ -240,6 +276,35 @@ fun ViewToggle(desqueezed: Boolean, onChange: (Boolean) -> Unit) {
                 shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
         }
     }
+}
+
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MethodToggle(mode: ExportMode, enabled: Boolean, onChange: (ExportMode) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        listOf(ExportMode.LOSSLESS to "Lossless", ExportMode.REENCODE to "Re-encode").forEachIndexed { i, (m, label) ->
+            SegmentedButton(selected = mode == m, onClick = { onChange(m) }, enabled = enabled,
+                shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+        }
+    }
+}
+
+@Composable
+fun CrashDialog(log: String, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    AlertDialog(onDismissRequest = onClose,
+        title = { Text("The app closed unexpectedly") },
+        text = { Column {
+            Text("Copy this report and send it to get the problem fixed.", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(10.dp))
+            Text(log.take(1500), style = MaterialTheme.typography.bodySmall.merge(Mono),
+                modifier = Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState()))
+        } },
+        confirmButton = { TextButton(onClick = {
+            val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("crash report", log)); onClose()
+        }) { Text("Copy report") } },
+        dismissButton = { TextButton(onClick = onClose) { Text("Close") } })
 }
 
 @Composable
@@ -332,9 +397,11 @@ fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
     st.job = act.lifecycleScope.launch {
         val log = mutableListOf<String>()
         list.forEachIndexed { i, vid ->
-            st.status = if (list.size > 1) "Exporting ${i + 1} of ${list.size}" else "Exporting ${vid.name}"
+            st.status = (if (st.mode == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
             try {
-                val r = exporter.export(ExportJob(vid, st.squeeze, st.lutId, st.strength)) { p -> st.progress = (i + p / 100f) / list.size }
+                val j = ExportJob(vid, st.squeeze, st.lutId, st.strength)
+                val prog: (Int) -> Unit = { p -> st.progress = (i + p / 100f) / list.size }
+                val r = if (st.mode == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
                 log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { log += "✗  ${vid.name}\n    ${e.message}" }

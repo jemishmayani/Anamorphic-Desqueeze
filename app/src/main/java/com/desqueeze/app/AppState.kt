@@ -28,4 +28,6 @@ class AppState(settings: Settings, luts: LutManager) {
     var progress by mutableFloatStateOf(0f)
     var job: Job? = null
     var theme by mutableStateOf(settings.theme)
+    var mode by mutableStateOf(settings.mode)
+    var crashLog by mutableStateOf<String?>(null)
 }

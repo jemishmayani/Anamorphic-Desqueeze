@@ -15,9 +15,12 @@ data class CodecCap(
 
 /** Reads what this phone's video encoders/decoders actually accept. */
 object DeviceCaps {
+    /** Built once; creating MediaCodecList is slow and was being done hundreds of times. */
+    val infos: Array<MediaCodecInfo> by lazy { MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos }
+    val supportCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     private val MIMES = listOf(MediaFormat.MIMETYPE_VIDEO_HEVC, MediaFormat.MIMETYPE_VIDEO_AVC)
 
-    fun all(): List<CodecCap> = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.flatMap { ci ->
+    fun all(): List<CodecCap> = infos.flatMap { ci ->
         ci.supportedTypes.filter { t -> MIMES.any { it.equals(t, true) } }.mapNotNull { t -> cap(ci, t.lowercase()) }
     }.sortedWith(compareBy({ !it.encoder }, { !it.hardware }, { it.mime != MediaFormat.MIMETYPE_VIDEO_HEVC }))
 
@@ -25,7 +28,7 @@ object DeviceCaps {
 
     /** Widest frame any encoder of [mime] accepts at height [h], or null if none accept that height. */
     fun maxWidthAt(mime: String, h: Int): Int? =
-        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
+        infos.filter { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
             .mapNotNull { ci -> try { ci.getCapabilitiesForType(mime).videoCapabilities?.getSupportedWidthsFor(h)?.upper } catch (_: Exception) { null } }
             .maxOrNull()
 
@@ -45,11 +48,11 @@ object DeviceCaps {
 }
 
 /** Asks the hardware encoders themselves whether w×h at fps is accepted (checks alignment + rate too). */
-fun DeviceCaps.supports(mime: String, w: Int, h: Int, fps: Double): Boolean {
-    val list = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+fun DeviceCaps.supports(mime: String, w: Int, h: Int, fps: Double): Boolean = supportCache.getOrPut("$mime $w $h $fps") {
+    val list = infos
         .filter { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
     val pool = list.filter { it.isHardwareAccelerated }.ifEmpty { list }
-    return pool.any { ci ->
+    pool.any { ci ->
         try {
             val vc = ci.getCapabilitiesForType(mime).videoCapabilities ?: return@any false
             vc.isSizeSupported(w, h) && vc.areSizeAndRateSupported(w, h, fps)
@@ -58,7 +61,7 @@ fun DeviceCaps.supports(mime: String, w: Int, h: Int, fps: Double): Boolean {
 }
 
 fun DeviceCaps.maxBitrate(mime: String): Int =
-    MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+    infos
         .filter { it.isEncoder && it.isHardwareAccelerated && it.supportedTypes.any { t -> t.equals(mime, true) } }
         .mapNotNull { try { it.getCapabilitiesForType(mime).videoCapabilities?.bitrateRange?.upper } catch (_: Exception) { null } }
         .maxOrNull() ?: 100_000_000

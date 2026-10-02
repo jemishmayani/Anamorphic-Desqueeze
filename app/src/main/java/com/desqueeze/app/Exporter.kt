@@ -17,7 +17,9 @@ import androidx.media3.effect.Presentation
 import androidx.media3.effect.SingleColorLut
 import androidx.media3.transformer.*
 import androidx.media3.transformer.ExportResult as ExportResult_
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -63,8 +65,8 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val w0 = even(job.video.displayW * job.squeeze); val h0 = even(job.video.displayH.toFloat()); val fps = job.video.fps
 
         val attempts = mutableListOf<Attempt>()
-        fun add(mime: String, maxW: Int, extra: String?) {
-            val (w, h, n) = fitToEncoder(w0, h0, mime, fps, maxW)
+        suspend fun add(mime: String, maxW: Int, extra: String?) {
+            val (w, h, n) = withContext(Dispatchers.Default) { fitToEncoder(w0, h0, mime, fps, maxW) }
             if (attempts.none { it.mime == mime && it.w == w && it.h == h })
                 attempts += Attempt(mime, w, h, listOfNotNull(n, extra).joinToString(" ").ifEmpty { null })
         }
@@ -87,6 +89,18 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             }
         }
         throw lastError ?: Exception("Export failed")
+    }
+
+    /** Lossless: copy the file and tag it with the pixel aspect ratio. No re-encoding at all. */
+    suspend fun exportLossless(job: ExportJob, onProgress: (Int) -> Unit): ExportResult = withContext(Dispatchers.IO) {
+        val ext = job.video.name.substringAfterLast('.', "mp4").lowercase().let { if (it == "mov") "mov" else "mp4" }
+        val name = outName(job).removeSuffix(".mp4") + ".$ext"
+        saveStream(name, if (ext == "mov") "video/quicktime" else "video/mp4") { out ->
+            PaspWriter.write(ctx, job.video.uri, out, job.squeeze) { p -> onProgress(p) }
+        }
+        val (hs, vs) = PaspWriter.ratio(job.squeeze)
+        ExportResult(name, job.video.displayW, job.video.displayH,
+            "Lossless: original pixels kept, tagged ${hs}:${vs} pixel aspect. Displays as ${even(job.video.displayW * job.squeeze)}×${job.video.displayH}.")
     }
 
     private fun outName(job: ExportJob) =
@@ -159,24 +173,29 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
 
     /** Copies into Movies/<folder> via MediaStore. Original is never touched. */
     private fun saveToGallery(tmp: File, name: String) {
+        try { saveStream(name, "video/mp4") { out -> tmp.inputStream().use { it.copyTo(out, 1 shl 20) } } }
+        finally { tmp.delete() }
+    }
+
+    private fun saveStream(name: String, mime: String, write: (java.io.OutputStream) -> Unit) {
+        val r = ctx.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, name)
+            put(MediaStore.Video.Media.MIME_TYPE, mime)
+            put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/" + settings.folder)
+            put(MediaStore.Video.Media.IS_PENDING, 1)
+        }
+        val uri = r.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: throw Exception("Couldn't create the output file. Is storage full?")
         try {
-            val values = ContentValues().apply {
-                put(MediaStore.Video.Media.DISPLAY_NAME, name)
-                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/" + settings.folder)
-                put(MediaStore.Video.Media.IS_PENDING, 1)
-            }
-            val r = ctx.contentResolver
-            val uri = r.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: throw Exception("Could not create output file")
-            r.openOutputStream(uri)!!.use { out -> tmp.inputStream().use { it.copyTo(out, 1 shl 20) } }
+            r.openOutputStream(uri)!!.use { write(it) }
             values.clear(); values.put(MediaStore.Video.Media.IS_PENDING, 0); r.update(uri, values, null, null)
-        } finally { tmp.delete() }
+        } catch (e: Throwable) { r.delete(uri, null, null); throw e } // no half-written files left behind
     }
 
     companion object {
         fun even(f: Float) = (f.roundToInt() / 2) * 2
         fun align16(f: Float) = maxOf(16, (f.toInt() / 16) * 16)
-        fun hasEncoder(mime: String) = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+        fun hasEncoder(mime: String) = DeviceCaps.infos
             .any { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
     }
 }
