@@ -26,6 +26,14 @@ jobs:
           cd /tmp/a && git init -q -b apk && git add -A
           git -c user.name=ci -c user.email=ci@x commit -qm "apk ${{ github.sha }}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
+      - name: Create GitHub Release (on v* tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          cp app/build/outputs/apk/release/*.apk "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk"
+          gh release create "$GITHUB_REF_NAME" "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" \
+            --title "Anamorphic De-Squeeze ${GITHUB_REF_NAME}" \
+            --notes "Download the .apk below, open it on your Android phone and allow installing from unknown sources. Requires Android 10+."
       - name: Save log on failure
         if: failure()
         run: |
