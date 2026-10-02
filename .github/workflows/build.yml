@@ -1,5 +1,7 @@
 name: Build APK
 on: [push, workflow_dispatch]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,9 +11,19 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.9' }
-      - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-      - run: gradle :app:assembleRelease --stacktrace
+      - name: Build
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          set -o pipefail
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee build-log.txt
       - uses: actions/upload-artifact@v4
         with:
           name: AnamorphicDesqueeze-apk
           path: app/build/outputs/apk/release/*.apk
+      - name: Save log on failure
+        if: failure()
+        run: |
+          mkdir /tmp/l && cp build-log.txt /tmp/l/ 2>/dev/null || echo "no log" > /tmp/l/build-log.txt
+          cd /tmp/l && git init -q -b build-logs && git add -A
+          git -c user.name=ci -c user.email=ci@x commit -qm "log ${{ github.sha }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" build-logs
