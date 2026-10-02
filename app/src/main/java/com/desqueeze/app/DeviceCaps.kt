@@ -43,3 +43,22 @@ object DeviceCaps {
             fps(3840, 2160), fps(1920, 1080), vc.bitrateRange.upper / 1_000_000, ten)
     }
 }
+
+/** Asks the hardware encoders themselves whether w×h at fps is accepted (checks alignment + rate too). */
+fun DeviceCaps.supports(mime: String, w: Int, h: Int, fps: Double): Boolean {
+    val list = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+        .filter { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
+    val pool = list.filter { it.isHardwareAccelerated }.ifEmpty { list }
+    return pool.any { ci ->
+        try {
+            val vc = ci.getCapabilitiesForType(mime).videoCapabilities ?: return@any false
+            vc.isSizeSupported(w, h) && vc.areSizeAndRateSupported(w, h, fps)
+        } catch (_: Exception) { false }
+    }
+}
+
+fun DeviceCaps.maxBitrate(mime: String): Int =
+    MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+        .filter { it.isEncoder && it.isHardwareAccelerated && it.supportedTypes.any { t -> t.equals(mime, true) } }
+        .mapNotNull { try { it.getCapabilitiesForType(mime).videoCapabilities?.bitrateRange?.upper } catch (_: Exception) { null } }
+        .maxOrNull() ?: 100_000_000

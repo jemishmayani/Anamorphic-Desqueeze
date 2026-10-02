@@ -345,12 +345,20 @@ fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
 
 @Composable
 fun Results(lines: List<String>, folder: String) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer) }
-            Text("Saved to Movies/$folder. Your originals are untouched.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
+    val ok = lines.any { it.startsWith("✓") }
+    val c = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        lines.forEach { line ->
+            val good = line.startsWith("✓")
+            Surface(color = if (good) c.primaryContainer else c.errorContainer, shape = RoundedCornerShape(16.dp)) {
+                Text(line, style = MaterialTheme.typography.bodySmall, color = if (good) c.onPrimaryContainer else c.onErrorContainer,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp))
+            }
         }
+        if (ok) Text("Saved to Movies/$folder. Your originals are untouched.", style = MaterialTheme.typography.bodySmall,
+            color = c.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+        else Text("Nothing was saved. Your originals are untouched.", style = MaterialTheme.typography.bodySmall,
+            color = c.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }
 
