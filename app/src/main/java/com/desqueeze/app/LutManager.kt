@@ -1,0 +1,71 @@
+package com.desqueeze.app
+
+import android.content.Context
+import android.net.Uri
+import java.io.File
+
+data class LutEntry(val id: String, val name: String, val size: Int)
+
+/** Stores user-imported .cube LUTs in app-private storage. Nothing is bundled. */
+class LutManager(private val ctx: Context) {
+    private val dir = File(ctx.filesDir, "luts").apply { mkdirs() }
+    private val names = ctx.getSharedPreferences("lut_names", Context.MODE_PRIVATE)
+
+    fun list(): List<LutEntry> = (dir.listFiles() ?: emptyArray()).filter { it.extension == "cube" }
+        .map { LutEntry(it.nameWithoutExtension, names.getString(it.nameWithoutExtension, it.nameWithoutExtension)!!, 0) }
+        .sortedBy { it.name.lowercase() }
+
+    fun import(uri: Uri, displayName: String): LutEntry {
+        val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            ?: throw IllegalArgumentException("Could not read file")
+        val cube = parse(text) // validates
+        val id = "lut_" + System.currentTimeMillis()
+        File(dir, "$id.cube").writeText(text)
+        val nice = displayName.substringBeforeLast('.')
+        names.edit().putString(id, nice).apply()
+        return LutEntry(id, nice, cube.size)
+    }
+    fun rename(id: String, newName: String) = names.edit().putString(id, newName.trim()).apply()
+    fun delete(id: String) { File(dir, "$id.cube").delete(); names.edit().remove(id).apply() }
+    fun load(id: String): CubeLut = parse(File(dir, "$id.cube").readText())
+
+    class CubeLut(val size: Int, val data: FloatArray, val domainMin: FloatArray, val domainMax: FloatArray) {
+        /**
+         * Packs to Media3's int[r][g][b] ARGB cube, blended with identity by [strength].
+         * Blending the table with identity == blending output with input (trilinear is linear).
+         */
+        fun toArgbCube(strength: Float): Array<Array<IntArray>> {
+            val n = size; val s = strength.coerceIn(0f, 1f)
+            return Array(n) { r -> Array(n) { g -> IntArray(n) { b ->
+                val i = (r + g * n + b * n * n) * 3 // .cube: red varies fastest
+                fun ch(c: Int, idx: Int): Int {
+                    val ident = idx / (n - 1f)
+                    val v = (data[i + c] - domainMin[c]) / (domainMax[c] - domainMin[c])
+                    return ((ident + (v - ident) * s).coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+                }
+                (0xFF shl 24) or (ch(0, r) shl 16) or (ch(1, g) shl 8) or ch(2, b)
+            } } }
+        }
+    }
+
+    companion object {
+        fun parse(text: String): CubeLut {
+            var size = 0; val min = floatArrayOf(0f, 0f, 0f); val max = floatArrayOf(1f, 1f, 1f)
+            val vals = ArrayList<Float>()
+            text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.forEach { l ->
+                val p = l.split(Regex("\\s+"))
+                when {
+                    p[0] == "LUT_3D_SIZE" -> size = p[1].toInt()
+                    p[0] == "LUT_1D_SIZE" -> throw IllegalArgumentException("1D LUTs are not supported; use a 3D .cube LUT.")
+                    p[0] == "DOMAIN_MIN" -> for (k in 0..2) min[k] = p[k + 1].toFloat()
+                    p[0] == "DOMAIN_MAX" -> for (k in 0..2) max[k] = p[k + 1].toFloat()
+                    p[0].first().isDigit() || p[0].first() == '-' || p[0].first() == '.' ->
+                        if (p.size >= 3) { vals += p[0].toFloat(); vals += p[1].toFloat(); vals += p[2].toFloat() }
+                }
+            }
+            require(size in 2..65) { "Missing or invalid LUT_3D_SIZE." }
+            require(vals.size == size * size * size * 3) { "LUT has ${vals.size / 3} entries, expected ${size * size * size}." }
+            return CubeLut(size, vals.toFloatArray(), min, max)
+        }
+    }
+}
