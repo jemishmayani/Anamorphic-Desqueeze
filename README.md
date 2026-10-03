@@ -10,11 +10,27 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/jemishmayani/Anamorphic-Desqueeze/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/jemishmayani/Anamorphic-Desqueeze?label=release&color=5AA9FF"></a>
+  <a href="https://github.com/jemishmayani/Anamorphic-Desqueeze/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/jemishmayani/Anamorphic-Desqueeze/total?color=5AA9FF"></a>
+  <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-3DDC84">
+  <a href="https://github.com/jemishmayani/Anamorphic-Desqueeze/actions/workflows/build.yml"><img alt="Build" src="https://github.com/jemishmayani/Anamorphic-Desqueeze/actions/workflows/build.yml/badge.svg"></a>
+  <a href="https://buymeacoffee.com/jemishmayani"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFB454"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/jemishmayani/Anamorphic-Desqueeze/releases/latest"><b>⬇ Download the latest APK</b></a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/jemishmayani/Anamorphic-Desqueeze/issues/new/choose">Report a bug</a> ·
+  <a href="https://buymeacoffee.com/jemishmayani">Support the development</a>
 </p>
 
 ---
+
+**Contents:** [What it does](#what-it-does) · [Quick start](#quick-start) · [Works with your camera](#works-with-your-camera) ·
+[Vertical anamorphic](#vertical-anamorphic) · [Export methods](#two-export-methods) · [Features](#features) ·
+[Install & update](#install--update) · [FAQ](#faq) · [Known limitations](#known-limitations) · [Privacy](#privacy) ·
+[Google Play](#google-play) · [How it works](#how-it-works-technical) · [Building](#building-it-yourself) ·
+[Contributing & support](#contributing--support) · [License](#license)
 
 ## What it does
 
@@ -26,19 +42,20 @@ thin and stretched. This app restores the correct shape by widening the image by
 > 3840 × 2160 at **1.33×** → displays as **5107 × 2160**
 
 "Squeeze factor" here always means the lens squeeze, never a target aspect ratio. The app
-**never crops** to 16:9, 2.39:1 or anything else. The whole frame is kept.
+**never crops** to 16:9, 2.39:1 or anything else; the whole frame is kept. The original file is
+never modified.
 
-**Workflow:** four simple steps.
+## Quick start
 
 | Step | What you do |
 |---|---|
 | **1. Clips** | Pick one or more videos. Each shows a thumbnail, duration, resolution, bit depth and detected log/HDR |
 | **2. Frame** | Choose each clip's squeeze factor, orientation and desqueeze direction; frame with guides in the live preview |
-| **3. Look** | Optionally add a LUT: preview it live, set strength, compare before/after |
-| **4. Export** | Follow the recommendation (or pick the alternative), check compatibility, size and time, export |
+| **3. Look** | Optional: add a LUT, preview it live, set its strength, compare before/after |
+| **4. Export** | Follow the recommendation (or pick the alternative), check compatibility, size and time, then export |
 
-The original file is never modified. Exports are saved to `Movies/AnamorphicDesqueeze/`
-as `ORIGINALNAME_DESQUEEZED_1.33X.mp4` (or `.mov` for MOV sources in Lossless mode).
+Exports are saved to `Movies/AnamorphicDesqueeze/` as `ORIGINALNAME_DESQUEEZED_1.33X.mp4`
+(or `.mov` for MOV sources in Lossless mode). The folder can be changed in Settings.
 
 ## Works with your camera
 
@@ -99,128 +116,185 @@ actual image detail is similar or lower.
 
 ## Features
 
-- **Squeeze presets:** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus a custom factor (slider or typed, 1.0–3.0×)
-- **Per-clip squeeze:** every clip keeps its own factor, so one batch can mix adapters (e.g. clips 1–2 at 1.33×, clip 3 at 1.20×, clip 4 at 1.50×). **Apply to all** copies one factor to every clip
-- **Double Desqueeze Protection:** if a clip is already tagged as anamorphic, the app warns ("This video already contains a 1.33× desqueeze tag") and asks: **Keep existing**, **Replace tag**, or **Force anyway** (multiplies the factors). Unresolved tags are flagged again before export
-- **Framing guides:** frame lines for 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 with an optional mask; action safe (93%) and title safe (90%) per SMPTE ST 2046-1; rule of thirds; center marker; crosshair. Remembered between sessions; never crop the export
-- **Compatibility check before export:** input, desqueeze, output, your phone's encoder limit and the result (✓ / ⚠ / ✗) for each clip, e.g. "⚠ Output will be scaled to 4096 × 1732". Pressing Export runs it for every clip and lists anything worth knowing before starting
-- **Default squeeze factor** in Settings: pick a preset or set any custom value. It's used for new imports unless you've already picked a factor
-- **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to compare with the original; play/pause, mute, a live aspect-ratio readout; a **filmstrip timeline** of thumbnails with a playhead to tap or drag. Hardware playback; the file is never touched
-- **LUT preview:** LUT off / on while the video plays (rendered at a lighter ~720p proxy so 4K 10-bit stays smooth), strength with 0% / 50% / 100% marks, and **Before / After**: a full-quality still with a draggable divider
-- **Smart recommendations:** a plain-language suggestion for each clip (for example "Lossless Desqueeze: preserves your original 10-bit D-Log footage") with the alternative and why
-- **Estimates before export:** output size and processing time, labelled as estimates; they learn this phone's real speed from your exports
-- **Clip list with thumbnails:** duration, resolution, bit depth and log/HDR at a glance; add or remove clips
-- **Footage badges:** log, HDR/SDR, bit depth, chroma, codec, frame rate, gamut, existing pixel-aspect tag and audio, each with its own icon; tap **All details** for the full technical breakdown
-- **Batch export:** select several clips and export them all with the same settings
-- **LUT library** (Re-encode): import, select, rename and delete your own 3D `.cube` LUTs, with 0–100% strength. No LUTs are bundled; import your camera maker's official log-to-Rec.709 LUT
-- **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File quality; frame rate and audio kept; automatic retries with safer settings if the encoder refuses
-- **Per-clip recommendations:** switch clips on the Frame, Look and Export steps; each clip gets its own recommendation and export method (or apply one to all)
-- **Device diagnostics:** a "what this means for you" summary; your phone's chipset, memory, storage, display HDR and graphics; measured and manufacturer speeds; a ✓ / ⚠ / ✗ checklist of HEVC, 10-bit HEVC, H.264 and AV1 decode; HEVC, 10-bit and H.264 encode; maximum frame width, 4K frame rate and bitrate. Each item explains what it means for you, and a squeeze check shows which squeezes Re-encode can make at full size on 4K and 1080p
-- **Crash reports:** if the app ever closes unexpectedly, it shows a report on next launch that you can copy and send
-- **Organized settings** with defaults, Re-encode options, output, LUT library, theme, diagnostics, and **About & support** (check for updates, what's new, source code, privacy, licenses, and [support the development](https://buymeacoffee.com/jemishmayani))
-- Light, dark or system theme; works fully offline; no ads, accounts or tracking. The GitHub version goes online only when you tap *Check for updates*; the Play version never does
+**Framing**
+- **Squeeze presets** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus any custom factor (1.00–3.00×, slider or typed). A **default squeeze** (preset or custom) is set in Settings
+- **Per-clip squeeze:** every clip keeps its own factor, so one batch can mix adapters; **Apply to all** copies one factor to every clip
+- **Double Desqueeze Protection:** a clip that's already tagged (e.g. 1.33×) triggers a warning with **Keep existing**, **Replace tag** or **Force anyway** (multiplies the factors)
+- **Framing guides:** 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 frame lines with an optional mask; action safe (93%) and title safe (90%) per SMPTE ST 2046-1; rule of thirds; center marker; crosshair. Guides never crop the export
+- **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
 
-## Install
+**Look**
+- **LUT library:** import, rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
+- **LUT preview:** off / on while the video plays (a lighter ~720p proxy keeps 4K 10-bit smooth), strength with 0% / 50% / 100% marks, and a full-quality **before / after** still with a draggable divider
+
+**Export**
+- **Smart recommendations** in plain language for each clip (e.g. "Lossless Desqueeze: preserves your original 10-bit D-Log footage"), with the alternative and why
+- **Per-clip export method:** a batch can mix Lossless and Re-encode; **Apply to all** or **Reset to recommended**
+- **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
+- **Estimates** of output size and processing time, which learn your phone's real speed
+- **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File; frame rate and audio kept; automatic retries with safer settings if the encoder refuses
+- **Batch export** with progress and a per-clip result list
+
+**This phone**
+- **Device diagnostics:** a plain-language summary; chipset, memory, storage, display HDR and graphics; measured and manufacturer speeds; a ✓ / ⚠ / ✗ checklist of decode/encode support (HEVC, 10-bit, H.264, AV1), maximum frame width, 4K frame rate and bitrate; and a squeeze check for 4K and 1080p. **Copy report** for bug reports
+- **Crash reports** you can copy after an unexpected close
+
+**App**
+- Organized settings with **About & support**: check for updates (GitHub version), what's new, source code, privacy, licenses and [support the development](https://buymeacoffee.com/jemishmayani)
+- Light, dark or system theme; about 4 MB; no ads, accounts or tracking
+
+## Install & update
 
 1. Open the [latest release](https://github.com/jemishmayani/Anamorphic-Desqueeze/releases/latest) on your phone.
-2. Download the `.apk` file under **Assets** and open it.
-3. Allow **Install unknown apps** for your browser or file manager when Android asks.
-   Google Play Protect may warn about an unknown developer; tap **Install anyway**.
+2. Download **`AnamorphicDesqueeze-vX.Y.apk`** under **Assets** and open it. (The `-play.aab` file is for Google Play and can't be installed directly.)
+3. Allow **Install unknown apps** when Android asks. If Google Play Protect warns about an unknown developer, tap **Install anyway**.
 
-**Requirements:** Android 10 or newer (built for Android 16 / API 36). 10-bit HEVC playback and Re-encode need hardware
-support, which most phones from 2019 onwards have.
+**Requirements:** Android 10 or newer. Preview and Re-encode of 10-bit HEVC need hardware support,
+which most phones from 2019 onwards have; **Settings → Device diagnostics** shows what yours can do.
 
-**Updating:** from v1.7, every release is signed with the same permanent key, so new versions
-install straight over the old one. (If you have v1.6 or older, uninstall it once first: those
-builds used temporary keys.)
+**Updating:** from v1.7, every release is signed with the same permanent key, so new versions install
+straight over the old one. **Settings → About → Check for updates** tells you when one is out.
+If you have v1.6 or older, uninstall it once first; those builds used temporary keys.
+
+**Is this download genuine?** Releases are signed with a certificate whose SHA-256 fingerprint is
+`38:C0:B0:B2:C3:60:04:A3:90:49:A1:BD:11:7B:B0:04:2F:8C:04:54:1D:5B:F1:6A:DE:0F:59:B4:0E:1D:A4:5E`. [SECURITY.md](SECURITY.md#verifying-a-download) shows how to check it.
+
+## FAQ
+
+**My exported clip still looks squeezed.**
+You probably used **Lossless** and opened it in an app that ignores the pixel-aspect tag (many phone
+galleries, Instagram, WhatsApp, some web players). Editors such as DaVinci Resolve, Premiere Pro and
+Final Cut, and players such as VLC, show it wide. To share directly, export with **Re-encode**, which
+makes genuinely wider pixels. In Resolve, check *Clip Attributes → Pixel Aspect Ratio* if needed.
+
+**Why is my Re-encode smaller than 4K?**
+Your phone's video encoder has a maximum width, often 4096 px. 4K at 1.33× needs 5107 px, so the whole
+frame is scaled down evenly (about 4096 × 1732) instead of being cropped. The Export step warns you
+before this happens. **Lossless** keeps full resolution at any squeeze.
+
+**Does Re-encode keep my 10-bit log footage?**
+No. Android re-encodes log/standard video in 8-bit (see [Known limitations](#known-limitations)).
+Use **Lossless** to keep 10-bit; the app recommends it automatically for 10-bit, log and HDR clips.
+
+**My camera's log profile isn't detected.**
+Some cameras (many phones and action cams) don't record the profile name, and files re-saved by
+companion apps (such as DJI Mimo) may lose it. The app then estimates from the picture and shows **"Looks like log"**. A short
+sample clip in an [issue](https://github.com/jemishmayani/Anamorphic-Desqueeze/issues/new/choose) helps add detection.
+
+**My vertical clip is stretched the wrong way.**
+In the **Frame** step, set **Desqueeze direction** to **Vertical** (or Horizontal). If the clip itself
+shows sideways, set **Orientation**.
+
+**Can I install the GitHub APK over the Play Store version?**
+No. Google re-signs Play installs, so the two can't update each other. Pick one source.
 
 ## Known limitations
 
-- **Re-encode is 8-bit for log footage.** Log clips are almost always tagged as standard (SDR)
-  video, and Android's GPU video pipeline processes SDR at 8-bit, so Re-encode output is
-  8-bit. Use Lossless to keep true 10-bit. Clips tagged HLG/PQ HDR stay 10-bit in Re-encode.
-- **Log detection depends on the camera.** Many cameras write the profile name into the file;
-  some phones and action cams don't, and then the app can only estimate from the picture.
-- **Preview and Re-encode need the phone to decode the codec.** ProRes, for example, usually
-  can't be played on Android; Lossless tagging still works for it.
-- **LUTs are applied at 8-bit precision**, and only in Re-encode. The live LUT preview uses a ~720p proxy; Compare shows a full-quality still. On some phones live effects aren't supported; the app then says so and Compare still works.
-- **Some DJI-specific metadata** may not carry over in Re-encode (Lossless keeps everything).
+- **Re-encode is 8-bit for log footage.** Log clips are almost always tagged as standard (SDR) video, and
+  Android's GPU video pipeline processes SDR at 8-bit. Use Lossless to keep true 10-bit. Clips tagged
+  HLG/PQ HDR stay 10-bit in Re-encode when *Keep HDR* is on.
+- **Log detection depends on the camera** (see the FAQ).
+- **Preview and Re-encode need the phone to decode the codec.** ProRes, for example, usually can't be
+  played on Android; Lossless tagging still works for it.
+- **LUTs are applied at 8-bit precision, and only in Re-encode.** On some phones live LUT preview isn't
+  supported; the app says so, and the before/after still still works.
+- **Some camera-specific metadata** may not carry over in Re-encode (Lossless keeps everything).
 - **Keep the app open while exporting**; the screen stays on automatically.
+
+## Privacy
+
+The app processes everything on your phone and collects no data: no accounts, ads, analytics or tracking.
+The GitHub version goes online only when you tap *Check for updates*; the Play version never does.
+Full details: [PRIVACY.md](PRIVACY.md).
+
+## Google Play
+
+The app meets Google Play's current requirements: it targets Android 16 (API 36), its native library
+supports 16 KB memory pages, it requests no unnecessary permissions, and it ships as an Android App Bundle.
+It's built in two versions:
+
+| Version | File | Differences |
+|---|---|---|
+| **GitHub** | `.apk` | Can *Check for updates* against GitHub releases (the only time it uses the internet) |
+| **Play** | `-play.aab` | No update checker (Play delivers updates) and no internet use |
+
+Listing text, data-safety answers, the 512 px icon and the feature graphic are in
+[`docs/play/`](docs/play/PLAY_STORE.md).
 
 ## How it works (technical)
 
 | Stage | Technology |
 |---|---|
-| Lossless | Pure Kotlin MP4/MOV box editor: rewrites only the `moov` header, inserting or updating a `pasp` box in the video sample entry (`hvc1`/`hev1`/`avc1`/`avc3`) and shifting `stco`/`co64` chunk offsets when the header precedes the media data. Media is streamed in 4 MB chunks, so RAM use stays flat for multi-GB files |
-| Decode / encode | Android MediaCodec (hardware) via [AndroidX Media3 Transformer](https://developer.android.com/media/media3/transformer) |
-| De-squeeze (Re-encode) | OpenGL ES `Presentation` effect, stretch-to-fit to the target size |
-| LUT | Media3 `SingleColorLut` (3D LUT on the GPU); strength is blended into the LUT table itself |
+| Lossless | Pure Kotlin MP4/MOV box editor that rewrites only the `moov` header: inserts or updates a `pasp` box in the video sample entry (HEVC, H.264, Dolby Vision, AV1, VP9, ProRes, MPEG-4, Motion JPEG), updates the track header's display size and, if orientation is overridden, its rotation matrix, and shifts `stco`/`co64` chunk offsets when the header precedes the media data. Media is streamed in 4 MB chunks, so RAM use stays flat for multi-GB files. Tested against ffmpeg: media bit-identical |
+| Analysis | Header-only parsing of codec configuration (`hvcC`/`avcC`/`av1C`/`vpcC`), `colr`, `pasp`, Dolby Vision and metadata boxes; a downscaled frame for thumbnails and the log-look estimate |
+| Decode / encode | Android MediaCodec (hardware) via [AndroidX Media3 Transformer](https://developer.android.com/media/media3/transformer), with encoder-size fitting checked against the codec's own capabilities |
+| De-squeeze (Re-encode) | OpenGL ES effects: rotation (for orientation overrides) and `Presentation` stretch-to-fit |
+| LUT | Media3 `SingleColorLut` (3D LUT on the GPU); strength is blended into the LUT table. The before/after still uses an equivalent CPU trilinear LUT, matching ffmpeg's `lut3d` to within 1/255 |
 | Audio | Passed through unchanged (no re-encode) |
-| Preview | ExoPlayer with on-screen stretch |
+| Preview | ExoPlayer; live LUT and rotation use Media3 video effects on a ~720p proxy |
 | UI | Jetpack Compose, Material 3 |
 
-No FFmpeg is bundled, which keeps the app small (about 24 MB) and avoids GPL/LGPL licensing issues.
+No FFmpeg is bundled, which keeps the app small (about 4 MB, with R8 code shrinking) and avoids
+GPL/LGPL licensing issues.
 
 Source layout (`app/src/main/java/com/desqueeze/app/`):
 
 | File | Purpose |
 |---|---|
-| `MainActivity.kt` | Main screen, settings screen, shared UI components |
-| `AppState.kt` | Screen state that survives navigation |
+| `MainActivity.kt` | App entry, navigation, shared UI components, export runner |
+| `Steps.kt` | The four-step flow (Clips, Frame, Look, Export), tag protection, compatibility card, pre-export check |
+| `AppState.kt` | State that survives navigation (clips, per-clip squeeze and methods, choices) |
+| `Geometry.kt` | Orientation + desqueeze direction resolved into rotation, output size and pixel aspect |
 | `PaspWriter.kt` | Lossless pixel-aspect tagging |
 | `Exporter.kt` | Re-encode pipeline, encoder-size fitting, retries, saving to the gallery |
-| `VideoProbe.kt` | Combines header analysis with Android's track info |
-| `FootageAnalyzer.kt` | Camera-agnostic header analysis: log, HDR, bit depth, chroma, color, camera |
+| `VideoProbe.kt`, `FootageAnalyzer.kt` | Clip analysis: log, HDR, bit depth, chroma, color, camera |
 | `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
-| `Steps.kt` | The four-step flow: Clips, Frame, Look, Export; tag protection, compatibility card, pre-export check |
-| `Guides.kt` | Frame lines, safe areas, thirds, center marker, crosshair |
-| `Compat.kt` | Per-clip compatibility check used by the Export step and the pre-export warning |
-| `Geometry.kt` | Orientation + desqueeze direction resolved into rotation, output size and pixel aspect |
-| `PreviewPlayer.kt` | Preview: hold-to-compare, live LUT, before/after still, filmstrip timeline |
-| `Frames.kt` | Thumbnails and still frames in display orientation |
-| `Recommend.kt` | Plain-language export recommendations |
-| `Estimates.kt` | Size/time estimates and learned device speed |
-| `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and the Device diagnostics screen |
+| `PreviewPlayer.kt`, `Frames.kt`, `Guides.kt` | Preview, live LUT, before/after still, filmstrip; still frames; framing guides |
+| `Compat.kt`, `Recommend.kt`, `Estimates.kt` | Compatibility check, recommendations, size/time estimates |
+| `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and Device diagnostics |
 | `LutManager.kt` | `.cube` parsing and the LUT library |
-| `Settings.kt` | Saved preferences |
-| `SettingsScreen.kt` | Settings, LUT library, About & support, update check |
+| `Settings.kt`, `SettingsScreen.kt` | Preferences; Settings, LUT library, About & support, update check |
 | `Diag.kt` | Crash, freeze and low-memory reports |
 | `Theme.kt` | Colors and typography |
 
-## Google Play
-
-The app meets Google Play's current requirements: it targets Android 16 (API 36), its native
-library supports 16 KB memory pages, it has no unnecessary permissions, and it ships as an
-Android App Bundle. It's built in two versions:
-
-| Version | File | Differences |
-|---|---|---|
-| **GitHub** | `.apk` | Can *Check for updates* against GitHub releases (internet used only then) |
-| **Play** | `-play.aab` | No update checker (Play delivers updates) and no internet use |
-
-Listing text, data-safety answers, the 512 px icon and the feature graphic are in
-[`docs/play/`](docs/play/PLAY_STORE.md). The privacy policy is [`PRIVACY.md`](PRIVACY.md).
+Build variants: `app/src/github/` adds the internet permission used only by *Check for updates*.
 
 ## Building it yourself
 
-Every push to `main` builds the GitHub APK and the Play bundle with GitHub Actions
-(`.github/workflows/build.yml`). They appear under the run's **Artifacts**, and the APK also on the `apk` branch.
+Every push to `main` and every pull request is built by GitHub Actions
+(`.github/workflows/build.yml`); documentation-only changes are skipped. Pushes to `main` publish the APK and
+Play bundle as run **Artifacts**, and the APK on the `apk` branch. Pull requests are only built, never published.
 
-Release builds are signed with a permanent key, `signing/release.p12`, so every version installs
-as a normal update. The key file is protected by a long random password that is **not** in the
-repository; GitHub Actions reads it from the single repository secret `KEYSTORE_PASSWORD`. Without
-the password the file is useless. Without the secret, builds fall back to a temporary key.
+Release builds are signed with a permanent key, [`signing/release.p12`](signing/README.md). It's protected
+by a long random password that is **not** in the repository; GitHub Actions reads it from the repository
+secret `KEYSTORE_PASSWORD`. Without the password the file is useless. Without the secret (for example on
+forks), builds fall back to a temporary debug key.
 
-To publish a release, add a section for the new version to [`CHANGELOG.md`](CHANGELOG.md),
-bump `versionCode`/`versionName` in `app/build.gradle.kts`, then push a tag:
+To publish a release, add a section for the new version to [`CHANGELOG.md`](CHANGELOG.md), bump
+`versionCode`/`versionName` in `app/build.gradle.kts`, then push a tag:
 
 ```sh
-git tag v1.5
-git push origin v1.5
+git tag vX.Y
+git push origin vX.Y
 ```
 
-The workflow builds the APK, creates the GitHub Release, and uses that version's
-CHANGELOG section as the release notes.
+The workflow builds both files, creates the GitHub Release, and uses that version's CHANGELOG section,
+plus install instructions, as the release notes.
 
-To build locally, open the project in Android Studio (JDK 17, Android SDK 36), choose the `githubRelease`
-or `playRelease` variant, and build; or run `gradle :app:assembleGithubRelease :app:bundlePlayRelease`.
+To build locally, open the project in Android Studio (JDK 17, Android SDK 36), choose the `githubRelease` or
+`playRelease` variant, and build; or run `gradle :app:assembleGithubRelease :app:bundlePlayRelease`.
+
+## Contributing & support
+
+- **Found a bug?** Use the [bug report form](https://github.com/jemishmayani/Anamorphic-Desqueeze/issues/new/choose); the app's **Copy report** (after a crash,
+  or from Device diagnostics) usually makes a fix possible straight away.
+- **Have an idea?** Open a [feature request](https://github.com/jemishmayani/Anamorphic-Desqueeze/issues/new/choose).
+- **Security problem?** See [SECURITY.md](SECURITY.md); please don't open a public issue.
+- **Want to contribute code?** See [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Enjoying the app?** [Buy me a coffee](https://buymeacoffee.com/jemishmayani) ☕
+
+## License
+
+No open-source license has been chosen yet, so all rights are reserved by the author. You're welcome to
+download and use the app. Copying, modifying or redistributing the code requires permission until a license
+is added.

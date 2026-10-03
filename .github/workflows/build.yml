@@ -1,7 +1,17 @@
 name: Build APK
-on: [push, workflow_dispatch]
+on:
+  push:
+    # Tag pushes (releases) always build; documentation-only commits don't.
+    paths-ignore: ['**.md', 'docs/**', '.github/ISSUE_TEMPLATE/**', '.github/FUNDING.yml', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', '.github/ISSUE_TEMPLATE/**', '.github/FUNDING.yml', 'LICENSE']
+  workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  # A newer push to the same branch cancels the older build; release tags are never cancelled.
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,6 +37,7 @@ jobs:
           name: AnamorphicDesqueeze
           path: out/*
       - name: Publish APK to apk branch
+        if: github.event_name != 'pull_request'
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
@@ -48,7 +59,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" "AnamorphicDesqueeze-${GITHUB_REF_NAME}-play.aab" \
             --title "Anamorphic De-Squeeze ${GITHUB_REF_NAME}" --notes-file notes.md
       - name: Save log on failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         run: |
           mkdir /tmp/l && cp build-log.txt /tmp/l/ 2>/dev/null || echo "no log" > /tmp/l/build-log.txt
           cd /tmp/l && git init -q -b build-logs && git add -A

@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an improvement or a new feature.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe your footage and workflow, and what's missing or awkward today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How should it work? Mock-ups and sketches are welcome.
+  - type: input
+    id: camera
+    attributes:
+      label: Camera / lens (optional)
+      placeholder: "Sony A7S III + 1.33× adapter"
