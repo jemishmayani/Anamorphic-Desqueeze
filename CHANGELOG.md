@@ -2,6 +2,30 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.8 — 2026-10-03
+
+### Added
+- **Per-clip squeeze factor.** Each clip in a batch keeps its own factor, for people who own several anamorphic adapters (e.g. clips 1–2 at 1.33×, clip 3 at 1.20×, clip 4 at 1.50×). The clip strip shows each clip's factor, and **Apply to all** copies one factor to every clip. New clips start with your default or the last factor you picked.
+- **Double Desqueeze Protection.** When a clip is already tagged (for example 1.33×), the Frame step warns: "This video already contains a 1.33× desqueeze tag", shows what applying your factor on top would produce, and offers:
+  - **Keep existing:** use the file's own factor.
+  - **Replace tag:** use the factor picked in the app.
+  - **Force anyway:** multiply the factors.
+  The choice is per clip and is honoured by Lossless, Re-encode, the preview and the estimates.
+- **Framing guides** in the preview (Frame and Look steps):
+  - frame lines for 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1, with an optional mask outside
+  - action safe (93%) and title safe (90%), following SMPTE ST 2046-1
+  - rule of thirds, center marker and crosshair
+  Guides are remembered between sessions and never crop the export.
+- **Compatibility check** in the Export step, per clip: input (e.g. "4K 10-bit D-Log HEVC"), desqueeze, output size, your phone's encoder limit at that height, and a ✓ / ⚠ / ✗ result with plain explanations:
+  - output will be scaled
+  - 10-bit becomes 8-bit
+  - this codec can't be decoded
+  - the LUT is ignored in Lossless
+  - an existing tag isn't resolved
+  - HDR will be converted to SDR
+- **Pre-export warning.** Pressing Export runs the check on every clip. If anything needs attention, a dialog lists it, with **Export anyway** or **Review**.
+- **LUT strength marks** at 0%, 50% and 100% (tap to jump), a larger strength readout, and a **Before / After at full quality** button under the LUT controls (in addition to Compare on the video).
+
 ## v1.7 — 2026-10-03
 
 ### Fixed

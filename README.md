@@ -33,9 +33,9 @@ thin and stretched. This app restores the correct shape by widening the image by
 | Step | What you do |
 |---|---|
 | **1. Clips** | Pick one or more videos. Each shows a thumbnail, duration, resolution, bit depth and detected log/HDR |
-| **2. Frame** | Choose the squeeze factor, orientation and desqueeze direction, and watch the live preview |
+| **2. Frame** | Choose each clip's squeeze factor, orientation and desqueeze direction; frame with guides in the live preview |
 | **3. Look** | Optionally add a LUT: preview it live, set strength, compare before/after |
-| **4. Export** | Follow the recommendation (or pick the alternative), check the size and time estimate, export |
+| **4. Export** | Follow the recommendation (or pick the alternative), check compatibility, size and time, export |
 
 The original file is never modified. Exports are saved to `Movies/AnamorphicDesqueeze/`
 as `ORIGINALNAME_DESQUEEZED_1.33X.mp4` (or `.mov` for MOV sources in Lossless mode).
@@ -100,9 +100,13 @@ actual image detail is similar or lower.
 ## Features
 
 - **Squeeze presets:** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus a custom factor (slider or typed, 1.0–3.0×)
+- **Per-clip squeeze:** every clip keeps its own factor, so one batch can mix adapters (e.g. clips 1–2 at 1.33×, clip 3 at 1.20×, clip 4 at 1.50×). **Apply to all** copies one factor to every clip
+- **Double Desqueeze Protection:** if a clip is already tagged as anamorphic, the app warns ("This video already contains a 1.33× desqueeze tag") and asks: **Keep existing**, **Replace tag**, or **Force anyway** (multiplies the factors). Unresolved tags are flagged again before export
+- **Framing guides:** frame lines for 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 with an optional mask; action safe (93%) and title safe (90%) per SMPTE ST 2046-1; rule of thirds; center marker; crosshair. Remembered between sessions; never crop the export
+- **Compatibility check before export:** input, desqueeze, output, your phone's encoder limit and the result (✓ / ⚠ / ✗) for each clip, e.g. "⚠ Output will be scaled to 4096 × 1732". Pressing Export runs it for every clip and lists anything worth knowing before starting
 - **Default squeeze factor** in Settings: pick a preset or set any custom value. It's used for new imports unless you've already picked a factor
 - **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to compare with the original; play/pause, mute, a live aspect-ratio readout; a **filmstrip timeline** of thumbnails with a playhead to tap or drag. Hardware playback; the file is never touched
-- **LUT preview:** LUT off / on while the video plays (rendered at a lighter ~720p proxy so 4K 10-bit stays smooth), live strength, and **Compare**: a full-quality still with a draggable before/after divider
+- **LUT preview:** LUT off / on while the video plays (rendered at a lighter ~720p proxy so 4K 10-bit stays smooth), strength with 0% / 50% / 100% marks, and **Before / After**: a full-quality still with a draggable divider
 - **Smart recommendations:** a plain-language suggestion for each clip (for example "Lossless Desqueeze: preserves your original 10-bit D-Log footage") with the alternative and why
 - **Estimates before export:** output size and processing time, labelled as estimates; they learn this phone's real speed from your exports
 - **Clip list with thumbnails:** duration, resolution, bit depth and log/HDR at a glance; add or remove clips
@@ -168,7 +172,9 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `VideoProbe.kt` | Combines header analysis with Android's track info |
 | `FootageAnalyzer.kt` | Camera-agnostic header analysis: log, HDR, bit depth, chroma, color, camera |
 | `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
-| `Steps.kt` | The four-step flow: Clips, Frame, Look, Export |
+| `Steps.kt` | The four-step flow: Clips, Frame, Look, Export; tag protection, compatibility card, pre-export check |
+| `Guides.kt` | Frame lines, safe areas, thirds, center marker, crosshair |
+| `Compat.kt` | Per-clip compatibility check used by the Export step and the pre-export warning |
 | `Geometry.kt` | Orientation + desqueeze direction resolved into rotation, output size and pixel aspect |
 | `PreviewPlayer.kt` | Preview: hold-to-compare, live LUT, before/after still, filmstrip timeline |
 | `Frames.kt` | Thumbnails and still frames in display orientation |
