@@ -174,9 +174,7 @@ fun PreviewPlayer(
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }
-            AnimatedVisibility(hint && error == null, Modifier.align(Alignment.Center), enter = fadeIn(), exit = fadeOut()) {
-                Pill("Hold to compare with the original", accent = false)
-            }
+            if (hint && error == null) Box(Modifier.align(Alignment.Center)) { Pill("Hold to compare with the original", accent = false) }
             if (comparing) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
             error?.let { msg -> Text(msg, color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.Center).padding(28.dp)) }
 
