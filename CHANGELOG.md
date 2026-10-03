@@ -2,6 +2,30 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.9 — 2026-10-04
+
+### Added
+- **Share to De-Squeeze.** In Google Photos, your gallery or a file manager, select one or more videos, tap **Share**, and choose **De-Squeeze**. They open straight in the Clips step; sharing more while the app is open adds them to the list.
+- **Social formats** (Re-encode), in the Export step: **16:9** (YouTube, TVs; up to 3840 × 2160), **4:5** (Instagram/Facebook feed, 1080 × 1350), **9:16** (Reels, Shorts, TikTok, Stories, 1080 × 1920) and **1:1** (1080 × 1080), each with:
+  - **Fit:** the whole wide picture with black bars.
+  - **Fill:** cropped to fill the frame, with how much of the picture is kept.
+  - A live preview of the result.
+
+  Files get a suffix such as `_9x16`. These formats also stay within the phone's encoder limits, so 4K exports at large squeezes no longer need scaling. The recommendation switches to Re-encode for these formats and explains why.
+- **Background export.** Exports keep running when you switch apps or lock the phone, with a progress notification (and **Cancel**), then a "finished" notification you can tap to return. Android asks once for permission to show notifications; exports work either way.
+- **Trim before export** (Frame step): a range slider plus **Start here / End here** at the playhead, and **Reset**. Re-encode cuts exactly. **Lossless trims too**: it starts on the nearest keyframe at or before your in-point (usually under a second earlier) and still never re-encodes, so 10-bit log/HDR stays bit-identical. File names get `_TRIM`; size and time estimates use the trimmed length.
+- **Exposure tools for log** (Frame and Look steps):
+  - **Histogram** with the percentage of crushed (≤ 2 IRE) and clipped (≥ 98 IRE) pixels, and where the shadows, midtones and highlights sit.
+  - **Waveform** in IRE.
+  - **False color** with a legend: crushed, near black, mid grey, skin, bright, clipped.
+
+  With a LUT on in the Look step, the tools show the graded picture. The math is tested against known images.
+- **Tablet and landscape layout:** on tablets, foldables and phones in landscape, the preview sits beside the controls, and steps without video use two columns.
+
+### Changed
+- "Keep the app open while exporting" is no longer needed (see Background export).
+- The compatibility check and pre-export warning also cover trims and social formats (for example "Filling 9:16 crops away 76% of the wide picture" for a 1.33× 4K clip).
+
 ## v1.8 — 2026-10-03
 
 ### Added

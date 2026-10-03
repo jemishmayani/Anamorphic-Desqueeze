@@ -49,10 +49,10 @@ never modified.
 
 | Step | What you do |
 |---|---|
-| **1. Clips** | Pick one or more videos. Each shows a thumbnail, duration, resolution, bit depth and detected log/HDR |
-| **2. Frame** | Choose each clip's squeeze factor, orientation and desqueeze direction; frame with guides in the live preview |
-| **3. Look** | Optional: add a LUT, preview it live, set its strength, compare before/after |
-| **4. Export** | Follow the recommendation (or pick the alternative), check compatibility, size and time, then export |
+| **1. Clips** | Pick videos, or **share** them to De-Squeeze from your gallery. Each shows a thumbnail, duration, resolution, bit depth and detected log/HDR |
+| **2. Frame** | Choose each clip's squeeze factor, orientation and desqueeze direction; trim; check exposure; frame with guides in the live preview |
+| **3. Look** | Optional: add a LUT, preview it live, set its strength, compare before/after, check exposure of the graded image |
+| **4. Export** | Follow the recommendation (or pick the alternative), choose a social format if you like, check compatibility, size and time, then export, even in the background |
 
 Exports are saved to `Movies/AnamorphicDesqueeze/` as `ORIGINALNAME_DESQUEEZED_1.33X.mp4`
 (or `.mov` for MOV sources in Lossless mode). The folder can be changed in Settings.
@@ -122,12 +122,16 @@ actual image detail is similar or lower.
 - **Double Desqueeze Protection:** a clip that's already tagged (e.g. 1.33×) triggers a warning with **Keep existing**, **Replace tag** or **Force anyway** (multiplies the factors)
 - **Framing guides:** 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 frame lines with an optional mask; action safe (93%) and title safe (90%) per SMPTE ST 2046-1; rule of thirds; center marker; crosshair. Guides never crop the export
 - **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
+- **Trim:** a range slider plus **Start here / End here** at the playhead. Re-encode cuts exactly; Lossless starts on the nearest keyframe (usually under a second earlier) and still never re-encodes
+- **Exposure tools for log:** histogram (with % crushed/clipped), waveform in IRE, and false color with a legend; with a LUT on, they show the graded picture
 
 **Look**
 - **LUT library:** import, rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
 - **LUT preview:** off / on while the video plays (a lighter ~720p proxy keeps 4K 10-bit smooth), strength with 0% / 50% / 100% marks, and a full-quality **before / after** still with a draggable divider
 
 **Export**
+- **Social formats** (Re-encode): **16:9** for YouTube (up to 3840 × 2160), **4:5** feed (1080 × 1350), **9:16** Reels/Shorts/TikTok (1080 × 1920), **1:1** (1080 × 1080). **Fit** with black bars or **Fill** by cropping, with a live preview. They also avoid the encoder's width limit
+- **Background export:** keeps running when you switch apps or lock the phone, with a progress notification and Cancel
 - **Smart recommendations** in plain language for each clip (e.g. "Lossless Desqueeze: preserves your original 10-bit D-Log footage"), with the alternative and why
 - **Per-clip export method:** a batch can mix Lossless and Re-encode; **Apply to all** or **Reset to recommended**
 - **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
@@ -141,6 +145,8 @@ actual image detail is similar or lower.
 
 **App**
 - Organized settings with **About & support**: check for updates (GitHub version), what's new, source code, privacy, licenses and [support the development](https://buymeacoffee.com/jemishmayani)
+- **Share to De-Squeeze** from Google Photos, your gallery or a file manager (one or many videos)
+- **Tablet & landscape layout:** the preview sits beside the controls on wide screens
 - Light, dark or system theme; about 4 MB; no ads, accounts or tracking
 
 ## Install & update
@@ -165,7 +171,15 @@ If you have v1.6 or older, uninstall it once first; those builds used temporary 
 You probably used **Lossless** and opened it in an app that ignores the pixel-aspect tag (many phone
 galleries, Instagram, WhatsApp, some web players). Editors such as DaVinci Resolve, Premiere Pro and
 Final Cut, and players such as VLC, show it wide. To share directly, export with **Re-encode**, which
-makes genuinely wider pixels. In Resolve, check *Clip Attributes → Pixel Aspect Ratio* if needed.
+makes genuinely wider pixels, ideally with a **social format** (16:9, 4:5, 9:16 or 1:1). In Resolve,
+check *Clip Attributes → Pixel Aspect Ratio* if needed.
+
+**Which format should I use for Instagram?**
+**4:5** for feed posts, **9:16** for Reels and Stories. **Fit** keeps the whole cinematic frame with
+black bars (the classic anamorphic look); **Fill** crops the sides so the frame is filled.
+
+**Can I lock my phone while exporting?**
+Yes. Exports continue in the background with a progress notification.
 
 **Why is my Re-encode smaller than 4K?**
 Your phone's video encoder has a maximum width, often 4096 px. 4K at 1.33× needs 5107 px, so the whole
@@ -199,7 +213,11 @@ No. Google re-signs Play installs, so the two can't update each other. Pick one 
 - **LUTs are applied at 8-bit precision, and only in Re-encode.** On some phones live LUT preview isn't
   supported; the app says so, and the before/after still still works.
 - **Some camera-specific metadata** may not carry over in Re-encode (Lossless keeps everything).
-- **Keep the app open while exporting**; the screen stays on automatically.
+- **Lossless trims start on a keyframe,** usually under a second before your in-point (re-encoding is the
+  only way to cut on an exact frame). A trimmed Lossless file is rewritten as MP4, so camera-specific
+  metadata may not carry over; the video and audio data stay untouched.
+- **Background exports** rely on a notification. Some phones' battery savers can still stop them; if that
+  happens, allow De-Squeeze to run in the background in Android's battery settings.
 
 ## Privacy
 
@@ -230,6 +248,10 @@ Listing text, data-safety answers, the 512 px icon and the feature graphic are i
 | Decode / encode | Android MediaCodec (hardware) via [AndroidX Media3 Transformer](https://developer.android.com/media/media3/transformer), with encoder-size fitting checked against the codec's own capabilities |
 | De-squeeze (Re-encode) | OpenGL ES effects: rotation (for orientation overrides) and `Presentation` stretch-to-fit |
 | LUT | Media3 `SingleColorLut` (3D LUT on the GPU); strength is blended into the LUT table. The before/after still uses an equivalent CPU trilinear LUT, matching ffmpeg's `lut3d` to within 1/255 |
+| Trim | Re-encode: Media3 clipping (frame-exact). Lossless: samples copied from the nearest keyframe with `MediaExtractor`/`MediaMuxer`, then tagged; no decoding |
+| Social formats | A second `Presentation` effect fits (letterbox) or fills (crop) the de-squeezed picture into the target frame |
+| Exposure tools | Histogram, IRE waveform and false color computed from a small frame at the playhead (with the LUT applied when it's on) |
+| Background export | A foreground service (`mediaProcessing` on Android 15+, `dataSync` before) that only shows progress; the export itself runs in an app-wide scope |
 | Audio | Passed through unchanged (no re-encode) |
 | Preview | ExoPlayer; live LUT and rotation use Media3 video effects on a ~720p proxy |
 | UI | Jetpack Compose, Material 3 |
@@ -241,7 +263,7 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 
 | File | Purpose |
 |---|---|
-| `MainActivity.kt` | App entry, navigation, shared UI components, export runner |
+| `MainActivity.kt` | App entry, navigation, share handling, shared UI components, export runner |
 | `Steps.kt` | The four-step flow (Clips, Frame, Look, Export), tag protection, compatibility card, pre-export check |
 | `AppState.kt` | State that survives navigation (clips, per-clip squeeze and methods, choices) |
 | `Geometry.kt` | Orientation + desqueeze direction resolved into rotation, output size and pixel aspect |
@@ -250,6 +272,10 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `VideoProbe.kt`, `FootageAnalyzer.kt` | Clip analysis: log, HDR, bit depth, chroma, color, camera |
 | `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
 | `PreviewPlayer.kt`, `Frames.kt`, `Guides.kt` | Preview, live LUT, before/after still, filmstrip; still frames; framing guides |
+| `Formats.kt` | Social formats: target sizes, fit/fill, how much is kept |
+| `LosslessTrim.kt` | Keyframe trim without re-encoding |
+| `Scopes.kt` | Histogram, waveform and false-color math |
+| `ExportService.kt` | Background export: foreground service and notifications |
 | `Compat.kt`, `Recommend.kt`, `Estimates.kt` | Compatibility check, recommendations, size/time estimates |
 | `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and Device diagnostics |
 | `LutManager.kt` | `.cube` parsing and the LUT library |

@@ -54,3 +54,15 @@ FEATURES
 - New personal developer accounts must currently run a **closed test with at least 12 testers for 14 days** before they can publish to production. Check the Play Console for the current rule.
 - Enrol in **Play App Signing** (the default). Upload the `.aab`; Google re-signs it. `signing/release.p12` (with the password in your `KEYSTORE_PASSWORD` secret) becomes your *upload key*. Keep the backup safe; if it's ever lost, Google can reset an upload key.
 - Every release raises `versionCode` automatically with each new version.
+
+## Foreground service declaration (required)
+From v1.9 the app uses a foreground service so exports continue in the background. In Play Console,
+**App content → Foreground service permissions**, declare:
+
+| Permission | Type | Explanation to give Google |
+|---|---|---|
+| `FOREGROUND_SERVICE_MEDIA_PROCESSING` | Media processing | Transcodes (re-encodes) or rewrites the user's selected video files on the device after the user taps Export, showing progress in a notification. Stops when the export finishes or the user taps Cancel. |
+| `FOREGROUND_SERVICE_DATA_SYNC` | Data sync (Android 14 only) | Same export task on Android 14, which has no media-processing type. |
+
+Google asks for a short video of the feature: record the screen while starting an export, switching
+to another app, and showing the progress notification.
