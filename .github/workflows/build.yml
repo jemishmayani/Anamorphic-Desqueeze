@@ -31,9 +31,12 @@ jobs:
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           cp app/build/outputs/apk/release/*.apk "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk"
+          # Release notes = this version's section of CHANGELOG.md (heading line excluded) + install footer
+          awk -v tag="$GITHUB_REF_NAME" '/^## /{p=($2==tag); next} p' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "See [CHANGELOG.md](https://github.com/jemishmayani/Anamorphic-Desqueeze/blob/main/CHANGELOG.md)." > notes.md; fi
+          cat .github/release-footer.md >> notes.md
           gh release create "$GITHUB_REF_NAME" "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" \
-            --title "Anamorphic De-Squeeze ${GITHUB_REF_NAME}" \
-            --notes "Download the .apk below, open it on your Android phone and allow installing from unknown sources. Requires Android 10+."
+            --title "Anamorphic De-Squeeze ${GITHUB_REF_NAME}" --notes-file notes.md
       - name: Save log on failure
         if: failure()
         run: |
