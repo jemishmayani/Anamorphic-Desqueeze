@@ -29,3 +29,5 @@ class Settings(ctx: Context) {
     var formatFill: Boolean get() = p.getBoolean("formatFill", false); set(v) = p.edit().putBoolean("formatFill", v).apply()
     var notifAsked: Boolean get() = p.getBoolean("notifAsked", false); set(v) = p.edit().putBoolean("notifAsked", v).apply()
 }
+
+fun fmtSqueeze(f: Float): String = (if (f * 100 % 10 == 0f) "%.1f" else "%.2f").format(f) + "×"

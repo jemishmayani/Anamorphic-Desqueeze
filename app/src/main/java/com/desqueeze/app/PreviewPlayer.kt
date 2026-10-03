@@ -71,7 +71,7 @@ fun PreviewPlayer(
     /** Loop playback inside this range (ms) and shade the rest of the timeline. */
     trim: Pair<Long, Long>? = null,
     /** Exposure tool shown with the video. */
-    scope: Scope = Scope.OFF,
+    exposure: Scope = Scope.OFF,
     /** Keeps the whole preview on screen in landscape / two-pane layouts. */
     maxHeight: androidx.compose.ui.unit.Dp? = null,
     onTrimChange: ((Pair<Long, Long>) -> Unit)? = null,
@@ -163,17 +163,17 @@ fun PreviewPlayer(
     val videoMod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
 
     // Exposure tools read small frames from a TextureView (only while a tool is on).
-    val useTexture = scope != Scope.OFF
+    val useTexture = exposure != Scope.OFF
     var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
     var stats by remember { mutableStateOf<ScopeMath.Stats?>(null) }
     var wave by remember { mutableStateOf<Array<FloatArray>?>(null) }
     var falseImg by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(scope, texture, player) {
+    LaunchedEffect(exposure, texture, player) {
         stats = null; wave = null; falseImg = null
         val tv = texture ?: return@LaunchedEffect
-        if (scope == Scope.OFF) return@LaunchedEffect
+        if (exposure == Scope.OFF) return@LaunchedEffect
         while (true) {
-            val w = if (scope == Scope.FALSE_COLOR) 320 else 192
+            val w = if (exposure == Scope.FALSE_COLOR) 320 else 192
             val h = maxOf(2, (w / frame).toInt())
             val bmp = try { if (tv.isAvailable) tv.getBitmap(w, h) else null } catch (_: Throwable) { null }
             if (bmp != null) {
@@ -181,8 +181,8 @@ fun PreviewPlayer(
                 val bw = bmp.width; val bh = bmp.height; bmp.recycle()
                 withContext(Dispatchers.Default) {
                     val s = ScopeMath.stats(px)
-                    val wf = if (scope == Scope.WAVEFORM) ScopeMath.waveform(px, bw, bh) else null
-                    val fc = if (scope == Scope.FALSE_COLOR) Bitmap.createBitmap(ScopeMath.falseColor(px), bw, bh, Bitmap.Config.ARGB_8888).asImageBitmap() else null
+                    val wf = if (exposure == Scope.WAVEFORM) ScopeMath.waveform(px, bw, bh) else null
+                    val fc = if (exposure == Scope.FALSE_COLOR) Bitmap.createBitmap(ScopeMath.falseColor(px), bw, bh, Bitmap.Config.ARGB_8888).asImageBitmap() else null
                     Triple(s, wf, fc)
                 }.let { (s, wf, fc) -> stats = s; wave = wf; falseImg = fc }
             }
@@ -220,7 +220,7 @@ fun PreviewPlayer(
                     } }, modifier = videoMod)
                 }
             }
-            if (scope == Scope.FALSE_COLOR) falseImg?.let { Image(it, "False color", videoMod, contentScale = ContentScale.FillBounds) }
+            if (exposure == Scope.FALSE_COLOR) falseImg?.let { Image(it, "False color", videoMod, contentScale = ContentScale.FillBounds) }
             GuideOverlay(guides, videoMod)
 
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
@@ -250,7 +250,7 @@ fun PreviewPlayer(
 
             compare?.let { (before, after) -> CompareOverlay(before, after, ratio) { compare = null } }
         }
-        if (scope != Scope.OFF) ScopePanel(scope, stats, wave)
+        if (exposure != Scope.OFF) ScopePanel(exposure, stats, wave)
         FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
     }
     }

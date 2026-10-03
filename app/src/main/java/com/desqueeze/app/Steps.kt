@@ -309,7 +309,7 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
         ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + (if (st.trimFor(clip) != null) "  · trimmed" else "") + if (existingTag(clip) != null) "  · tagged" else "" }
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio)
-            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = st.trimFor(v), scope = st.scope, maxHeight = previewMax)
+            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = st.trimFor(v), exposure = st.scope, maxHeight = previewMax)
         }
         ViewToggle(st.desqueezed) { st.desqueezed = it }
         TrimSection(st, v, memory)
@@ -479,7 +479,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     key(v.uri) {
         if (st.busy) ExportingPlaceholder(g.outRatio)
         else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
-            guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), scope = st.scope, maxHeight = previewMax)
+            guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, maxHeight = previewMax)
     }
     ExposureSection(st)
     }, right = {
@@ -550,15 +550,15 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     }
     fun setMode(m: ExportMode) { st.clipModes[key] = m }
 
+    val compat by produceState<CompatReport?>(null, key, mode, *deps, st.keepHdrSetting) {
+        value = withContext(Dispatchers.Default) { compatFor(st, exporter, v, mode) }
+    }
     TwoPane(panes, left = {
     ClipSwitcher(st) { clip -> if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" else "Re-encode" + if (st.format != OutFormat.ORIGINAL) " ${st.format.short}" else "" }
 
     recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { setMode(it) } }
         ?: LinearProgressIndicator(Modifier.fillMaxWidth())
 
-    val compat by produceState<CompatReport?>(null, key, mode, *deps, st.keepHdrSetting) {
-        value = withContext(Dispatchers.Default) { compatFor(st, exporter, v, mode) }
-    }
 
     Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
         MethodToggle(mode, enabled = !st.busy) { setMode(it) }
