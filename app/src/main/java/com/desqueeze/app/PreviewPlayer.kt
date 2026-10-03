@@ -67,6 +67,7 @@ class PlayheadMemory { var positionMs = 0L; var playing = true }
 fun PreviewPlayer(
     v: VideoInfo, g: Geometry, desqueezed: Boolean, memory: PlayheadMemory,
     lut: LutManager.CubeLut? = null, lutStrength: Float = 1f, lutOn: Boolean = false,
+    guides: Guides = Guides(), compareRequest: Int = 0,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -142,6 +143,12 @@ fun PreviewPlayer(
         }
     }
 
+    // "Before / After" button outside the video asks for the full-quality compare still.
+    val seenRequest = remember { mutableIntStateOf(compareRequest) }
+    LaunchedEffect(compareRequest) {
+        if (compareRequest != seenRequest.intValue) { seenRequest.intValue = compareRequest; if (lut != null) startCompare() }
+    }
+
     val frame = ratio.coerceIn(0.8f, 4f)
     val videoMod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -165,6 +172,7 @@ fun PreviewPlayer(
                     setShutterBackgroundColor(AColor.BLACK); setKeepContentOnPlayerReset(true)
                 } }, modifier = videoMod)
             }
+            GuideOverlay(guides, videoMod)
 
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))).padding(12.dp),

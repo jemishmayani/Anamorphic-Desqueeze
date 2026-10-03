@@ -10,6 +10,18 @@ import kotlinx.coroutines.Job
 
 enum class Screen { Main, Settings, Limits, Luts }
 
+/** Double Desqueeze Protection: what to do with a clip that is already tagged as anamorphic. */
+enum class TagPolicy(val label: String, val detail: String) {
+    KEEP("Keep existing", "Use the file's own factor and ignore the one picked here."),
+    REPLACE("Replace tag", "Use the factor picked here instead of the file's."),
+    FORCE("Force anyway", "Apply the factor picked here on top of the existing one."),
+}
+
+/** Existing non-square pixel-aspect tag of a clip, as a squeeze factor (e.g. 1.33), or null. */
+fun existingTag(v: VideoInfo): Float? = v.footage.pixelAspect?.let { (h, w) ->
+    if (h <= 0 || w <= 0 || h == w) null else maxOf(h, w).toFloat() / minOf(h, w)
+}
+
 /** The sequential flow on the main screen. */
 enum class Step(val label: String) { Clips("Clips"), Frame("Frame"), Look("Look"), Export("Export") }
 
@@ -18,7 +30,40 @@ class AppState(settings: Settings, luts: LutManager) {
     var screen by mutableStateOf(Screen.Main)
     var videos by mutableStateOf(listOf<VideoInfo>())
     var selected by mutableIntStateOf(0)
-    var squeeze by mutableFloatStateOf(settings.defaultSqueeze)
+    /** Squeeze given to clips added from now on (the default, or the last factor picked). */
+    var newClipSqueeze by mutableFloatStateOf(settings.defaultSqueeze)
+    /** Each clip's own squeeze factor, keyed by uri: different adapters can be mixed in one batch. */
+    val clipSqueeze = mutableStateMapOf<String, Float>()
+    /** What to do when a clip already carries a pixel-aspect tag (keyed by uri). Missing = not decided yet. */
+    val tagPolicy = mutableStateMapOf<String, TagPolicy>()
+    var guides by mutableStateOf(settings.guides)
+    var keepHdrSetting by mutableStateOf(settings.keepHdr)
+    /** Asks the preview to open the full-quality before/after still. */
+    var compareRequest by mutableIntStateOf(0)
+    /** Issues found right before export, awaiting "Export anyway" / "Review". */
+    var preflight by mutableStateOf<List<Pair<String, CompatReport>>?>(null)
+
+    fun keyOf(v: VideoInfo) = v.uri.toString()
+    fun squeezeFor(v: VideoInfo) = clipSqueeze[keyOf(v)] ?: newClipSqueeze
+
+    /** Squeeze for the selected clip. Setting it changes only that clip. */
+    var squeeze: Float
+        get() = videos.getOrNull(selected)?.let { squeezeFor(it) } ?: newClipSqueeze
+        set(value) {
+            videos.getOrNull(selected)?.let { clipSqueeze[keyOf(it)] = value }
+            newClipSqueeze = value
+        }
+
+    /** The factor actually applied, after deciding what to do with an existing tag. */
+    fun effectiveSqueeze(v: VideoInfo): Float {
+        val chosen = squeezeFor(v)
+        val existing = existingTag(v) ?: return chosen
+        return when (tagPolicy[keyOf(v)]) {
+            TagPolicy.KEEP -> existing
+            TagPolicy.FORCE -> existing * chosen
+            else -> chosen // REPLACE, or not decided yet (warned about before export)
+        }
+    }
     /** True once the user picks a factor; imports then keep it instead of applying the default. */
     var squeezeChosen by mutableStateOf(false)
     var customSqueeze by mutableStateOf(false)

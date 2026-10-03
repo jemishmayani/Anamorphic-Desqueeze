@@ -13,6 +13,7 @@ val PRESETS = listOf(1.2f, 1.33f, 1.5f, 1.55f, 1.6f, 1.8f, 2.0f)
 
 class Settings(ctx: Context) {
     private val p = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    var guides: Guides get() = Guides.decode(p.getString("guides", null)); set(v) = p.edit().putString("guides", v.encode()).apply()
     var defaultSqueeze: Float get() = p.getFloat("squeeze", 1.33f); set(v) = p.edit().putFloat("squeeze", v).apply()
     var quality: Quality get() = Quality.valueOf(p.getString("quality", Quality.HIGH.name)!!); set(v) = p.edit().putString("quality", v.name).apply()
     var codec: Codec get() = Codec.valueOf(p.getString("codec", Codec.HEVC.name)!!); set(v) = p.edit().putString("codec", v.name).apply()

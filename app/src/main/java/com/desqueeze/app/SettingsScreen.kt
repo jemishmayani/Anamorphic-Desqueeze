@@ -163,7 +163,7 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                 val isPreset = PRESETS.any { kotlin.math.abs(it - s.defaultSqueeze) < 0.001f }
                 SettingChoiceRow(AppIcons.Aspect, "Default squeeze", "Used for new clips", fmtSqueeze(s.defaultSqueeze) + if (isPreset) "" else " (custom)",
                     PRESETS.map { fmtSqueeze(it) } + "Custom value…") {
-                    if (it < PRESETS.size) { s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.squeeze = PRESETS[it]; refresh() } else customDefault = true
+                    if (it < PRESETS.size) { s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.newClipSqueeze = PRESETS[it]; refresh() } else customDefault = true
                 }
                 val methodLabels = listOf("Recommended per clip", "Always Lossless", "Always Re-encode")
                 val methodIdx = if (s.followRecommendation) 0 else if (s.mode == ExportMode.LOSSLESS) 1 else 2
@@ -180,8 +180,8 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     s.quality = Quality.entries[it]; st.quality = s.quality; refresh() }
                 SettingChoiceRow(AppIcons.Codec, "Codec", if (Exporter.hasEncoder("video/hevc")) "HEVC is smaller at the same quality" else "No HEVC encoder on this phone",
                     if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; st.codec = s.codec; refresh() }
-                SettingRow(AppIcons.Hdr, "Keep HDR", "10-bit output for HLG / HDR10 clips", tint = Warm, onClick = { s.keepHdr = !s.keepHdr; refresh() },
-                    trailing = { Switch(s.keepHdr, { s.keepHdr = it; refresh() }) })
+                SettingRow(AppIcons.Hdr, "Keep HDR", "10-bit output for HLG / HDR10 clips", tint = Warm, onClick = { s.keepHdr = !s.keepHdr; st.keepHdrSetting = s.keepHdr; refresh() },
+                    trailing = { Switch(s.keepHdr, { s.keepHdr = it; st.keepHdrSetting = it; refresh() }) })
                 SettingRow(AppIcons.Info, "Preserve metadata", "Rotation, frame rate and original audio", divider = false,
                     onClick = { s.preserveMeta = !s.preserveMeta; refresh() }, trailing = { Switch(s.preserveMeta, { s.preserveMeta = it; refresh() }) })
             }
@@ -233,7 +233,7 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
     }
 
     if (customDefault) SqueezeDialog(s.defaultSqueeze, onDismiss = { customDefault = false }) { value ->
-        s.defaultSqueeze = value; if (!st.squeezeChosen) st.squeeze = value; customDefault = false; refresh()
+        s.defaultSqueeze = value; if (!st.squeezeChosen) st.newClipSqueeze = value; customDefault = false; refresh()
     }
     if (folderDialog) {
         var name by remember { mutableStateOf(s.folder) }

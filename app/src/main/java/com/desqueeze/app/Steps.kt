@@ -57,13 +57,16 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
             if (!append) { st.selected = 0; memory.positionMs = 0 }
             st.results = emptyList()
             // Keep the factor the user already chose; only fall back to the saved default if they haven't.
-            if (!st.squeezeChosen) st.squeeze = settings.defaultSqueeze
+            if (!st.squeezeChosen) st.newClipSqueeze = settings.defaultSqueeze
+            // New clips get the current factor; clips already in the list keep their own.
+            found.forEach { st.clipSqueeze.putIfAbsent(st.keyOf(it), st.newClipSqueeze) }
             st.status = errs.joinToString("\n")
         }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { importClips(it, append = false) }
     val adder = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { importClips(it, append = true) }
 
+    PreflightDialog(st) { startExport(act, st, exporter) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { StepBar(act, st, exporter) },
@@ -89,7 +92,7 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                     verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     when (step) {
                         Step.Clips -> ClipsStep(st, onPick = { picker.launch(arrayOf("video/*")) }, onAdd = { adder.launch(arrayOf("video/*")) })
-                        Step.Frame -> FrameStep(st, memory)
+                        Step.Frame -> FrameStep(st, memory, settings)
                         Step.Look -> LookStep(st, luts, memory)
                         Step.Export -> ExportStep(st, settings, exporter)
                     }
@@ -150,7 +153,15 @@ fun StepBar(act: MainActivity, st: AppState, exporter: Exporter) {
                     Modifier.height(56.dp), shape = RoundedCornerShape(16.dp)) { Text("Back") }
                 val last = st.step == Step.Export
                 Button(
-                    onClick = { if (last) startExport(act, st, exporter) else st.step = Step.entries[st.step.ordinal + 1] },
+                    onClick = {
+                        if (!last) st.step = Step.entries[st.step.ordinal + 1]
+                        else act.lifecycleScope.launch {
+                            val issues = withContext(Dispatchers.Default) {
+                                st.videos.map { it.name to compatFor(st, exporter, it, modeFor(st, exporter, it)) }.filter { it.second.issues.isNotEmpty() }
+                            }
+                            if (issues.isEmpty()) startExport(act, st, exporter) else st.preflight = issues
+                        }
+                    },
                     enabled = hasClips, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(16.dp),
                 ) {
                     Text(when {
@@ -259,25 +270,41 @@ fun ClipSwitcher(st: AppState, caption: ((VideoInfo) -> String?)? = null) {
 /* ------------------------------------------------------------------ 2. Frame */
 
 @Composable
-fun FrameStep(st: AppState, memory: PlayheadMemory) {
+fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings) {
     val v = st.videos.getOrNull(st.selected) ?: return
-    val g = geometry(v, st.squeeze, st.orientation, st.direction)
-    ClipSwitcher(st)
-    key(v.uri) { if (st.busy) ExportingPlaceholder(g.outRatio) else PreviewPlayer(v, g, st.desqueezed, memory) }
+    val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
+    val c = MaterialTheme.colorScheme
+    ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + if (existingTag(clip) != null) "  · tagged" else "" }
+    key(v.uri) { if (st.busy) ExportingPlaceholder(g.outRatio) else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides) }
     ViewToggle(st.desqueezed) { st.desqueezed = it }
 
-    Section("Squeeze factor", trailing = {
-        Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono), color = MaterialTheme.colorScheme.primary)
+    Section(if (st.videos.size > 1) "Squeeze factor for clip ${st.selected + 1}" else "Squeeze factor", trailing = {
+        Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
     }) {
         SqueezeChips(st)
+        if (st.videos.size > 1) {
+            val allSame = st.videos.all { kotlin.math.abs(st.squeezeFor(it) - st.squeeze) < 0.001f }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Text(if (allSame) "All clips use ${fmtSqueeze(st.squeeze)}." else "Clips use different factors, e.g. for different adapters.",
+                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
+                if (!allSame) TextButton(onClick = { val f = st.squeeze; st.videos.forEach { st.clipSqueeze[st.keyOf(it)] = f } }, enabled = !st.busy) {
+                    Text("Apply ${fmtSqueeze(st.squeeze)} to all")
+                }
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text("${g.dispW} × ${g.dispH}  displays as  ${g.outW} × ${g.outH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-        Text("${g.ratioLabel()}. Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${g.ratioLabel()}. Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
     }
 
-    if (st.videos.size > 1) Text("Squeeze, orientation and direction apply to all ${st.videos.size} clips.",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
+
+    Section("Guides") {
+        GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it }
+    }
+
+    if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
+        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
     Section("Orientation") {
         Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
     }
@@ -285,10 +312,49 @@ fun FrameStep(st: AppState, memory: PlayheadMemory) {
         Segmented(Direction.entries.map { it.label }, st.direction.ordinal, enabled = !st.busy) { st.direction = Direction.entries[it] }
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {
-            Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
             Spacer(Modifier.width(8.dp))
             Text(directionHint(v, g, st.orientation, st.direction) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        }
+    }
+}
+
+/** Double Desqueeze Protection: the clip already says it's anamorphic. */
+@Composable
+fun TagProtectionCard(st: AppState, v: VideoInfo, tag: Float) {
+    val c = MaterialTheme.colorScheme
+    val key = st.keyOf(v)
+    val policy = st.tagPolicy[key]
+    val picked = st.squeezeFor(v)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Warm.copy(alpha = 0.10f))
+        .border(1.dp, Warm.copy(alpha = if (policy == null) 0.8f else 0.35f), RoundedCornerShape(16.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(AppIcons.Warn, null, Modifier.size(18.dp), tint = Warm)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("This video already contains a ${fmtSqueeze(tag)} desqueeze tag.", style = MaterialTheme.typography.titleSmall)
+                Text(if (policy == null) "Applying ${fmtSqueeze(picked)} on top would stretch it to ${fmtSqueeze(tag * picked)}. Choose what to do:"
+                     else "Chosen: ${policy.label}. Exports as ${fmtSqueeze(st.effectiveSqueeze(v))}.",
+                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            }
+        }
+        TagPolicy.entries.forEach { p ->
+            val sel = policy == p
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(if (sel) c.primary.copy(alpha = 0.12f) else c.surfaceContainer)
+                .border(1.dp, if (sel) c.primary.copy(alpha = 0.6f) else c.outlineVariant, RoundedCornerShape(12.dp))
+                .clickable(enabled = !st.busy) { st.tagPolicy[key] = p }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.label + when (p) {
+                        TagPolicy.KEEP -> " (${fmtSqueeze(tag)})"; TagPolicy.REPLACE -> " (${fmtSqueeze(picked)})"
+                        TagPolicy.FORCE -> " (${fmtSqueeze(tag * picked)})" }, style = MaterialTheme.typography.bodyMedium)
+                    Text(p.detail, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                }
+                if (sel) Icon(AppIcons.Check, "Selected", Modifier.size(18.dp), tint = c.primary)
+            }
         }
     }
 }
@@ -310,7 +376,7 @@ fun Segmented(options: List<String>, selected: Int, enabled: Boolean = true, onS
 fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
     val ctx = LocalContext.current
     val v = st.videos.getOrNull(st.selected) ?: return
-    val g = geometry(v, st.squeeze, st.orientation, st.direction)
+    val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
     val cube by produceState<LutManager.CubeLut?>(null, st.lutId) {
         value = st.lutId?.let { id -> withContext(Dispatchers.IO) { try { luts.load(id) } catch (_: Exception) { null } } }
     }
@@ -323,7 +389,8 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
     ClipSwitcher(st)
     key(v.uri) {
         if (st.busy) ExportingPlaceholder(g.outRatio)
-        else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview)
+        else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
+            guides = st.guides, compareRequest = st.compareRequest)
     }
 
     Section("LUT") {
@@ -340,10 +407,23 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
                 Segmented(listOf("LUT off", "LUT on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Strength", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Text("${(st.strength * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium.merge(Mono))
+                    Text("${(st.strength * 100).toInt()}%", style = MaterialTheme.typography.titleMedium.merge(Mono), color = MaterialTheme.colorScheme.primary)
                 }
                 Slider(st.strength, { st.strength = it }, enabled = !st.busy)
-                Text("The live preview uses a lighter ~720p proxy so it plays smoothly. Tap Compare on the video for a full-quality before/after still. " +
+                Row(Modifier.fillMaxWidth()) {
+                    listOf(0f to "0%", 0.5f to "50%", 1f to "100%").forEachIndexed { i, (value, label) ->
+                        if (i > 0) Spacer(Modifier.weight(1f))
+                        Text(label, style = MaterialTheme.typography.labelMedium.merge(Mono),
+                            color = if (kotlin.math.abs(st.strength - value) < 0.005f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { st.strength = value }
+                                .padding(horizontal = 6.dp, vertical = 4.dp))
+                    }
+                }
+                OutlinedButton(onClick = { st.compareRequest++ }, enabled = !st.busy && cube != null,
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                    Text("Before / After at full quality")
+                }
+                Text("What you see is what you export. The live preview plays at a lighter ~720p so it stays smooth; Before / After shows a full-quality frame with a slider. " +
                     "LUTs are only applied in Re-encode, so clips are now recommended for Re-encode.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -361,7 +441,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
     val key = v.uri.toString()
-    val deps = arrayOf<Any?>(st.videos, st.squeeze, st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap())
+    val deps = arrayOf<Any?>(st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap())
     val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
@@ -372,7 +452,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
     val est by produceState<Map<String, Estimate>?>(null, *deps) {
         value = withContext(Dispatchers.Default) {
             st.videos.associate { clip ->
-                clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.squeeze, st.orientation, st.direction), modes[clip.uri.toString()] ?: st.mode)
+                clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.effectiveSqueeze(clip), st.orientation, st.direction), modes[clip.uri.toString()] ?: st.mode)
             }
         }
     }
@@ -382,6 +462,11 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
 
     recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { setMode(it) } }
         ?: LinearProgressIndicator(Modifier.fillMaxWidth())
+
+    val compat by produceState<CompatReport?>(null, key, mode, *deps, st.keepHdrSetting) {
+        value = withContext(Dispatchers.Default) { compatFor(st, exporter, v, mode) }
+    }
+    compat?.let { CompatibilityCard(it) }
 
     Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
         MethodToggle(mode, enabled = !st.busy) { setMode(it) }
@@ -440,6 +525,59 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
         }
     }
     AnimatedVisibility(st.results.isNotEmpty()) { Results(st.results, settings.folder) }
+}
+
+@Composable
+fun CompatibilityCard(r: CompatReport) {
+    val c = MaterialTheme.colorScheme
+    val tint = when (r.worst) { Status.OK -> Color(0xFF5BD68A); Status.WARN -> Warm; Status.NO -> c.error }
+    Section("Compatibility", trailing = { StatusIcon(r.worst, 20) }) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surfaceContainer)
+            .border(1.dp, if (r.worst == Status.OK) c.outlineVariant else tint.copy(alpha = 0.6f), RoundedCornerShape(16.dp)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            r.rows.filter { it.first != "Result" }.forEach { (k, value) ->
+                Column {
+                    Text(k, style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
+                    Text(value, style = MaterialTheme.typography.bodyMedium.merge(Mono))
+                }
+            }
+            HorizontalDivider(color = c.outlineVariant)
+            Text("Result", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
+            if (r.issues.isEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusIcon(Status.OK); Spacer(Modifier.width(8.dp)); Text("Ready. No problems found.", style = MaterialTheme.typography.bodyMedium)
+            }
+            r.issues.sortedByDescending { it.first.ordinal }.forEach { (status, text) ->
+                Row(verticalAlignment = Alignment.Top) {
+                    StatusIcon(status); Spacer(Modifier.width(8.dp)); Text(text, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+/** Shown when Export is pressed and some clips have warnings: nothing starts until you confirm. */
+@Composable
+fun PreflightDialog(st: AppState, onExport: () -> Unit) {
+    val list = st.preflight ?: return
+    AlertDialog(
+        onDismissRequest = { st.preflight = null },
+        icon = { Icon(AppIcons.Warn, null, tint = Warm) },
+        title = { Text("Check before exporting") },
+        text = {
+            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                list.forEach { (name, r) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        r.issues.sortedByDescending { it.first.ordinal }.forEach { (status, text) ->
+                            Row(verticalAlignment = Alignment.Top) { StatusIcon(status, 16); Spacer(Modifier.width(6.dp)); Text(text, style = MaterialTheme.typography.bodySmall) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { st.preflight = null; onExport() }) { Text("Export anyway") } },
+        dismissButton = { TextButton(onClick = { st.preflight = null; st.step = Step.Export }) { Text("Review") } },
+    )
 }
 
 @Composable

@@ -248,10 +248,10 @@ fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
         list.forEachIndexed { i, vid ->
             st.status = (if (modeFor(st, exporter, vid) == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
             try {
-                val j = ExportJob(vid, st.squeeze, st.lutId, st.strength, st.orientation, st.direction)
+                val j = ExportJob(vid, st.effectiveSqueeze(vid), st.lutId, st.strength, st.orientation, st.direction)
                 val main = android.os.Handler(android.os.Looper.getMainLooper())
                 val prog: (Int) -> Unit = { p -> main.post { st.progress = (i + p / 100f) / list.size } }
-                Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${modeFor(st, exporter, vid)}, squeeze=${st.squeeze}, lut=${st.lutId != null}")
+                Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${modeFor(st, exporter, vid)}, squeeze=${st.effectiveSqueeze(vid)} (picked ${st.squeezeFor(vid)}, tag ${existingTag(vid)}, ${st.tagPolicy[st.keyOf(vid)]}), lut=${st.lutId != null}")
                 val m = modeFor(st, exporter, vid)
                 val r = if (m == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
                 log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
