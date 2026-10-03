@@ -10,8 +10,8 @@ android {
         applicationId = "com.desqueeze.app"
         minSdk = 29          // Android 10+: needed for reliable 10-bit HEVC
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
     }
     buildTypes {
         release {

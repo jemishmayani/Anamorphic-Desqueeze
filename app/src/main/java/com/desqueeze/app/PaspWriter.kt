@@ -40,15 +40,18 @@ object PaspWriter {
 
     fun write(ctx: Context, src: Uri, out: OutputStream, squeeze: Float, onProgress: (Int) -> Unit) {
         val pfd = ctx.contentResolver.openFileDescriptor(src, "r") ?: throw IllegalArgumentException("Can't open the source file.")
-        pfd.use {
-            FileInputStream(it.fileDescriptor).channel.use { ch ->
+        // AutoCloseInputStream owns the descriptor, so it is closed exactly once (Android aborts on double close).
+        run {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).channel.use { ch ->
                 val boxes = topLevel(ch)
+                Diag.step("Boxes: " + boxes.joinToString { "${it.type}@${it.offset}+${it.size}" }.take(400))
                 val moov = boxes.firstOrNull { b -> b.type == "moov" } ?: throw IllegalArgumentException("Not an MP4/MOV file (no moov box).")
                 require(moov.size < 256L * 1024 * 1024) { "File header is unusually large." }
                 val firstMdat = boxes.firstOrNull { b -> b.type == "mdat" }
                 val moovBytes = readFully(ch, moov.offset, moov.size.toInt())
                 val patched = patchMoov(moovBytes, squeeze, moovBeforeMdat = firstMdat != null && moov.offset < firstMdat.offset)
 
+                Diag.step("Header patched: ${moovBytes.size} -> ${patched.size} bytes; copying")
                 val total = boxes.sumOf { b -> b.size }.coerceAtLeast(1)
                 var done = 0L
                 val buf = ByteBuffer.allocate(4 shl 20)

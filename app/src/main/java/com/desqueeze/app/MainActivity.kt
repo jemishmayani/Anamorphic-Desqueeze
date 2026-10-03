@@ -61,13 +61,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val settings = Settings(this); val luts = LutManager(this)
         val state = AppState(settings, luts)
+        Diag.init(this)
         val crashFile = java.io.File(filesDir, "last_crash.txt")
-        if (crashFile.exists()) { state.crashLog = crashFile.readText(); crashFile.delete() }
+        if (crashFile.exists()) { state.crashLog = crashFile.readText(); crashFile.delete(); Diag.previousExit(this) }
+        else state.crashLog = Diag.previousExit(this)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
-                crashFile.writeText("Version ${packageManager.getPackageInfo(packageName, 0).versionName}, " +
-                    "${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}\n\n" + e.stackTraceToString().take(6000))
+                crashFile.writeText(Diag.header(this) + "\n\nThread: ${t.name}\n\nLast export steps:\n" + Diag.lastSteps() +
+                    "\n\n" + e.stackTraceToString().take(6000))
             } catch (_: Throwable) {}
             previous?.uncaughtException(t, e)
         }
@@ -148,7 +150,8 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
             val v = st.videos.getOrNull(st.selected)
             if (v == null) EmptyPreview(pick) else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Preview(v, if (st.desqueezed) st.squeeze else 1f)
+                    if (st.busy) ExportingPlaceholder(v, if (st.desqueezed) st.squeeze else 1f)
+                    else Preview(v, if (st.desqueezed) st.squeeze else 1f)
                     ViewToggle(st.desqueezed) { st.desqueezed = it }
                     ClipInfo(st, v, enabled = !st.busy, onChange = pick)
                 }
@@ -224,6 +227,20 @@ fun Section(title: String, trailing: (@Composable () -> Unit)? = null, content: 
         }
         content()
     }
+
+@Composable
+fun ExportingPlaceholder(v: VideoInfo, factor: Float) {
+    val ratio = v.displayW * factor / v.displayH
+    Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(20.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainer), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            FlareLine(Modifier.width(160.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("Preview paused while exporting", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
 @Composable
 fun EmptyPreview(onPick: () -> Unit) {
@@ -394,17 +411,23 @@ fun ExportBar(act: MainActivity, st: AppState, exporter: Exporter, settings: Set
 
 fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
     val list = st.videos; act.keepScreenOn(true); st.busy = true; st.progress = 0f; st.results = emptyList(); st.status = ""
+    Diag.start()
     st.job = act.lifecycleScope.launch {
         val log = mutableListOf<String>()
         list.forEachIndexed { i, vid ->
             st.status = (if (st.mode == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
             try {
                 val j = ExportJob(vid, st.squeeze, st.lutId, st.strength)
-                val prog: (Int) -> Unit = { p -> st.progress = (i + p / 100f) / list.size }
+                val main = android.os.Handler(android.os.Looper.getMainLooper())
+                val prog: (Int) -> Unit = { p -> main.post { st.progress = (i + p / 100f) / list.size } }
+                Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${st.mode}, squeeze=${st.squeeze}, lut=${st.lutId != null}")
                 val r = if (st.mode == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
                 log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
             } catch (e: CancellationException) { throw e
-            } catch (e: Exception) { log += "✗  ${vid.name}\n    ${e.message}" }
+            } catch (e: Throwable) {
+                Diag.step("FAILED: ${e.javaClass.simpleName}: ${e.message}")
+                log += "✗  ${vid.name}\n    ${e.message ?: e.javaClass.simpleName}"
+            }
         }
         st.results = log; st.status = ""; st.busy = false; act.keepScreenOn(false)
     }

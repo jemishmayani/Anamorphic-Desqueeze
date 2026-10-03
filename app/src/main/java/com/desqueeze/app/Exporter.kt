@@ -76,13 +76,16 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         add(MimeTypes.VIDEO_H264, 1920, "Saved at reduced size because larger sizes were refused by this phone.")
 
         var lastError: ExportFailure? = null
+        Diag.step("Re-encode plan: " + attempts.joinToString { "${it.mime.removePrefix("video/")} ${it.w}x${it.h}" })
         for ((i, a) in attempts.withIndex()) {
             try {
+                Diag.step("Attempt ${i + 1}: ${a.mime} ${a.w}x${a.h}")
                 runOnce(job, a, onProgress)
                 return ExportResult(outName(job), a.w, a.h,
                     listOfNotNull(a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
                         .joinToString(" ").ifEmpty { null })
             } catch (e: ExportFailure) {
+                Diag.step("Attempt ${i + 1} failed: ${e.message?.replace("\n", " ")}")
                 lastError = e
                 if (!e.retriable) throw e
                 onProgress(0)
@@ -95,9 +98,11 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
     suspend fun exportLossless(job: ExportJob, onProgress: (Int) -> Unit): ExportResult = withContext(Dispatchers.IO) {
         val ext = job.video.name.substringAfterLast('.', "mp4").lowercase().let { if (it == "mov") "mov" else "mp4" }
         val name = outName(job).removeSuffix(".mp4") + ".$ext"
+        Diag.step("Lossless: start, output $name")
         saveStream(name, if (ext == "mov") "video/quicktime" else "video/mp4") { out ->
             PaspWriter.write(ctx, job.video.uri, out, job.squeeze) { p -> onProgress(p) }
         }
+        Diag.step("Lossless: done")
         val (hs, vs) = PaspWriter.ratio(job.squeeze)
         ExportResult(name, job.video.displayW, job.video.displayH,
             "Lossless: original pixels kept, tagged ${hs}:${vs} pixel aspect. Displays as ${even(job.video.displayW * job.squeeze)}×${job.video.displayH}.")
@@ -150,12 +155,15 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
                     main.postDelayed(poll, 300)
                 }
                 cont.invokeOnCancellation { main.post { t.cancel(); main.removeCallbacks(poll); tmp.delete() } }
+                Diag.step("Transformer start: ${bitrate / 1_000_000} Mbps, hdr=$isHdr")
                 t.start(composition, tmp.absolutePath)
                 main.post(poll)
             }
         }
         onProgress(100)
-        saveToGallery(tmp, outName(job))
+        Diag.step("Encoded; saving to gallery")
+        withContext(Dispatchers.IO) { saveToGallery(tmp, outName(job)) }
+        Diag.step("Saved")
     }
 
     /** Carries the real cause so the user (and we) can see exactly what the phone rejected. */
