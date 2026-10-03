@@ -27,6 +27,8 @@ jobs:
           name: AnamorphicDesqueeze
           path: out/*
       - name: Publish APK to apk branch
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           mkdir /tmp/a && cp out/AnamorphicDesqueeze.apk /tmp/a/
           if [ -n "$KEYSTORE_PASSWORD" ]; then echo release > /tmp/a/signing.txt; else echo debug > /tmp/a/signing.txt; fi
