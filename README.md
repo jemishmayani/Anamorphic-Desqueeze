@@ -200,9 +200,10 @@ Listing text, data-safety answers, the 512 px icon and the feature graphic are i
 Every push to `main` builds the GitHub APK and the Play bundle with GitHub Actions
 (`.github/workflows/build.yml`). They appear under the run's **Artifacts**, and the APK also on the `apk` branch.
 
-Release builds are signed with a permanent key stored in the repository's **Actions secrets**
-(`SIGNING_KEYSTORE_B64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`).
-The key is never committed. Without the secrets, builds fall back to a temporary key.
+Release builds are signed with a permanent key, `signing/release.p12`, so every version installs
+as a normal update. The key file is protected by a long random password that is **not** in the
+repository; GitHub Actions reads it from the single repository secret `KEYSTORE_PASSWORD`. Without
+the password the file is useless. Without the secret, builds fall back to a temporary key.
 
 To publish a release, add a section for the new version to [`CHANGELOG.md`](CHANGELOG.md),
 bump `versionCode`/`versionName` in `app/build.gradle.kts`, then push a tag:

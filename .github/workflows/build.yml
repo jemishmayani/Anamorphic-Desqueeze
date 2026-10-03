@@ -11,23 +11,11 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Signing key (from secrets)
-        env:
-          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-            echo "Signing with the permanent release key."
-          else
-            echo "::warning::No SIGNING_KEYSTORE_B64 secret: building with a temporary debug key."
-          fi
       - name: Build
         env:
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_PASSWORD" ]; then echo "::warning::No KEYSTORE_PASSWORD secret: building with a temporary debug key."; fi
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           set -o pipefail
           gradle :app:assembleGithubRelease :app:bundlePlayRelease --stacktrace 2>&1 | tee build-log.txt
@@ -41,6 +29,7 @@ jobs:
       - name: Publish APK to apk branch
         run: |
           mkdir /tmp/a && cp out/AnamorphicDesqueeze.apk /tmp/a/
+          if [ -n "$KEYSTORE_PASSWORD" ]; then echo release > /tmp/a/signing.txt; else echo debug > /tmp/a/signing.txt; fi
           cd /tmp/a && git init -q -b apk && git add -A
           git -c user.name=ci -c user.email=ci@x commit -qm "apk ${{ github.sha }}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk

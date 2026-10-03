@@ -4,9 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Permanent release key, provided by CI from GitHub secrets (never committed).
-val ksPath: String? = System.getenv("SIGNING_KEYSTORE_PATH")
-val hasReleaseKey = ksPath != null && file(ksPath).exists()
+// Permanent key (also the Google Play upload key): signing/release.p12, protected by a long random
+// password that is NOT in the repo. CI reads it from the KEYSTORE_PASSWORD secret; without it,
+// builds fall back to a temporary debug key (installable, but can't update over a release build).
+val keystorePassword: String? = System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+val hasReleaseKey = keystorePassword != null && rootProject.file("signing/release.p12").exists()
 
 android {
     namespace = "com.desqueeze.app"
@@ -20,10 +22,11 @@ android {
     }
     signingConfigs {
         if (hasReleaseKey) create("release") {
-            storeFile = file(ksPath!!)
-            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
-            keyAlias = System.getenv("SIGNING_KEY_ALIAS")
-            keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            storeFile = rootProject.file("signing/release.p12")
+            storeType = "pkcs12"
+            storePassword = keystorePassword
+            keyAlias = "desqueeze"
+            keyPassword = keystorePassword
         }
     }
     flavorDimensions += "dist"

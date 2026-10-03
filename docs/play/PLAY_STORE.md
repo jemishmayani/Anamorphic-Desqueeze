@@ -52,5 +52,5 @@ FEATURES
 ## Publishing notes
 - A Google Play developer account is needed (one-time registration fee, plus identity verification).
 - New personal developer accounts must currently run a **closed test with at least 12 testers for 14 days** before they can publish to production. Check the Play Console for the current rule.
-- Enrol in **Play App Signing** (the default). Upload the `.aab`; Google re-signs it. The key in your GitHub secrets becomes your *upload key*. Keep the backup safe; if it's ever lost, Google can reset an upload key.
+- Enrol in **Play App Signing** (the default). Upload the `.aab`; Google re-signs it. `signing/release.p12` (with the password in your `KEYSTORE_PASSWORD` secret) becomes your *upload key*. Keep the backup safe; if it's ever lost, Google can reset an upload key.
 - Every release raises `versionCode` automatically with each new version.
