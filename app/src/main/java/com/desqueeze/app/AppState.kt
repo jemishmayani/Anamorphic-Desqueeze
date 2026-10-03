@@ -9,6 +9,9 @@ import kotlinx.coroutines.Job
 
 enum class Screen { Main, Settings, Limits }
 
+/** The sequential flow on the main screen. */
+enum class Step(val label: String) { Clips("Clips"), Frame("Frame"), Look("Look"), Export("Export") }
+
 /** Lives above the screens so navigating never loses clips or settings. */
 class AppState(settings: Settings, luts: LutManager) {
     var screen by mutableStateOf(Screen.Main)
@@ -29,5 +32,12 @@ class AppState(settings: Settings, luts: LutManager) {
     var job: Job? = null
     var theme by mutableStateOf(settings.theme)
     var mode by mutableStateOf(settings.mode)
+    var step by mutableStateOf(Step.Clips)
+    var orientation by mutableStateOf(Orientation.AUTO)
+    var direction by mutableStateOf(Direction.AUTO)
+    /** LUT applied in the live preview (proxy) when a LUT is selected. */
+    var lutPreview by mutableStateOf(true)
+    var quality by mutableStateOf(settings.quality)
+    var codec by mutableStateOf(settings.codec)
     var crashLog by mutableStateOf<String?>(null)
 }

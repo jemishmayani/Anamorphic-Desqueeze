@@ -65,3 +65,21 @@ fun DeviceCaps.maxBitrate(mime: String): Int =
         .filter { it.isEncoder && it.isHardwareAccelerated && it.supportedTypes.any { t -> t.equals(mime, true) } }
         .mapNotNull { try { it.getCapabilitiesForType(mime).videoCapabilities?.bitrateRange?.upper } catch (_: Exception) { null } }
         .maxOrNull() ?: 100_000_000
+
+/** Hardware (or any) decoder for this codec, and for 10-bit when needed. */
+fun DeviceCaps.canDecode(codec: String, bitDepth: Int): Boolean {
+    val mime = when (codec) {
+        "HEVC" -> "video/hevc"; "H.264" -> "video/avc"; "AV1" -> "video/av01"; "VP9" -> "video/x-vnd.on2.vp9"
+        "MPEG-4" -> "video/mp4v-es"; else -> return false
+    }
+    return infos.filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }.any { ci ->
+        if (bitDepth <= 8) true else try {
+            val pl = ci.getCapabilitiesForType(mime).profileLevels
+            when (codec) {
+                "HEVC" -> pl.any { it.profile == PL.HEVCProfileMain10 || it.profile == PL.HEVCProfileMain10HDR10 || it.profile == PL.HEVCProfileMain10HDR10Plus }
+                "H.264" -> pl.any { it.profile == PL.AVCProfileHigh10 || it.profile == PL.AVCProfileHigh422 }
+                else -> true
+            }
+        } catch (_: Exception) { false }
+    }
+}

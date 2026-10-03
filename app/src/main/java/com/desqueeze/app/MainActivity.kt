@@ -102,125 +102,6 @@ class MainActivity : ComponentActivity() {
 
 /* ---------------------------------------------------------------- Main */
 
-@OptIn(UnstableApi::class)
-@Composable
-fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutManager) {
-    val ctx = LocalContext.current
-    val exporter = remember { Exporter(ctx, settings, luts) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        act.lifecycleScope.launch {
-            st.status = "Reading clip…"
-            val errs = mutableListOf<String>()
-            val found = withContext(Dispatchers.IO) { uris.mapNotNull { u ->
-                try { VideoProbe.probe(ctx, u) } catch (e: Exception) { errs += (e.message ?: "Couldn't read this file"); null } } }
-            st.videos = found; st.selected = 0; st.results = emptyList()
-            // Keep the factor the user already chose; only fall back to the saved default if they haven't.
-            if (!st.squeezeChosen) st.squeeze = settings.defaultSqueeze
-            st.status = errs.joinToString("\n")
-        }
-    }
-    val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
-        if (u != null) try { st.lutId = luts.import(u, displayName(ctx, u)).id; st.lutList = luts.list() }
-        catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
-    }
-    val pick = { picker.launch(arrayOf("video/*")) }
-
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { ExportBar(act, st, exporter, settings) },
-    ) { pad ->
-        Column(
-            Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            Column(Modifier.padding(top = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BrandMark(Modifier.size(40.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Anamorphic De-Squeeze", style = MaterialTheme.typography.headlineSmall)
-                        Text("Restore the true width of anamorphic footage from any camera",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    IconButton(onClick = { st.screen = Screen.Settings }, enabled = !st.busy) { Icon(Icons.Default.Settings, "Settings") }
-                }
-                Spacer(Modifier.height(12.dp)); FlareLine()
-            }
-
-            val v = st.videos.getOrNull(st.selected)
-            if (v == null) EmptyPreview(pick) else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (st.busy) ExportingPlaceholder(v, if (st.desqueezed) st.squeeze else 1f)
-                    else PreviewPlayer(v, st.squeeze, st.desqueezed)
-                    ViewToggle(st.desqueezed) { st.desqueezed = it }
-                    FootageCard(st, v, enabled = !st.busy, onChange = pick)
-                }
-            }
-
-            Section("Squeeze factor", trailing = { Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono),
-                color = MaterialTheme.colorScheme.primary) }) {
-                SqueezeChips(st)
-                if (v != null) {
-                    val mime = if (settings.codec == Codec.HEVC) "video/hevc" else "video/avc"
-                    val fit by produceState<Triple<Int, Int, String?>?>(null, v, st.squeeze, settings.codec, st.mode) {
-                        value = if (st.mode == ExportMode.LOSSLESS) null
-                                else withContext(Dispatchers.Default) { exporter.targetSize(v, st.squeeze, mime) }
-                    }
-                    val dispW = Exporter.even(v.displayW * st.squeeze)
-                    Spacer(Modifier.height(4.dp))
-                    if (st.mode == ExportMode.LOSSLESS) {
-                        Text("${v.displayW} × ${v.displayH}  displays as  $dispW × ${v.displayH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-                        Text("Pixels untouched. Any squeeze works at full resolution.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        val f = fit
-                        Text(if (f == null) "Checking this phone's encoder…" else "${v.displayW} × ${v.displayH}  becomes  ${f.first} × ${f.second}",
-                            style = MaterialTheme.typography.bodyMedium.merge(Mono))
-                        Text(f?.third ?: "Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall,
-                            color = if (f?.third != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            Section("Export method") {
-                MethodToggle(st.mode, enabled = !st.busy) { st.mode = it; settings.mode = it }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (st.mode == ExportMode.LOSSLESS)
-                        "Copies your file untouched and tags it with the squeeze as pixel aspect ratio, like setting it in DaVinci Resolve. Instant and bit-identical, so 10-bit, log and HDR are kept exactly. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag."
-                    else
-                        "Renders new, wider pixels so every app shows it de-squeezed, and lets you apply a LUT. Slower, re-compressed, and limited by this phone's encoder size.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            AnimatedVisibility(st.mode == ExportMode.REENCODE) {
-            Section("Color") {
-                PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
-                    listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
-                    when { i == 0 -> st.lutId = null; i <= st.lutList.size -> st.lutId = st.lutList[i - 1].id; else -> lutPicker.launch(arrayOf("*/*")) }
-                }
-                AnimatedVisibility(st.lutId != null) {
-                    Column(Modifier.padding(top = 8.dp)) {
-                        Row { Text("Strength", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            Text("${(st.strength * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium.merge(Mono)) }
-                        Slider(st.strength, { st.strength = it }, enabled = !st.busy)
-                        Text("The LUT is applied when you export; the preview shows framing only.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            }
-
-            if (st.status.isNotEmpty() && !st.busy)
-                Text(st.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            AnimatedVisibility(st.results.isNotEmpty()) { Results(st.results, settings.folder) }
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
 @Composable
 fun Section(title: String, trailing: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) =
     Column {
@@ -244,8 +125,7 @@ fun BrandMark(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ExportingPlaceholder(v: VideoInfo, factor: Float) {
-    val ratio = v.displayW * factor / v.displayH
+fun ExportingPlaceholder(ratio: Float) {
     Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(20.dp))
         .background(MaterialTheme.colorScheme.surfaceContainer), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -359,32 +239,6 @@ fun SqueezeChips(st: AppState) {
     }
 }
 
-@Composable
-fun ExportBar(act: MainActivity, st: AppState, exporter: Exporter, settings: Settings) {
-    val p by animateFloatAsState(st.progress, tween(300), label = "progress")
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
-            AnimatedContent(st.busy, label = "bar") { busy ->
-                if (busy) Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(st.status, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text("${(p * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedButton(onClick = { st.job?.cancel(); st.busy = false; st.status = "Export cancelled."; act.keepScreenOn(false) },
-                        Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Cancel export") }
-                } else Button(
-                    onClick = { startExport(act, st, exporter) }, enabled = st.videos.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(16.dp),
-                ) { Text(if (st.videos.size > 1) "Export ${st.videos.size} de-squeezed videos" else "Export de-squeezed video",
-                    style = MaterialTheme.typography.labelLarge) }
-            }
-        }
-    }
-}
-
 fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
     val list = st.videos; act.keepScreenOn(true); st.busy = true; st.progress = 0f; st.results = emptyList(); st.status = ""
     Diag.start()
@@ -393,7 +247,7 @@ fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
         list.forEachIndexed { i, vid ->
             st.status = (if (st.mode == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
             try {
-                val j = ExportJob(vid, st.squeeze, st.lutId, st.strength)
+                val j = ExportJob(vid, st.squeeze, st.lutId, st.strength, st.orientation, st.direction)
                 val main = android.os.Handler(android.os.Looper.getMainLooper())
                 val prog: (Int) -> Unit = { p -> main.post { st.progress = (i + p / 100f) / list.size } }
                 Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${st.mode}, squeeze=${st.squeeze}, lut=${st.lutId != null}")
@@ -512,8 +366,8 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     if (it < PRESETS.size) { s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.squeeze = PRESETS[it]; refresh() }
                     else customDefault = true
                 }
-                PickerRow("Quality", s.quality.label, Quality.entries.map { it.label }) { s.quality = Quality.entries[it]; refresh() }
-                PickerRow("Codec", if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; refresh() }
+                PickerRow("Quality", s.quality.label, Quality.entries.map { it.label }) { s.quality = Quality.entries[it]; st.quality = s.quality; refresh() }
+                PickerRow("Codec", if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; st.codec = s.codec; refresh() }
                 if (!Exporter.hasEncoder("video/hevc"))
                     Text("This phone has no HEVC encoder, so H.264 will be used.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                 ToggleRow("Keep HDR", "10-bit output for HLG or PQ clips", s.keepHdr) { s.keepHdr = it; refresh() }
@@ -524,8 +378,8 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     .border(1.dp, c.outlineVariant, RoundedCornerShape(14.dp)).clickable { st.screen = Screen.Limits }
                     .padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Export limits", style = MaterialTheme.typography.bodyLarge)
-                        Text("Maximum resolution, squeeze, frame rate and 10-bit support", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                        Text("Device diagnostics", style = MaterialTheme.typography.bodyLarge)
+                        Text("Decode / encode support, 10-bit, max frame width, and which squeezes work at full size", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                     }
                     Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(20.dp).rotate(-90f), tint = c.onSurfaceVariant)
                 }

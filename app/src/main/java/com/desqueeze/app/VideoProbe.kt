@@ -17,6 +17,8 @@ data class VideoInfo(
     val colorInfo: String, val hasAudio: Boolean, val durationMs: Long, val sizeBytes: Long,
     val footage: Footage = Footage(),
     val audio: String? = null,
+    /** Small display-oriented frame for lists. */
+    val thumb: Bitmap? = null,
 ) {
     /** Width/height as displayed (rotation applied). */
     val displayW get() = if (rotation % 180 == 0) width else height
@@ -74,7 +76,7 @@ object VideoProbe {
         footage = footage.copy(transfer = transfer, primaries = primaries, fullRange = range, bitDepth = bitDepth, codec = codec)
 
         val mmr = MediaMetadataRetriever()
-        var rot = 0; var fps = f?.floatOrNull(MediaFormat.KEY_FRAME_RATE) ?: 0f; var dur = 0L
+        var rot = 0; var fps = f?.floatOrNull(MediaFormat.KEY_FRAME_RATE) ?: 0f; var dur = 0L; var thumb: Bitmap? = null
         try {
             mmr.setDataSource(ctx, uri)
             rot = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
@@ -83,15 +85,16 @@ object VideoProbe {
                 val frames = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toLongOrNull()
                 if (frames != null && dur > 0) fps = frames * 1000f / dur
             }
-            // 3) No log profile in the metadata and not HDR? Look at a frame: log is visibly flat.
-            if (footage.log == null && footage.hdr == null) {
-                val bmp = mmr.getScaledFrameAtTime(dur * 500L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 90)
-                if (bmp != null) {
-                    val sw = bmp.copy(Bitmap.Config.ARGB_8888, false)
+            // 3) One small frame: the list thumbnail, and (if metadata didn't say) the log-look check.
+            val bmp = mmr.getScaledFrameAtTime(minOf(dur * 500L, 1_000_000L), MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 320, 320)
+            if (bmp != null) {
+                val sw = bmp.copy(Bitmap.Config.ARGB_8888, false)
+                thumb = Frames.orient(sw, f?.getInteger(MediaFormat.KEY_WIDTH) ?: 0, f?.getInteger(MediaFormat.KEY_HEIGHT) ?: 0, rot, 0)
+                if (footage.log == null && footage.hdr == null) {
                     val px = IntArray(sw.width * sw.height); sw.getPixels(px, 0, sw.width, 0, 0, sw.width, sw.height)
                     if (FootageAnalyzer.looksLikeLog(px)) footage = footage.copy(log = "Log", logEstimated = true)
-                    if (sw !== bmp) sw.recycle(); bmp.recycle()
                 }
+                if (sw !== bmp) bmp.recycle()
             }
         } catch (_: Throwable) { } finally { mmr.release() }
 
@@ -99,7 +102,7 @@ object VideoProbe {
         val h = f?.getInteger(MediaFormat.KEY_HEIGHT) ?: footage.height!!
         val color = listOfNotNull(footage.primariesName, footage.hdr ?: if (transfer != null) "SDR" else null,
             range?.let { if (it) "full" else "limited" }).joinToString(" ")
-        return VideoInfo(uri, name, w, h, rot, codec, fps, bitDepth, color, audio != null, dur, size, footage, audio)
+        return VideoInfo(uri, name, w, h, rot, codec, fps, bitDepth, color, audio != null, dur, size, footage, audio, thumb)
     }
 
     private fun audioLabel(f: MediaFormat): String {

@@ -120,4 +120,19 @@ object AppIcons {
         line { moveTo(16f, 9.5f); lineTo(21f, 14.5f); moveTo(21f, 9.5f); lineTo(16f, 14.5f) }
     }
     val Info = icon("info") { line { circle(12f, 12f, 9f) }; line(2.2f) { moveTo(12f, 11f); lineTo(12f, 16.5f) }; solid { circle(12f, 7.6f, 1.2f) } }
+
+    val Check = icon("check") { line(2.4f) { moveTo(5f, 12.5f); lineTo(10f, 17.5f); lineTo(19f, 7f) } }
+    val Cross = icon("cross") { line(2.4f) { moveTo(6.5f, 6.5f); lineTo(17.5f, 17.5f); moveTo(17.5f, 6.5f); lineTo(6.5f, 17.5f) } }
+    val Warn = icon("warn") {
+        line { moveTo(12f, 3.5f); lineTo(21f, 19.5f); lineTo(3f, 19.5f); close() }
+        line(2.2f) { moveTo(12f, 9.5f); lineTo(12f, 14f) }
+        solid { circle(12f, 16.8f, 1.15f) }
+    }
+    val Rotate = icon("rotate") {
+        line { moveTo(19f, 12f); arcToRelative(7f, 7f, 0f, true, true, -2.05f, -4.95f) }
+        line { moveTo(17.5f, 3.5f); lineTo(17.5f, 7.5f); lineTo(13.5f, 7.5f) }
+    }
+    val Spark = icon("spark") {
+        solid { moveTo(12f, 3f); quadTo(13f, 11f, 21f, 12f); quadTo(13f, 13f, 12f, 21f); quadTo(11f, 13f, 3f, 12f); quadTo(11f, 11f, 12f, 3f); close() }
+    }
 }

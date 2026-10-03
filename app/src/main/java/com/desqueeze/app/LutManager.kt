@@ -30,6 +30,34 @@ class LutManager(private val ctx: Context) {
     fun load(id: String): CubeLut = parse(File(dir, "$id.cube").readText())
 
     class CubeLut(val size: Int, val data: FloatArray, val domainMin: FloatArray, val domainMax: FloatArray) {
+        /** Applies the LUT on the CPU (trilinear) to ARGB pixels, blended by [strength]. For still-frame compare. */
+        fun applyTo(px: IntArray, strength: Float): IntArray {
+            val n = size; val nm = n - 1; val s = strength.coerceIn(0f, 1f); val out = IntArray(px.size)
+            fun at(r: Int, g: Int, b: Int, c: Int): Float {
+                val v = data[(r + g * n + b * n * n) * 3 + c]
+                return (v - domainMin[c]) / (domainMax[c] - domainMin[c])
+            }
+            for (i in px.indices) {
+                val p = px[i]
+                val rf = (p shr 16 and 255) / 255f * nm; val gf = (p shr 8 and 255) / 255f * nm; val bf = (p and 255) / 255f * nm
+                val r0 = rf.toInt().coerceAtMost(nm - 1); val g0 = gf.toInt().coerceAtMost(nm - 1); val b0 = bf.toInt().coerceAtMost(nm - 1)
+                val dr = rf - r0; val dg = gf - g0; val db = bf - b0
+                var rgb = 0
+                for (c in 0..2) {
+                    val c00 = at(r0, g0, b0, c) * (1 - dr) + at(r0 + 1, g0, b0, c) * dr
+                    val c10 = at(r0, g0 + 1, b0, c) * (1 - dr) + at(r0 + 1, g0 + 1, b0, c) * dr
+                    val c01 = at(r0, g0, b0 + 1, c) * (1 - dr) + at(r0 + 1, g0, b0 + 1, c) * dr
+                    val c11 = at(r0, g0 + 1, b0 + 1, c) * (1 - dr) + at(r0 + 1, g0 + 1, b0 + 1, c) * dr
+                    val lut = (c00 * (1 - dg) + c10 * dg) * (1 - db) + (c01 * (1 - dg) + c11 * dg) * db
+                    val orig = (p shr (16 - 8 * c) and 255) / 255f
+                    val v = ((orig + (lut - orig) * s).coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+                    rgb = rgb or (v shl (16 - 8 * c))
+                }
+                out[i] = (0xFF shl 24) or rgb
+            }
+            return out
+        }
+
         /**
          * Packs to Media3's int[r][g][b] ARGB cube, blended with identity by [strength].
          * Blending the table with identity == blending output with input (trilinear is linear).

@@ -39,7 +39,12 @@ object PaspWriter {
         return h.toInt() to v.toInt()
     }
 
-    fun write(ctx: Context, src: Uri, out: OutputStream, squeeze: Float, onProgress: (Int) -> Unit) {
+    /**
+     * @param storedHorizontal stretch along the stored pixel width (normal) or height (vertical anamorphic).
+     * @param rotation new clockwise display rotation for the video track, or null to keep the file's own.
+     */
+    fun write(ctx: Context, src: Uri, out: OutputStream, squeeze: Float, storedHorizontal: Boolean = true,
+              rotation: Int? = null, onProgress: (Int) -> Unit) {
         val pfd = ctx.contentResolver.openFileDescriptor(src, "r") ?: throw IllegalArgumentException("Can't open the source file.")
         // AutoCloseInputStream owns the descriptor, so it is closed exactly once (Android aborts on double close).
         run {
@@ -50,7 +55,7 @@ object PaspWriter {
                 require(moov.size < 256L * 1024 * 1024) { "File header is unusually large." }
                 val firstMdat = boxes.firstOrNull { b -> b.type == "mdat" }
                 val moovBytes = readFully(ch, moov.offset, moov.size.toInt())
-                val patched = patchMoov(moovBytes, squeeze, moovBeforeMdat = firstMdat != null && moov.offset < firstMdat.offset)
+                val patched = patchMoov(moovBytes, squeeze, storedHorizontal, rotation, moovBeforeMdat = firstMdat != null && moov.offset < firstMdat.offset)
 
                 Diag.step("Header patched: ${moovBytes.size} -> ${patched.size} bytes; copying")
                 val total = boxes.sumOf { b -> b.size }.coerceAtLeast(1)
@@ -96,26 +101,60 @@ object PaspWriter {
 
     /* ---------------- moov patching ---------------- */
 
-    private fun patchMoov(moov: ByteArray, squeeze: Float, moovBeforeMdat: Boolean): ByteArray {
+    private fun patchMoov(moov: ByteArray, squeeze: Float, storedHorizontal: Boolean, rotation: Int?, moovBeforeMdat: Boolean): ByteArray {
         val root = parse(moov, 0, moov.size, "").single()
-        val (hs, vs) = ratio(squeeze)
+        val (a, b) = ratio(squeeze)
+        val (hs, vs) = if (storedHorizontal) a to b else b to a
         val pasp = ByteBuffer.allocate(8).putInt(hs).putInt(vs).array()
         var grow = 0
         var visualFound = 0
-        walk(root) { n, parent ->
-            if (parent?.type == "stsd" && n.type in VISUAL) {
-                visualFound++
-                val kids = n.children!!
-                val existing = kids.firstOrNull { it.type == "pasp" }
-                if (existing != null) { grow += 8 - (existing.raw?.size ?: 0); existing.raw = pasp }
-                else { kids += Node("pasp", raw = pasp); grow += 16 }
+        for (trak in root.children!!.filter { it.type == "trak" }) {
+            var w = 0; var h = 0; var isVideo = false
+            walk(trak) { n, parent ->
+                if (parent?.type == "stsd" && n.type in VISUAL) {
+                    isVideo = true; visualFound++
+                    val pb = ByteBuffer.wrap(n.prefix); w = pb.getShort(24).toInt() and 0xFFFF; h = pb.getShort(26).toInt() and 0xFFFF
+                    val kids = n.children!!
+                    val existing = kids.firstOrNull { it.type == "pasp" }
+                    if (existing != null) { grow += 8 - (existing.raw?.size ?: 0); existing.raw = pasp }
+                    else { kids += Node("pasp", raw = pasp); grow += 16 }
+                }
             }
+            if (isVideo && w > 0 && h > 0) trak.children!!.firstOrNull { it.type == "tkhd" }?.let { patchTkhd(it, w, h, hs, vs, rotation) }
         }
         require(visualFound > 0) { "No supported video track found to tag." }
         // If the header sits before the media data, every sample offset moves by the bytes we added.
         if (moovBeforeMdat && grow != 0) walk(root) { n, _ -> if (n.type == "stco" || n.type == "co64") shiftOffsets(n, grow) }
         return ByteArrayOutputStream(moov.size + 64).also { serialize(root, it) }.toByteArray()
     }
+
+    /**
+     * Track header: display size (what QuickTime/Photos use instead of pasp) and,
+     * if requested, the rotation matrix. Same byte length, so no offsets move.
+     */
+    private fun patchTkhd(tkhd: Node, w: Int, h: Int, hs: Int, vs: Int, rotation: Int?) {
+        val raw = tkhd.raw ?: return
+        val b = ByteBuffer.wrap(raw)
+        val m = if (raw[0].toInt() == 1) 52 else 40
+        if (raw.size < m + 44) return
+        if (rotation != null) {
+            val one = 0x10000; val w30 = 0x40000000
+            val (ma, mb, mc, md, tx, ty) = when (((rotation % 360) + 360) % 360) {
+                90 -> M6(0, one, -one, 0, h shl 16, 0)
+                180 -> M6(-one, 0, 0, -one, w shl 16, h shl 16)
+                270 -> M6(0, -one, one, 0, 0, w shl 16)
+                else -> M6(one, 0, 0, one, 0, 0)
+            }
+            b.putInt(m, ma); b.putInt(m + 4, mb); b.putInt(m + 8, 0)
+            b.putInt(m + 12, mc); b.putInt(m + 16, md); b.putInt(m + 20, 0)
+            b.putInt(m + 24, tx); b.putInt(m + 28, ty); b.putInt(m + 32, w30)
+        }
+        val dw = w.toDouble() * (if (hs > vs) hs.toDouble() / vs else 1.0)
+        val dh = h.toDouble() * (if (vs > hs) vs.toDouble() / hs else 1.0)
+        b.putInt(m + 36, (dw * 65536).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        b.putInt(m + 40, (dh * 65536).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+    private data class M6(val a: Int, val b: Int, val c: Int, val d: Int, val tx: Int, val ty: Int)
 
     private fun walk(n: Node, parent: Node? = null, f: (Node, Node?) -> Unit) {
         f(n, parent); n.children?.toList()?.forEach { walk(it, n, f) }

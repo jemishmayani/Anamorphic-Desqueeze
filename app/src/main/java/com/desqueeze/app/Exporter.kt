@@ -14,6 +14,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.SingleColorLut
 import androidx.media3.transformer.*
 import androidx.media3.transformer.ExportResult as ExportResult_
@@ -25,7 +26,10 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
-data class ExportJob(val video: VideoInfo, val squeeze: Float, val lutId: String?, val lutStrength: Float)
+data class ExportJob(val video: VideoInfo, val squeeze: Float, val lutId: String?, val lutStrength: Float,
+    val orientation: Orientation = Orientation.AUTO, val direction: Direction = Direction.AUTO) {
+    val geo get() = geometry(video, squeeze, orientation, direction)
+}
 data class ExportResult(val name: String, val width: Int, val height: Int, val note: String?)
 
 /**
@@ -36,8 +40,16 @@ data class ExportResult(val name: String, val width: Int, val height: Int, val n
 @OptIn(UnstableApi::class)
 class Exporter(private val ctx: Context, private val settings: Settings, private val luts: LutManager) {
 
-    fun targetSize(v: VideoInfo, squeeze: Float, mime: String): Triple<Int, Int, String?> =
-        fitToEncoder(even(v.displayW * squeeze), even(v.displayH.toFloat()), mime, v.fps)
+    fun targetSize(g: Geometry, fps: Float, mime: String): Triple<Int, Int, String?> = fitToEncoder(g.outW, g.outH, mime, fps)
+
+    /** Bitrate Re-encode will request for this size (also used for size estimates). */
+    fun bitrateFor(w: Int, h: Int, fps: Float, mime: String): Long {
+        val f = if (fps > 0) fps else 30f
+        var bitrate = (w.toLong() * h * f * settings.quality.bitsPerPixel).toLong()
+        if (mime == MimeTypes.VIDEO_H264) bitrate = (bitrate * 1.5).toLong()
+        val cap = maxOf(4_000_000L, minOf(DeviceCaps.maxBitrate(mime).toLong(), 200_000_000L))
+        return bitrate.coerceIn(4_000_000L, cap)
+    }
 
     /**
      * Shrinks (keeping shape) until a hardware encoder really accepts the size: alignment,
@@ -62,7 +74,9 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val hevcOk = hasEncoder(MimeTypes.VIDEO_H265)
         val first = if (settings.codec == Codec.HEVC && hevcOk) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
         val other = if (first == MimeTypes.VIDEO_H265) MimeTypes.VIDEO_H264 else if (hevcOk) MimeTypes.VIDEO_H265 else null
-        val w0 = even(job.video.displayW * job.squeeze); val h0 = even(job.video.displayH.toFloat()); val fps = job.video.fps
+        val g = job.geo
+        val w0 = g.outW; val h0 = g.outH; val fps = job.video.fps
+        val started = System.nanoTime()
 
         val attempts = mutableListOf<Attempt>()
         suspend fun add(mime: String, maxW: Int, extra: String?) {
@@ -81,6 +95,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             try {
                 Diag.step("Attempt ${i + 1}: ${a.mime} ${a.w}x${a.h}")
                 runOnce(job, a, onProgress)
+                Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.video.durationMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
                 return ExportResult(outName(job), a.w, a.h,
                     listOfNotNull(a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
                         .joinToString(" ").ifEmpty { null })
@@ -99,30 +114,34 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val ext = job.video.name.substringAfterLast('.', "mp4").lowercase().let { if (it == "mov") "mov" else "mp4" }
         val name = outName(job).removeSuffix(".mp4") + ".$ext"
         Diag.step("Lossless: start, output $name")
+        val g = job.geo; val t0 = System.nanoTime()
         saveStream(name, if (ext == "mov") "video/quicktime" else "video/mp4") { out ->
-            PaspWriter.write(ctx, job.video.uri, out, job.squeeze) { p -> onProgress(p) }
+            PaspWriter.write(ctx, job.video.uri, out, job.squeeze, g.storedHorizontal,
+                if (g.extraRotation != 0) g.rotation else null) { p -> onProgress(p) }
         }
+        Speed.recordCopy(ctx, job.video.sizeBytes, (System.nanoTime() - t0) / 1e9)
         Diag.step("Lossless: done")
-        val (hs, vs) = PaspWriter.ratio(job.squeeze)
-        ExportResult(name, job.video.displayW, job.video.displayH,
-            "Lossless: original pixels kept, tagged ${hs}:${vs} pixel aspect. Displays as ${even(job.video.displayW * job.squeeze)}×${job.video.displayH}.")
+        val (a0, b0) = PaspWriter.ratio(job.squeeze)
+        val (hs, vs) = if (g.storedHorizontal) a0 to b0 else b0 to a0
+        ExportResult(name, g.dispW, g.dispH,
+            "Lossless: original pixels kept, tagged $hs:$vs pixel aspect" + (if (g.extraRotation != 0) ", shown rotated ${g.rotation}°" else "") +
+                ". Displays as ${g.outW}×${g.outH}.")
     }
 
     private fun outName(job: ExportJob) =
         "${job.video.name.substringBeforeLast('.')}_DESQUEEZED_${"%.2f".format(job.squeeze).trimEnd('0').trimEnd('.')}X.mp4"
 
     private suspend fun runOnce(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit) {
-        val effects = mutableListOf<Effect>(Presentation.createForWidthAndHeight(a.w, a.h, Presentation.LAYOUT_STRETCH_TO_FIT))
+        val effects = mutableListOf<Effect>()
+        val extra = job.geo.extraRotation
+        // Media3 rotates counter-clockwise; metadata rotation is clockwise.
+        if (extra != 0) effects += ScaleAndRotateTransformation.Builder().setRotationDegrees((360 - extra).toFloat()).build()
+        effects += Presentation.createForWidthAndHeight(a.w, a.h, Presentation.LAYOUT_STRETCH_TO_FIT)
         if (job.lutId != null && job.lutStrength > 0f)
             effects += SingleColorLut.createFromCube(luts.load(job.lutId).toArgbCube(job.lutStrength))
 
-        val fps = if (job.video.fps > 0) job.video.fps else 30f
-        var bitrate = (a.w.toLong() * a.h * fps * settings.quality.bitsPerPixel).toLong()
-        if (a.mime == MimeTypes.VIDEO_H264) bitrate = (bitrate * 1.5).toLong()
-        // Never ask for more than the encoder says it can do (some refuse to start otherwise).
-        val encMax = DeviceCaps.maxBitrate(a.mime)
-        val cap = maxOf(4_000_000L, minOf(encMax.toLong(), 200_000_000L))
-        bitrate = bitrate.coerceIn(4_000_000L, cap)
+        // Never more than the encoder says it can do (some refuse to start otherwise).
+        val bitrate = bitrateFor(a.w, a.h, job.video.fps, a.mime)
 
         val tmp = File(ctx.cacheDir, "export_${System.nanoTime()}.mp4")
         val isHdr = job.video.isHdr
