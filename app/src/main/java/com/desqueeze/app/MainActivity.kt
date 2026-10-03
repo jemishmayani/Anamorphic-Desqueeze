@@ -137,9 +137,11 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
         ) {
             Column(Modifier.padding(top = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    BrandMark(Modifier.size(40.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Anamorphic De-Squeeze", style = MaterialTheme.typography.headlineSmall)
-                        Text("Restore the full width of your anamorphic footage",
+                        Text("Restore the true width of anamorphic footage from any camera",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = { st.screen = Screen.Settings }, enabled = !st.busy) { Icon(Icons.Default.Settings, "Settings") }
@@ -151,9 +153,9 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
             if (v == null) EmptyPreview(pick) else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (st.busy) ExportingPlaceholder(v, if (st.desqueezed) st.squeeze else 1f)
-                    else Preview(v, if (st.desqueezed) st.squeeze else 1f)
+                    else PreviewPlayer(v, st.squeeze, st.desqueezed)
                     ViewToggle(st.desqueezed) { st.desqueezed = it }
-                    ClipInfo(st, v, enabled = !st.busy, onChange = pick)
+                    FootageCard(st, v, enabled = !st.busy, onChange = pick)
                 }
             }
 
@@ -187,7 +189,7 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                 Spacer(Modifier.height(8.dp))
                 Text(
                     if (st.mode == ExportMode.LOSSLESS)
-                        "Copies your file untouched and tags it with the squeeze as pixel aspect ratio, like setting it in DaVinci Resolve. Instant, bit-identical 10-bit D-Log. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag."
+                        "Copies your file untouched and tags it with the squeeze as pixel aspect ratio, like setting it in DaVinci Resolve. Instant and bit-identical, so 10-bit, log and HDR are kept exactly. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag."
                     else
                         "Renders new, wider pixels so every app shows it de-squeezed, and lets you apply a LUT. Slower, re-compressed, and limited by this phone's encoder size.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -228,6 +230,19 @@ fun Section(title: String, trailing: (@Composable () -> Unit)? = null, content: 
         content()
     }
 
+/** The app icon, drawn live: oval bokeh crossed by an anamorphic flare. */
+@Composable
+fun BrandMark(modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    Canvas(modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF141A22))) {
+        val w = size.width; val h = size.height
+        drawLine(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF8CC4FF), Color.Transparent)),
+            Offset(0f, h / 2), Offset(w, h / 2), strokeWidth = h * 0.035f)
+        drawOval(Color(0xFFE8EEF5), Offset(w * 0.24f, h * 0.36f), Size(w * 0.52f, h * 0.28f), style = Stroke(h * 0.06f))
+        drawOval(Color.White, Offset(w * 0.44f, h * 0.475f), Size(w * 0.12f, h * 0.05f))
+    }
+}
+
 @Composable
 fun ExportingPlaceholder(v: VideoInfo, factor: Float) {
     val ratio = v.displayW * factor / v.displayH
@@ -262,25 +277,6 @@ fun EmptyPreview(onPick: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text("MP4 or MOV, HEVC or H.264. Pick several to batch.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         }
-    }
-}
-
-/** Hardware playback, stretched on screen. The animated width change shows exactly what de-squeezing does. */
-@OptIn(UnstableApi::class)
-@Composable
-fun Preview(v: VideoInfo, factor: Float) {
-    val ctx = LocalContext.current
-    val player = remember(v.uri) { ExoPlayer.Builder(ctx).build().apply {
-        setMediaItem(MediaItem.fromUri(v.uri)); repeatMode = ExoPlayer.REPEAT_MODE_ALL; volume = 0f; prepare(); play() } }
-    DisposableEffect(player) { onDispose { player.release() } }
-    val target = v.displayW * factor / v.displayH
-    val ratio by animateFloatAsState(target, tween(380), label = "ratio")
-    Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(20.dp)).background(Color.Black),
-        contentAlignment = Alignment.Center) {
-        val wide = ratio >= 16f / 9f
-        AndroidView({ PlayerView(it).apply {
-            this.player = player; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL; useController = true; controllerShowTimeoutMs = 1500 } },
-            if (wide) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true))
     }
 }
 
@@ -324,33 +320,13 @@ fun CrashDialog(log: String, onClose: () -> Unit) {
         dismissButton = { TextButton(onClick = onClose) { Text("Close") } })
 }
 
-@Composable
-fun ClipInfo(st: AppState, v: VideoInfo, enabled: Boolean, onChange: () -> Unit) {
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(v.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(specLine(v), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            TextButton(onClick = onChange, enabled = enabled) { Text(if (st.videos.size > 1) "Change clips" else "Change") }
-        }
-        if (st.videos.size > 1) {
-            Text("${st.videos.size} clips. The same settings apply to all.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(st.videos) { i, clip ->
-                    FilterChip(selected = i == st.selected, onClick = { st.selected = i },
-                        label = { Text(clip.name.substringBeforeLast('.'), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 140.dp)) })
-                }
-            }
-        }
-    }
-}
-
 fun specLine(v: VideoInfo) = buildString {
-    append("${v.displayW}×${v.displayH}, ${v.codec} ${v.bitDepth}-bit, ${"%.2f".format(v.fps).trimEnd('0').trimEnd('.')} fps")
-    if (v.colorInfo.isNotEmpty()) append(", ${v.colorInfo}")
+    append("${v.displayW}×${v.displayH}, ${v.codec} ${v.bitDepth}-bit")
+    v.footage.chroma?.let { append(" $it") }
+    if (v.fps > 0) append(", ${fmtFps(v.fps)}")
+    v.footage.log?.let { append(", ${if (v.footage.logEstimated) "log (estimated)" else it}") }
+    v.footage.hdr?.let { append(", $it") }
+    v.footage.camera?.let { append(", $it") }
     if (!v.hasAudio) append(", no audio")
 }
 
@@ -517,6 +493,7 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
     var tick by remember { mutableIntStateOf(0) }
     val refresh = { tick++ }
     var renaming by remember { mutableStateOf<LutEntry?>(null) }
+    var customDefault by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) try { luts.import(u, displayName(ctx, u)); st.lutList = luts.list(); msg = "" }
@@ -529,8 +506,12 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Group("Export") {
-                PickerRow("Default squeeze", fmtSqueeze(s.defaultSqueeze), PRESETS.map { fmtSqueeze(it) }) {
-                    s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.squeeze = PRESETS[it]; refresh() }
+                val isPreset = PRESETS.any { kotlin.math.abs(it - s.defaultSqueeze) < 0.001f }
+                PickerRow("Default squeeze", fmtSqueeze(s.defaultSqueeze) + if (isPreset) "" else " (custom)",
+                    PRESETS.map { fmtSqueeze(it) } + "Custom value…") {
+                    if (it < PRESETS.size) { s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.squeeze = PRESETS[it]; refresh() }
+                    else customDefault = true
+                }
                 PickerRow("Quality", s.quality.label, Quality.entries.map { it.label }) { s.quality = Quality.entries[it]; refresh() }
                 PickerRow("Codec", if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; refresh() }
                 if (!Exporter.hasEncoder("video/hevc"))
@@ -552,7 +533,7 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
             }
             Group("LUT library") {
-                if (st.lutList.isEmpty()) Text("No LUTs yet. Import 3D .cube files, such as DJI's official D-Log to Rec.709 LUT.",
+                if (st.lutList.isEmpty()) Text("No LUTs yet. Import 3D .cube files, such as your camera maker's official log-to-Rec.709 LUT.",
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                 st.lutList.forEach { l ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
@@ -576,6 +557,9 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
         }
     }
     }
+    if (customDefault) SqueezeDialog(s.defaultSqueeze, onDismiss = { customDefault = false }) { value ->
+        s.defaultSqueeze = value; if (!st.squeezeChosen) st.squeeze = value; customDefault = false; refresh()
+    }
     renaming?.let { l ->
         var name by remember { mutableStateOf(l.name) }
         AlertDialog(onDismissRequest = { renaming = null },
@@ -585,3 +569,28 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
     }
 }
 
+/** Pick any squeeze factor from 1.00× to 3.00× with a slider or by typing it. */
+@Composable
+fun SqueezeDialog(initial: Float, onDismiss: () -> Unit, onDone: (Float) -> Unit) {
+    var value by remember { mutableFloatStateOf(initial.coerceIn(1f, 3f)) }
+    var text by remember { mutableStateOf("%.2f".format(value)) }
+    val valid = text.replace(',', '.').toFloatOrNull()?.takeIf { it in 1f..3f }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Default squeeze factor") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Used for every new clip until you pick another factor.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(fmtSqueeze(value), style = MaterialTheme.typography.headlineMedium.merge(Mono), color = MaterialTheme.colorScheme.primary)
+                Slider(value, { value = Math.round(it * 100) / 100f; text = "%.2f".format(value) }, valueRange = 1f..3f)
+                OutlinedTextField(text, { t -> text = t; t.replace(',', '.').toFloatOrNull()?.takeIf { it in 1f..3f }?.let { value = it } },
+                    singleLine = true, suffix = { Text("×") }, isError = valid == null, shape = RoundedCornerShape(12.dp),
+                    supportingText = { Text(if (valid == null) "Enter a value from 1.00 to 3.00" else "1.00 to 3.00") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), textStyle = LocalTextStyle.current.merge(Mono))
+            }
+        },
+        confirmButton = { TextButton(onClick = { valid?.let { onDone(Math.round(it * 100) / 100f) } }, enabled = valid != null) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

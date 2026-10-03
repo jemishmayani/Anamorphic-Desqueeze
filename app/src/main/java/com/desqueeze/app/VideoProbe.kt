@@ -1,11 +1,13 @@
 package com.desqueeze.app
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 
 data class VideoInfo(
@@ -13,12 +15,14 @@ data class VideoInfo(
     val width: Int, val height: Int, val rotation: Int,
     val codec: String, val fps: Float, val bitDepth: Int,
     val colorInfo: String, val hasAudio: Boolean, val durationMs: Long, val sizeBytes: Long,
+    val footage: Footage = Footage(),
+    val audio: String? = null,
 ) {
     /** Width/height as displayed (rotation applied). */
     val displayW get() = if (rotation % 180 == 0) width else height
     val displayH get() = if (rotation % 180 == 0) height else width
-    val summary get() = "${displayW}×${displayH} · $codec · ${"%.2f".format(fps)} fps · ${bitDepth}-bit" +
-            (if (colorInfo.isNotEmpty()) " · $colorInfo" else "") + (if (hasAudio) " · audio" else " · no audio")
+    val isHdr get() = footage.hdr != null
+    val summary get() = specLine(this)
 }
 
 object VideoProbe {
@@ -30,43 +34,47 @@ object VideoProbe {
                 c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { size = c.getLong(it) }
             }
         }
+        // 1) Header analysis: works for any camera / codec, even ones this phone can't decode.
+        var footage = try {
+            ctx.contentResolver.openFileDescriptor(uri, "r")?.let { pfd ->
+                ParcelFileDescriptor.AutoCloseInputStream(pfd).channel.use { FootageAnalyzer.analyze(it) }
+            } ?: Footage()
+        } catch (e: Exception) { Diag.step("Analyzer failed: $e"); Footage() }
+
+        // 2) Android's view of the tracks (frame rate, audio, fallbacks).
         val ex = MediaExtractor()
-        var vf: MediaFormat? = null; var audio = false
+        var vf: MediaFormat? = null; var audio: String? = null
         try {
             ex.setDataSource(ctx, uri, null)
             for (i in 0 until ex.trackCount) {
                 val f = ex.getTrackFormat(i); val m = f.getString(MediaFormat.KEY_MIME) ?: continue
                 if (m.startsWith("video/") && vf == null) vf = f
-                if (m.startsWith("audio/")) audio = true
+                if (m.startsWith("audio/") && audio == null) audio = audioLabel(f)
             }
-        } finally { ex.release() }
-        val f = vf ?: throw IllegalArgumentException("No video track found in this file.")
-        val mime = f.getString(MediaFormat.KEY_MIME) ?: ""
-        val codec = when (mime) {
+        } catch (_: Exception) { } finally { ex.release() }
+        val f = vf
+        if (f == null && footage.width == null) throw IllegalArgumentException("No video track found in “$name”.")
+
+        val mime = f?.getString(MediaFormat.KEY_MIME) ?: ""
+        val codec = footage.codec ?: when (mime) {
             MediaFormat.MIMETYPE_VIDEO_HEVC -> "HEVC"; MediaFormat.MIMETYPE_VIDEO_AVC -> "H.264"
             else -> mime.removePrefix("video/").uppercase()
         }
-        val profile = f.intOrNull(MediaFormat.KEY_PROFILE)
-        val transfer = f.intOrNull(MediaFormat.KEY_COLOR_TRANSFER)
-        val is10 = (mime == MediaFormat.MIMETYPE_VIDEO_HEVC && (profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 ||
-                profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10 ||
-                profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus)) ||
-                transfer == MediaFormat.COLOR_TRANSFER_HLG || transfer == MediaFormat.COLOR_TRANSFER_ST2084
-        val color = buildList {
-            when (f.intOrNull(MediaFormat.KEY_COLOR_STANDARD)) {
-                MediaFormat.COLOR_STANDARD_BT709 -> add("BT.709"); MediaFormat.COLOR_STANDARD_BT2020 -> add("BT.2020")
-                MediaFormat.COLOR_STANDARD_BT601_NTSC, MediaFormat.COLOR_STANDARD_BT601_PAL -> add("BT.601")
-            }
-            when (transfer) {
-                MediaFormat.COLOR_TRANSFER_HLG -> add("HLG"); MediaFormat.COLOR_TRANSFER_ST2084 -> add("PQ")
-                MediaFormat.COLOR_TRANSFER_SDR_VIDEO -> add("SDR")
-            }
-            when (f.intOrNull(MediaFormat.KEY_COLOR_RANGE)) {
-                MediaFormat.COLOR_RANGE_FULL -> add("full"); MediaFormat.COLOR_RANGE_LIMITED -> add("limited")
-            }
-        }.joinToString(" ")
+        val profile = f?.intOrNull(MediaFormat.KEY_PROFILE)
+        val transfer = footage.transfer ?: f?.intOrNull(MediaFormat.KEY_COLOR_TRANSFER)?.let {
+            when (it) { MediaFormat.COLOR_TRANSFER_HLG -> 18; MediaFormat.COLOR_TRANSFER_ST2084 -> 16; MediaFormat.COLOR_TRANSFER_SDR_VIDEO -> 1; else -> null } }
+        val primaries = footage.primaries ?: f?.intOrNull(MediaFormat.KEY_COLOR_STANDARD)?.let {
+            when (it) { MediaFormat.COLOR_STANDARD_BT709 -> 1; MediaFormat.COLOR_STANDARD_BT2020 -> 9
+                MediaFormat.COLOR_STANDARD_BT601_NTSC, MediaFormat.COLOR_STANDARD_BT601_PAL -> 6; else -> null } }
+        val range = footage.fullRange ?: f?.intOrNull(MediaFormat.KEY_COLOR_RANGE)?.let { it == MediaFormat.COLOR_RANGE_FULL }
+        val tenFromProfile = profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 ||
+            profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10 ||
+            profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus
+        val bitDepth = footage.bitDepth ?: if (tenFromProfile || transfer == 16 || transfer == 18) 10 else 8
+        footage = footage.copy(transfer = transfer, primaries = primaries, fullRange = range, bitDepth = bitDepth, codec = codec)
+
         val mmr = MediaMetadataRetriever()
-        var rot = 0; var fps = f.floatOrNull(MediaFormat.KEY_FRAME_RATE) ?: 0f; var dur = 0L
+        var rot = 0; var fps = f?.floatOrNull(MediaFormat.KEY_FRAME_RATE) ?: 0f; var dur = 0L
         try {
             mmr.setDataSource(ctx, uri)
             rot = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
@@ -75,10 +83,38 @@ object VideoProbe {
                 val frames = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toLongOrNull()
                 if (frames != null && dur > 0) fps = frames * 1000f / dur
             }
-        } catch (_: Exception) { } finally { mmr.release() }
-        return VideoInfo(uri, name, f.getInteger(MediaFormat.KEY_WIDTH), f.getInteger(MediaFormat.KEY_HEIGHT), rot,
-            codec, fps, if (is10) 10 else 8, color, audio, dur, size)
+            // 3) No log profile in the metadata and not HDR? Look at a frame: log is visibly flat.
+            if (footage.log == null && footage.hdr == null) {
+                val bmp = mmr.getScaledFrameAtTime(dur * 500L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 90)
+                if (bmp != null) {
+                    val sw = bmp.copy(Bitmap.Config.ARGB_8888, false)
+                    val px = IntArray(sw.width * sw.height); sw.getPixels(px, 0, sw.width, 0, 0, sw.width, sw.height)
+                    if (FootageAnalyzer.looksLikeLog(px)) footage = footage.copy(log = "Log", logEstimated = true)
+                    if (sw !== bmp) sw.recycle(); bmp.recycle()
+                }
+            }
+        } catch (_: Throwable) { } finally { mmr.release() }
+
+        val w = f?.getInteger(MediaFormat.KEY_WIDTH) ?: footage.width!!
+        val h = f?.getInteger(MediaFormat.KEY_HEIGHT) ?: footage.height!!
+        val color = listOfNotNull(footage.primariesName, footage.hdr ?: if (transfer != null) "SDR" else null,
+            range?.let { if (it) "full" else "limited" }).joinToString(" ")
+        return VideoInfo(uri, name, w, h, rot, codec, fps, bitDepth, color, audio != null, dur, size, footage, audio)
     }
+
+    private fun audioLabel(f: MediaFormat): String {
+        val m = f.getString(MediaFormat.KEY_MIME) ?: ""
+        val codec = when {
+            m.contains("mp4a") -> "AAC"; m.contains("raw") -> "PCM"; m.contains("opus") -> "Opus"
+            m.contains("ac3") -> "AC-3"; m.contains("eac3") -> "E-AC-3"; m.contains("mpeg") -> "MP3"; m.contains("flac") -> "FLAC"
+            else -> m.removePrefix("audio/").uppercase()
+        }
+        val ch = f.intOrNull(MediaFormat.KEY_CHANNEL_COUNT)
+        val hz = f.intOrNull(MediaFormat.KEY_SAMPLE_RATE)
+        return listOfNotNull(codec, ch?.let { if (it == 1) "mono" else if (it == 2) "stereo" else "$it ch" },
+            hz?.let { "${it / 1000.0} kHz".replace(".0 kHz", " kHz") }).joinToString(", ")
+    }
+
     private fun MediaFormat.intOrNull(k: String) = if (containsKey(k)) try { getInteger(k) } catch (_: Exception) { null } else null
     private fun MediaFormat.floatOrNull(k: String): Float? = if (!containsKey(k)) null else
         try { getFloat(k) } catch (_: Exception) { try { getInteger(k).toFloat() } catch (_: Exception) { null } }

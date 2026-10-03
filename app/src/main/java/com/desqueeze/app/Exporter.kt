@@ -125,7 +125,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         bitrate = bitrate.coerceIn(4_000_000L, cap)
 
         val tmp = File(ctx.cacheDir, "export_${System.nanoTime()}.mp4")
-        val isHdr = job.video.colorInfo.contains("HLG") || job.video.colorInfo.contains("PQ")
+        val isHdr = job.video.isHdr
         val item = EditedMediaItem.Builder(MediaItem.fromUri(job.video.uri)).setEffects(Effects(listOf(), effects)).build()
         val composition = Composition.Builder(EditedMediaItemSequence(item))
             .setHdrMode(if (isHdr && settings.keepHdr) Composition.HDR_MODE_KEEP_HDR

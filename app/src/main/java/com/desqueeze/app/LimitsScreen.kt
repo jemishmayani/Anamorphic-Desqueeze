@@ -31,7 +31,7 @@ fun LimitsScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
 
             val hevcDec = all.filter { !it.encoder && it.hardware && it.mime == MediaFormat.MIMETYPE_VIDEO_HEVC }
-            Group("Your D-Log footage") {
+            Group("Playback on this phone") {
                 InfoCard {
                     Stat("Plays 10-bit HEVC in hardware", yesNo(hevcDec.any { it.tenBit }))
                     Stat("Largest HEVC it can decode", hevcDec.maxByOrNull { it.maxW }?.let { "${it.maxW} × ${it.maxH}" } ?: "Not supported")

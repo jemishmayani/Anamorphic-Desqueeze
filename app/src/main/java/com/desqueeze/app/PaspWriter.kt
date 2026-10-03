@@ -13,12 +13,13 @@ import java.nio.channels.FileChannel
  *
  * The video/audio data is copied byte-for-byte. Only the MP4/MOV header (moov) changes:
  * a 'pasp' (pixel aspect ratio) box is written into the video track, telling players to
- * display each pixel [squeeze]× wider. 10-bit, D-Log, bitrate, fps, audio, timecode and
+ * display each pixel [squeeze]× wider. 10-bit, log/HDR, bitrate, fps, audio, timecode and
  * metadata are all untouched, and it takes as long as copying the file.
  */
 object PaspWriter {
     private val CONTAINERS = setOf("moov", "trak", "mdia", "minf", "stbl")
-    private val VISUAL = setOf("hvc1", "hev1", "avc1", "avc3", "dvh1", "dvhe")
+    private val VISUAL = setOf("hvc1", "hev1", "avc1", "avc3", "dvh1", "dvhe", "dva1", "dvav", "av01", "vp09", "mp4v",
+        "apch", "apcn", "apcs", "apco", "ap4h", "ap4x", "mjpa", "mjpb", "jpeg")
 
     private class Node(
         val type: String,
@@ -110,7 +111,7 @@ object PaspWriter {
                 else { kids += Node("pasp", raw = pasp); grow += 16 }
             }
         }
-        require(visualFound > 0) { "No HEVC/H.264 video track found that can be tagged." }
+        require(visualFound > 0) { "No supported video track found to tag." }
         // If the header sits before the media data, every sample offset moves by the bytes we added.
         if (moovBeforeMdat && grow != 0) walk(root) { n, _ -> if (n.type == "stco" || n.type == "co64") shiftOffsets(n, grow) }
         return ByteArrayOutputStream(moov.size + 64).also { serialize(root, it) }.toByteArray()
