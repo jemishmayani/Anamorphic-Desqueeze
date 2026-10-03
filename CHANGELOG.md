@@ -24,7 +24,7 @@ All notable changes to Anamorphic De-Squeeze. Newest first.
 - Quality and codec can be changed directly in the Export step.
 
 ### Changed
-- **Lossless** now also updates the track's display size, so QuickTime / Apple Photos (which ignore the pixel-aspect tag) show the de-squeezed shape too.
+- **Lossless** now also updates the track's display size, which some players (such as QuickTime) use to size the picture, so more apps show the de-squeezed shape.
 - Choosing a LUT switches the export method to Re-encode, since only Re-encode can apply it.
 - The preview keeps its position and play state when moving between the Frame and Look steps.
 
