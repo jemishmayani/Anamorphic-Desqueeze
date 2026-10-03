@@ -2,6 +2,32 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.6 — 2026-10-03
+
+### Added
+- **Four-step flow:** Clips → Frame → Look → Export, with a step header you can tap and Back/Next buttons. Clips and choices carry across steps.
+- **Vertical anamorphic support:**
+  - **Orientation** (Auto / Horizontal / Vertical). Auto uses the file's rotation metadata; the others fix files with missing or wrong rotation.
+  - **Desqueeze direction** (Auto / Horizontal / Vertical). Auto follows the lens's squeeze axis, so a clip rotated 90° is stretched vertically.
+  - Lossless writes vertical pixel aspect (e.g. `100:133`) and, when orientation is overridden, a corrected rotation matrix, still without touching the media. Re-encode rotates and stretches on the GPU. Tested against ffmpeg: media bit-identical, and the rotation matrix matches ffmpeg's own.
+- **LUT preview** in the new Look step:
+  - LUT off / on while the video plays, using a lighter ~720p proxy.
+  - Live strength.
+  - **Compare:** a full-quality still with a draggable before/after divider. Its LUT math matches ffmpeg's to within 1 level out of 255.
+- **Smart export recommendations:** a summary of the clip (camera, resolution, log/HDR, bit depth, codec, squeeze), a recommended method with the reason, and the alternative. Covers log/HDR/10-bit footage, 8-bit footage, clips with a LUT, and codecs this phone can't decode.
+- **Size and time estimates** before export, labelled as estimates. They learn this phone's real speed from your exports.
+- **Clip list with thumbnails:** duration, resolution, bit depth and log/HDR at a glance; add or remove clips.
+- **Filmstrip timeline** under the preview: thumbnails with a playhead, tap or drag to seek, current and total time.
+- **Device diagnostics** (replaces Export limits):
+  - a ✓ / ⚠ / ✗ checklist of decode/encode support (HEVC, 10-bit HEVC, H.264, AV1, 10-bit encode), maximum frame width, 4K frame rate and bitrate, each explained in plain words
+  - a squeeze check for 4K and 1080p at 1.33×–2.0× that says which squeezes Re-encode can make at full size
+- Quality and codec can be changed directly in the Export step.
+
+### Changed
+- **Lossless** now also updates the track's display size, so QuickTime / Apple Photos (which ignore the pixel-aspect tag) show the de-squeezed shape too.
+- Choosing a LUT switches the export method to Re-encode, since only Re-encode can apply it.
+- The preview keeps its position and play state when moving between the Frame and Look steps.
+
 ## v1.5 — 2026-10-03
 
 ### Added

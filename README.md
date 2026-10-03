@@ -28,7 +28,14 @@ thin and stretched. This app restores the correct shape by widening the image by
 "Squeeze factor" here always means the lens squeeze, never a target aspect ratio. The app
 **never crops** to 16:9, 2.39:1 or anything else. The whole frame is kept.
 
-**Workflow:** Choose video → pick squeeze factor → preview → (optional LUT) → export.
+**Workflow:** four simple steps.
+
+| Step | What you do |
+|---|---|
+| **1. Clips** | Pick one or more videos. Each shows a thumbnail, duration, resolution, bit depth and detected log/HDR |
+| **2. Frame** | Choose the squeeze factor, orientation and desqueeze direction, and watch the live preview |
+| **3. Look** | Optionally add a LUT: preview it live, set strength, compare before/after |
+| **4. Export** | Follow the recommendation (or pick the alternative), check the size and time estimate, export |
 
 The original file is never modified. Exports are saved to `Movies/AnamorphicDesqueeze/`
 as `ORIGINALNAME_DESQUEEZED_1.33X.mp4` (or `.mov` for MOV sources in Lossless mode).
@@ -52,6 +59,20 @@ badges, with full details one tap away:
 
 Only the header is read, so analysis is instant even for multi-GB files.
 
+## Vertical anamorphic
+
+When a phone or camera is turned 90° with the anamorphic lens attached, the squeeze ends up
+on the picture's vertical axis. The **Frame** step has two controls for this:
+
+| Control | Options |
+|---|---|
+| **Orientation** | **Auto** uses the file's rotation metadata; **Horizontal** / **Vertical** force a landscape or portrait display, for files with missing or wrong rotation |
+| **Desqueeze direction** | **Auto** stretches along the lens's squeeze axis (the sensor's horizontal axis, so vertically on screen when the clip is rotated 90°); **Horizontal** / **Vertical** choose the on-screen axis yourself |
+
+Lossless writes a vertical pixel aspect (for example `100:133`) and, if you override orientation,
+a corrected rotation matrix, still without touching the video data. Re-encode rotates and
+stretches on the GPU.
+
 ## Two export methods
 
 | | **Lossless** (default) | **Re-encode** |
@@ -69,7 +90,7 @@ Lossless clip still looks squeezed, check *Clip Attributes → Pixel Aspect Rati
 
 ### Why Re-encode output can be smaller than "4K"
 
-Phone hardware encoders have a maximum frame width; see **Settings → Export limits** for
+Phone hardware encoders have a maximum frame width; see **Settings → Device diagnostics** for
 yours (for example, 4096 px). De-squeezing 4K footage at 1.33× needs a 5107 px wide frame,
 so Re-encode shrinks the whole frame evenly to fit (about 4096 × 1732), keeping the shape
 correct and never cropping. Editors such as LumaFusion instead letterbox or crop into a
@@ -80,12 +101,16 @@ actual image detail is similar or lower.
 
 - **Squeeze presets:** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus a custom factor (slider or typed, 1.0–3.0×)
 - **Default squeeze factor** in Settings: pick a preset or set any custom value. It's used for new imports unless you've already picked a factor
-- **Cinema-style preview:** the frame springs between squeezed and de-squeezed widths; press and hold to compare with the original; play/pause, mute, scrubbing, a live aspect-ratio readout. Hardware playback; the file is never touched
+- **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to compare with the original; play/pause, mute, a live aspect-ratio readout; a **filmstrip timeline** of thumbnails with a playhead to tap or drag. Hardware playback; the file is never touched
+- **LUT preview:** LUT off / on while the video plays (rendered at a lighter ~720p proxy so 4K 10-bit stays smooth), live strength, and **Compare**: a full-quality still with a draggable before/after divider
+- **Smart recommendations:** a plain-language suggestion for each clip (for example "Lossless Desqueeze: preserves your original 10-bit D-Log footage") with the alternative and why
+- **Estimates before export:** output size and processing time, labelled as estimates; they learn this phone's real speed from your exports
+- **Clip list with thumbnails:** duration, resolution, bit depth and log/HDR at a glance; add or remove clips
 - **Footage badges:** log, HDR/SDR, bit depth, chroma, codec, frame rate, gamut, existing pixel-aspect tag and audio, each with its own icon; tap **All details** for the full technical breakdown
 - **Batch export:** select several clips and export them all with the same settings
 - **LUT library** (Re-encode): import, select, rename and delete your own 3D `.cube` LUTs, with 0–100% strength. No LUTs are bundled; import your camera maker's official log-to-Rec.709 LUT
 - **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File quality; frame rate and audio kept; automatic retries with safer settings if the encoder refuses
-- **Export limits screen:** shows what your phone's hardware can do: 10-bit HEVC decode, maximum frame size, maximum squeeze for 4K and 1080p, maximum frame rate and bitrate, and the full codec list
+- **Device diagnostics:** a ✓ / ⚠ / ✗ checklist of HEVC, 10-bit HEVC, H.264 and AV1 decode; HEVC, 10-bit and H.264 encode; maximum frame width, 4K frame rate and bitrate. Each item explains what it means for you, and a squeeze check shows which squeezes Re-encode can make at full size on 4K and 1080p
 - **Crash reports:** if the app ever closes unexpectedly, it shows a report on next launch that you can copy and send
 - Light, dark or system theme; works fully offline; no ads, accounts or tracking, and no internet permission
 
@@ -111,7 +136,7 @@ uninstall the previous version before installing a new one.
   some phones and action cams don't, and then the app can only estimate from the picture.
 - **Preview and Re-encode need the phone to decode the codec.** ProRes, for example, usually
   can't be played on Android; Lossless tagging still works for it.
-- **LUTs are applied at 8-bit precision**, and only in Re-encode. The preview shows framing only, not the LUT.
+- **LUTs are applied at 8-bit precision**, and only in Re-encode. The live LUT preview uses a ~720p proxy; Compare shows a full-quality still. On some phones live effects aren't supported; the app then says so and Compare still works.
 - **Some DJI-specific metadata** may not carry over in Re-encode (Lossless keeps everything).
 - **Keep the app open while exporting**; the screen stays on automatically.
 
@@ -140,8 +165,13 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `VideoProbe.kt` | Combines header analysis with Android's track info |
 | `FootageAnalyzer.kt` | Camera-agnostic header analysis: log, HDR, bit depth, chroma, color, camera |
 | `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
-| `PreviewPlayer.kt` | Preview with hold-to-compare and custom controls |
-| `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and the Export limits screen |
+| `Steps.kt` | The four-step flow: Clips, Frame, Look, Export |
+| `Geometry.kt` | Orientation + desqueeze direction resolved into rotation, output size and pixel aspect |
+| `PreviewPlayer.kt` | Preview: hold-to-compare, live LUT, before/after still, filmstrip timeline |
+| `Frames.kt` | Thumbnails and still frames in display orientation |
+| `Recommend.kt` | Plain-language export recommendations |
+| `Estimates.kt` | Size/time estimates and learned device speed |
+| `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and the Device diagnostics screen |
 | `LutManager.kt` | `.cube` parsing and the LUT library |
 | `Settings.kt` | Saved preferences |
 | `Diag.kt` | Crash, freeze and low-memory reports |
