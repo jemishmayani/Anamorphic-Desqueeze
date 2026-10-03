@@ -24,6 +24,8 @@ class Settings(ctx: Context) {
     /** New clips use their own recommendation unless the user picks a fixed default method. */
     var followRecommendation: Boolean get() = p.getBoolean("followRec", true); set(v) = p.edit().putBoolean("followRec", v).apply()
     var theme: ThemeMode get() = ThemeMode.valueOf(p.getString("theme", ThemeMode.SYSTEM.name)!!); set(v) = p.edit().putString("theme", v.name).apply()
+    var format: OutFormat get() = runCatching { OutFormat.valueOf(p.getString("format", "ORIGINAL")!!) }.getOrDefault(OutFormat.ORIGINAL)
+        set(v) = p.edit().putString("format", v.name).apply()
+    var formatFill: Boolean get() = p.getBoolean("formatFill", false); set(v) = p.edit().putBoolean("formatFill", v).apply()
+    var notifAsked: Boolean get() = p.getBoolean("notifAsked", false); set(v) = p.edit().putBoolean("notifAsked", v).apply()
 }
-
-fun fmtSqueeze(f: Float): String = (if (f * 100 % 10 == 0f) "%.1f" else "%.2f").format(f) + "×"

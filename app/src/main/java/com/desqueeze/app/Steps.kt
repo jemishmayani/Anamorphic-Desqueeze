@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -41,67 +42,75 @@ import kotlinx.coroutines.withContext
 @Composable
 fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutManager) {
     val ctx = LocalContext.current
-    val exporter = remember { Exporter(ctx, settings, luts) }
-    val memory = remember { PlayheadMemory() }
+    val exporter = remember { ExportController.exporter ?: Exporter(ctx.applicationContext, settings, luts).also { ExportController.exporter = it } }
+    val memory = st.memory
 
-    fun importClips(uris: List<android.net.Uri>, append: Boolean) {
-        if (uris.isEmpty()) return
-        act.lifecycleScope.launch {
-            st.status = "Reading clips…"
-            val errs = mutableListOf<String>()
-            val found = withContext(Dispatchers.IO) {
-                uris.mapNotNull { u -> try { VideoProbe.probe(ctx, u) } catch (e: Exception) { errs += (e.message ?: "Couldn't read this file"); null } }
-            }
-            val known = if (append) st.videos.map { it.uri }.toSet() else emptySet()
-            st.videos = (if (append) st.videos else emptyList()) + found.filter { it.uri !in known }
-            if (!append) { st.selected = 0; memory.positionMs = 0 }
-            st.results = emptyList()
-            // Keep the factor the user already chose; only fall back to the saved default if they haven't.
-            if (!st.squeezeChosen) st.newClipSqueeze = settings.defaultSqueeze
-            // New clips get the current factor; clips already in the list keep their own.
-            found.forEach { st.clipSqueeze.putIfAbsent(st.keyOf(it), st.newClipSqueeze) }
-            st.status = errs.joinToString("\n")
-        }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { importClips(ctx, st, settings, it, append = false) }
+    val adder = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { importClips(ctx, st, settings, it, append = true) }
+
+    // Background export shows a progress notification; ask once (Android 13+), then export either way.
+    var pendingExport by remember { mutableStateOf(false) }
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        settings.notifAsked = true
+        if (pendingExport) { pendingExport = false; startExport(ctx, st, exporter) }
     }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { importClips(it, append = false) }
-    val adder = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { importClips(it, append = true) }
+    val begin: () -> Unit = {
+        val needs = android.os.Build.VERSION.SDK_INT >= 33 && !settings.notifAsked &&
+            androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (needs) { pendingExport = true; notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+        else startExport(ctx, st, exporter)
+    }
 
-    PreflightDialog(st) { startExport(act, st, exporter) }
+    PreflightDialog(st) { begin() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { StepBar(act, st, exporter) },
+        bottomBar = { StepBar(st, exporter, begin) },
     ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(top = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BrandMark(Modifier.size(36.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text("Anamorphic De-Squeeze", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { st.screen = Screen.Settings }, enabled = !st.busy) { Icon(Icons.Default.Settings, "Settings") }
-                }
-                Spacer(Modifier.height(10.dp))
-                StepHeader(st)
-                Spacer(Modifier.height(6.dp))
-                FlareLine(alpha = 0.6f)
-            }
-            AnimatedContent(st.step, label = "step", transitionSpec = {
-                val fwd = targetState.ordinal > initialState.ordinal
-                (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (fwd) it / 10 else -it / 10 }) togetherWith fadeOut(tween(120))
-            }) { step ->
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    when (step) {
-                        Step.Clips -> ClipsStep(st, onPick = { picker.launch(arrayOf("video/*")) }, onAdd = { adder.launch(arrayOf("video/*")) })
-                        Step.Frame -> FrameStep(st, memory, settings)
-                        Step.Look -> LookStep(st, luts, memory)
-                        Step.Export -> ExportStep(st, settings, exporter)
+        BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
+            // Two panes on tablets, foldables and phones in landscape.
+            val wide = maxWidth >= 700.dp || (maxWidth > maxHeight && maxWidth >= 560.dp)
+            val previewMax = if (wide) (maxHeight - 150.dp).coerceAtLeast(160.dp) else null
+            Column(Modifier.fillMaxSize()) {
+                Column(Modifier.padding(horizontal = 20.dp).padding(top = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BrandMark(Modifier.size(36.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Anamorphic De-Squeeze", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                        if (wide) Box(Modifier.widthIn(max = 520.dp).weight(1.4f)) { StepHeader(st) }
+                        IconButton(onClick = { st.screen = Screen.Settings }) { Icon(Icons.Default.Settings, "Settings") }
                     }
-                    if (st.status.isNotEmpty() && !st.busy)
-                        Text(st.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.height(4.dp))
+                    if (!wide) { Spacer(Modifier.height(10.dp)); StepHeader(st) }
+                    Spacer(Modifier.height(6.dp))
+                    FlareLine(alpha = 0.6f)
+                }
+                AnimatedContent(st.step, label = "step", transitionSpec = {
+                    val fwd = targetState.ordinal > initialState.ordinal
+                    (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (fwd) it / 10 else -it / 10 }) togetherWith fadeOut(tween(120))
+                }) { step ->
+                    val panes = Panes(wide)
+                    when (step) {
+                        Step.Clips -> ClipsStep(st, panes, onPick = { picker.launch(arrayOf("video/*")) }, onAdd = { adder.launch(arrayOf("video/*")) })
+                        Step.Frame -> FrameStep(st, memory, settings, panes, previewMax)
+                        Step.Look -> LookStep(st, luts, memory, panes, previewMax)
+                        Step.Export -> ExportStep(st, settings, exporter, panes)
+                    }
                 }
             }
         }
+    }
+}
+
+/** Lays a step out as one scrolling column (phones) or two independently scrolling panes (tablets, landscape). */
+class Panes(val wide: Boolean)
+
+@Composable
+fun TwoPane(panes: Panes, left: @Composable ColumnScope.() -> Unit, right: @Composable ColumnScope.() -> Unit) {
+    val spacing = Arrangement.spacedBy(20.dp)
+    if (panes.wide) Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(Modifier.weight(1.15f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), verticalArrangement = spacing, content = left)
+        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), verticalArrangement = spacing, content = right)
+    } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = spacing) {
+        left(); right(); Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -131,11 +140,15 @@ fun StepHeader(st: AppState) {
 }
 
 @Composable
-fun StepBar(act: MainActivity, st: AppState, exporter: Exporter) {
+fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
     val p by animateFloatAsState(st.progress, tween(300), label = "progress")
     val hasClips = st.videos.isNotEmpty()
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
+            if (st.status.isNotEmpty() && !st.busy) {
+                Text(st.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 3)
+                Spacer(Modifier.height(8.dp))
+            }
             if (st.busy) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(st.status, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -144,7 +157,10 @@ fun StepBar(act: MainActivity, st: AppState, exporter: Exporter) {
                 Spacer(Modifier.height(10.dp))
                 LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
                 Spacer(Modifier.height(10.dp))
-                OutlinedButton(onClick = { st.job?.cancel(); st.busy = false; st.status = "Export cancelled."; act.keepScreenOn(false) },
+                Text("Keeps going in the background; you can lock the phone or use other apps.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { ExportController.cancel(st) },
                     Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Cancel export") }
                 return@Column
             }
@@ -155,11 +171,11 @@ fun StepBar(act: MainActivity, st: AppState, exporter: Exporter) {
                 Button(
                     onClick = {
                         if (!last) st.step = Step.entries[st.step.ordinal + 1]
-                        else act.lifecycleScope.launch {
+                        else ExportController.scope.launch {
                             val issues = withContext(Dispatchers.Default) {
-                                st.videos.map { it.name to compatFor(st, exporter, it, modeFor(st, exporter, it)) }.filter { it.second.issues.isNotEmpty() }
+                                st.videos.map { it.name to compatFor(st, exporter, it, modeFor(st, exporter, it)) }.filter { it.second.worst != Status.OK }
                             }
-                            if (issues.isEmpty()) startExport(act, st, exporter) else st.preflight = issues
+                            if (issues.isEmpty()) begin() else st.preflight = issues
                         }
                     },
                     enabled = hasClips, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(16.dp),
@@ -178,25 +194,40 @@ fun StepBar(act: MainActivity, st: AppState, exporter: Exporter) {
 /* ------------------------------------------------------------------ 1. Clips */
 
 @Composable
-fun ClipsStep(st: AppState, onPick: () -> Unit, onAdd: () -> Unit) {
-    if (st.videos.isEmpty()) { EmptyPreview(onPick); return }
+fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit) {
     val c = MaterialTheme.colorScheme
-    Section(if (st.videos.size == 1) "Your clip" else "${st.videos.size} clips", trailing = {
-        TextButton(onClick = onAdd, enabled = !st.busy) { Text("Add clips") }
-    }) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            st.videos.forEachIndexed { i, v ->
-                ClipRow(v, selected = i == st.selected, onClick = { st.selected = i },
-                    onRemove = if (st.busy) null else ({
-                        st.videos = st.videos.filterIndexed { j, _ -> j != i }
-                        st.selected = st.selected.coerceAtMost((st.videos.size - 1).coerceAtLeast(0))
-                    }))
+    if (st.videos.isEmpty()) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)
+            .then(if (panes.wide) Modifier.widthIn(max = 720.dp) else Modifier), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            EmptyPreview(onPick)
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(AppIcons.Info, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+                Text("Tip: in your gallery, select clips, tap Share and choose De-Squeeze to open them here directly.",
+                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             }
         }
-        if (st.videos.size > 1) Text("Settings you choose next apply to every clip.", style = MaterialTheme.typography.bodySmall,
-            color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        return
     }
-    st.videos.getOrNull(st.selected)?.let { FootageCard(st, it, enabled = !st.busy, onChange = onPick) }
+    TwoPane(panes, left = {
+        Section(if (st.videos.size == 1) "Your clip" else "${st.videos.size} clips", trailing = {
+            TextButton(onClick = onAdd, enabled = !st.busy) { Text("Add clips") }
+        }) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                st.videos.forEachIndexed { i, v ->
+                    ClipRow(v, selected = i == st.selected, onClick = { st.selected = i },
+                        onRemove = if (st.busy) null else ({
+                            st.videos = st.videos.filterIndexed { j, _ -> j != i }
+                            st.selected = st.selected.coerceAtMost((st.videos.size - 1).coerceAtLeast(0))
+                        }))
+                }
+            }
+            if (st.videos.size > 1) Text("Each clip can have its own squeeze, trim and export method in the next steps.",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        }
+    }, right = {
+        st.videos.getOrNull(st.selected)?.let { FootageCard(st, it, enabled = !st.busy, onChange = onPick) }
+    })
 }
 
 @Composable
@@ -270,53 +301,106 @@ fun ClipSwitcher(st: AppState, caption: ((VideoInfo) -> String?)? = null) {
 /* ------------------------------------------------------------------ 2. Frame */
 
 @Composable
-fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings) {
+fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: Panes, previewMax: androidx.compose.ui.unit.Dp?) {
     val v = st.videos.getOrNull(st.selected) ?: return
     val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
     val c = MaterialTheme.colorScheme
-    ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + if (existingTag(clip) != null) "  · tagged" else "" }
-    key(v.uri) { if (st.busy) ExportingPlaceholder(g.outRatio) else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides) }
-    ViewToggle(st.desqueezed) { st.desqueezed = it }
-
+    TwoPane(panes, left = {
+        ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + (if (st.trimFor(clip) != null) "  · trimmed" else "") + if (existingTag(clip) != null) "  · tagged" else "" }
+        key(v.uri) {
+            if (st.busy) ExportingPlaceholder(g.outRatio)
+            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = st.trimFor(v), scope = st.scope, maxHeight = previewMax)
+        }
+        ViewToggle(st.desqueezed) { st.desqueezed = it }
+        TrimSection(st, v, memory)
+        ExposureSection(st)
+    }, right = {
     Section(if (st.videos.size > 1) "Squeeze factor for clip ${st.selected + 1}" else "Squeeze factor", trailing = {
-        Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
-    }) {
-        SqueezeChips(st)
-        if (st.videos.size > 1) {
-            val allSame = st.videos.all { kotlin.math.abs(st.squeezeFor(it) - st.squeeze) < 0.001f }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text(if (allSame) "All clips use ${fmtSqueeze(st.squeeze)}." else "Clips use different factors, e.g. for different adapters.",
-                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
-                if (!allSame) TextButton(onClick = { val f = st.squeeze; st.videos.forEach { st.clipSqueeze[st.keyOf(it)] = f } }, enabled = !st.busy) {
-                    Text("Apply ${fmtSqueeze(st.squeeze)} to all")
+            Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
+        }) {
+            SqueezeChips(st)
+            if (st.videos.size > 1) {
+                val allSame = st.videos.all { kotlin.math.abs(st.squeezeFor(it) - st.squeeze) < 0.001f }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Text(if (allSame) "All clips use ${fmtSqueeze(st.squeeze)}." else "Clips use different factors, e.g. for different adapters.",
+                        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    if (!allSame) TextButton(onClick = { val f = st.squeeze; st.videos.forEach { st.clipSqueeze[st.keyOf(it)] = f } }, enabled = !st.busy) {
+                        Text("Apply ${fmtSqueeze(st.squeeze)} to all")
+                    }
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            Text("${g.dispW} × ${g.dispH}  displays as  ${g.outW} × ${g.outH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
+            Text("${g.ratioLabel()}. Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         }
-        Spacer(Modifier.height(6.dp))
-        Text("${g.dispW} × ${g.dispH}  displays as  ${g.outW} × ${g.outH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-        Text("${g.ratioLabel()}. Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-    }
 
-    existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
+        existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
 
-    Section("Guides") {
-        GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it }
-    }
-
-    if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
-        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-    Section("Orientation") {
-        Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
-    }
-    Section("Desqueeze direction") {
-        Segmented(Direction.entries.map { it.label }, st.direction.ordinal, enabled = !st.busy) { st.direction = Direction.entries[it] }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.Top) {
-            Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
-            Spacer(Modifier.width(8.dp))
-            Text(directionHint(v, g, st.orientation, st.direction) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
-                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        Section("Guides") {
+            GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it }
         }
+
+        if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
+            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        Section("Orientation") {
+            Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
+        }
+        Section("Desqueeze direction") {
+            Segmented(Direction.entries.map { it.label }, st.direction.ordinal, enabled = !st.busy) { st.direction = Direction.entries[it] }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+                Text(directionHint(v, g, st.orientation, st.direction) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
+                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            }
+        }
+    })
+}
+
+/** Trim before export: in and out points per clip. */
+@Composable
+fun TrimSection(st: AppState, v: VideoInfo, memory: PlayheadMemory) {
+    val c = MaterialTheme.colorScheme
+    val dur = v.durationMs.coerceAtLeast(1)
+    val cur = st.clipTrim[st.keyOf(v)] ?: (0L to dur)
+    fun set(a: Long, b: Long) {
+        val lo = a.coerceIn(0, dur - 500); val hi = b.coerceIn(lo + 500, dur)
+        st.clipTrim[st.keyOf(v)] = lo to hi
+    }
+    Section("Trim", trailing = {
+        Text("${fmtDuration(cur.second - cur.first)} of ${fmtDuration(dur)}", style = MaterialTheme.typography.titleSmall.merge(Mono),
+            color = if (st.trimFor(v) != null) Warm else c.onSurfaceVariant)
+    }) {
+        RangeSlider(
+            value = cur.first.toFloat()..cur.second.toFloat(),
+            onValueChange = { r -> set(r.start.toLong(), r.endInclusive.toLong()) },
+            valueRange = 0f..dur.toFloat(), enabled = !st.busy,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(fmtDuration(cur.first), style = MaterialTheme.typography.labelMedium.merge(Mono))
+            Spacer(Modifier.weight(1f))
+            Text(fmtDuration(cur.second), style = MaterialTheme.typography.labelMedium.merge(Mono))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            OutlinedButton(onClick = { set(memory.positionMs, cur.second) }, enabled = !st.busy, shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.weight(1f)) { Text("Start here", maxLines = 1) }
+            OutlinedButton(onClick = { set(cur.first, memory.positionMs) }, enabled = !st.busy, shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.weight(1f)) { Text("End here", maxLines = 1) }
+            TextButton(onClick = { st.clipTrim.remove(st.keyOf(v)) }, enabled = !st.busy && st.trimFor(v) != null) { Text("Reset") }
+        }
+        Text("Play to the moment you want and tap Start here / End here. Re-encode cuts exactly; Lossless starts on the nearest keyframe, usually under a second earlier.",
+            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/** Exposure tools for judging log footage on the phone. */
+@Composable
+fun ExposureSection(st: AppState) {
+    Section("Exposure") {
+        Segmented(Scope.entries.map { it.label }, st.scope.ordinal) { st.scope = Scope.entries[it] }
+        if (st.scope == Scope.OFF) Text("Histogram, waveform and false color help judge exposure, especially for flat log footage.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
@@ -362,10 +446,14 @@ fun TagProtectionCard(st: AppState, v: VideoInfo, tag: Float) {
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Segmented(options: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
+    val many = options.size > 3
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { i, label ->
             SegmentedButton(selected = i == selected, onClick = { onSelect(i) }, enabled = enabled,
-                shape = SegmentedButtonDefaults.itemShape(i, options.size)) { Text(label, maxLines = 1) }
+                shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                icon = { if (!many) SegmentedButtonDefaults.Icon(i == selected) }) {
+                Text(label, maxLines = 1, style = if (many) MaterialTheme.typography.labelMedium else LocalTextStyle.current)
+            }
         }
     }
 }
@@ -373,7 +461,7 @@ fun Segmented(options: List<String>, selected: Int, enabled: Boolean = true, onS
 /* ------------------------------------------------------------------ 3. Look */
 
 @Composable
-fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
+fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Panes, previewMax: androidx.compose.ui.unit.Dp?) {
     val ctx = LocalContext.current
     val v = st.videos.getOrNull(st.selected) ?: return
     val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
@@ -386,13 +474,15 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
         } catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
     }
 
+    TwoPane(panes, left = {
     ClipSwitcher(st)
     key(v.uri) {
         if (st.busy) ExportingPlaceholder(g.outRatio)
         else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
-            guides = st.guides, compareRequest = st.compareRequest)
+            guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), scope = st.scope, maxHeight = previewMax)
     }
-
+    ExposureSection(st)
+    }, right = {
     Section("LUT") {
         PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
             listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
@@ -431,17 +521,18 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
         if (st.lutId == null) Text("Optional. Import your camera maker's official log-to-Rec.709 LUT, or any creative 3D .cube LUT.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
+    })
 }
 
 /* ------------------------------------------------------------------ 4. Export */
 
 @Composable
-fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
+fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Panes) {
     val ctx = LocalContext.current
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
     val key = v.uri.toString()
-    val deps = arrayOf<Any?>(st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap())
+    val deps = arrayOf<Any?>(st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.format, st.formatFill, st.clipTrim.toMap())
     val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
@@ -452,13 +543,15 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
     val est by produceState<Map<String, Estimate>?>(null, *deps) {
         value = withContext(Dispatchers.Default) {
             st.videos.associate { clip ->
-                clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.effectiveSqueeze(clip), st.orientation, st.direction), modes[clip.uri.toString()] ?: st.mode)
+                clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.effectiveSqueeze(clip), st.orientation, st.direction),
+                    modes[clip.uri.toString()] ?: st.mode, st.lengthMs(clip), st.format)
             }
         }
     }
     fun setMode(m: ExportMode) { st.clipModes[key] = m }
 
-    ClipSwitcher(st) { clip -> if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" else "Re-encode" }
+    TwoPane(panes, left = {
+    ClipSwitcher(st) { clip -> if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" else "Re-encode" + if (st.format != OutFormat.ORIGINAL) " ${st.format.short}" else "" }
 
     recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { setMode(it) } }
         ?: LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -466,7 +559,6 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
     val compat by produceState<CompatReport?>(null, key, mode, *deps, st.keepHdrSetting) {
         value = withContext(Dispatchers.Default) { compatFor(st, exporter, v, mode) }
     }
-    compat?.let { CompatibilityCard(it) }
 
     Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
         MethodToggle(mode, enabled = !st.busy) { setMode(it) }
@@ -492,6 +584,9 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
         }
     }
 
+    FormatSection(st, settings, v, geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction))
+    }, right = {
+    compat?.let { CompatibilityCard(it) }
     Section("Estimate") {
         val all = est
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surfaceContainer)
@@ -525,6 +620,63 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
         }
     }
     AnimatedVisibility(st.results.isNotEmpty()) { Results(st.results, settings.folder) }
+    })
+}
+
+/** Social-ready output frames (Re-encode): fit with black bars or crop to fill, with a live mini preview. */
+@kotlin.OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry) {
+    val c = MaterialTheme.colorScheme
+    Section("Format") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutFormat.entries.forEach { f ->
+                FilterChip(selected = st.format == f, enabled = !st.busy,
+                    onClick = { st.format = f; settings.format = f },
+                    label = { Text(f.short, style = LocalTextStyle.current.merge(Mono)) },
+                    leadingIcon = if (st.format == f) { { Icon(AppIcons.Check, null, Modifier.size(16.dp)) } } else null)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        if (st.format == OutFormat.ORIGINAL) {
+            Text("Keeps the full de-squeezed frame. Pick 16:9, 4:5, 9:16 or 1:1 to make a file ready for YouTube, Instagram, Reels, Shorts or TikTok (Re-encode).",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        } else {
+            val size = formatSize(st.format, g)!!
+            Segmented(listOf("Fit (black bars)", "Fill (crop)"), if (st.formatFill) 1 else 0, enabled = !st.busy) {
+                st.formatFill = it == 1; settings.formatFill = st.formatFill
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FormatPreview(v, g, st.format, st.formatFill, Modifier.width(if (st.format.aspect >= 1f) 140.dp else 92.dp))
+                Spacer(Modifier.width(14.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("${size.first} × ${size.second}", style = MaterialTheme.typography.titleMedium.merge(Mono))
+                    Text("For ${st.format.where}.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                    Text(if (st.formatFill) "Crops the sides to fill the frame: ${fillKeepsPercent(g, st.format)}% of the picture is kept."
+                        else "The whole wide picture fits, with black bars.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                }
+            }
+            Text("Formats need Re-encode, so clips are recommended for Re-encode.", style = MaterialTheme.typography.labelSmall,
+                color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+/** Mini mock-up of the chosen frame with the clip's thumbnail fitted or cropped, at its de-squeezed shape. */
+@Composable
+fun FormatPreview(v: VideoInfo, g: Geometry, f: OutFormat, fill: Boolean, modifier: Modifier = Modifier) {
+    val img = remember(v.thumb) { v.thumb?.asImageBitmap() }
+    val c = MaterialTheme.colorScheme
+    androidx.compose.foundation.Canvas(modifier.aspectRatio(f.aspect).clip(RoundedCornerShape(8.dp)).background(Color.Black)
+        .border(1.dp, c.outlineVariant, RoundedCornerShape(8.dp))) {
+        val W = size.width; val H = size.height; val pic = g.outRatio; val frame = W / H
+        val (w, h) = if ((pic > frame) != fill) W to W / pic else H * pic to H
+        val dst = androidx.compose.ui.unit.IntSize(w.toInt().coerceAtLeast(1), h.toInt().coerceAtLeast(1))
+        val off = androidx.compose.ui.unit.IntOffset(((W - w) / 2).toInt(), ((H - h) / 2).toInt())
+        if (img != null) drawImage(img, dstOffset = off, dstSize = dst)
+        else drawRect(c.primary.copy(alpha = 0.35f), topLeft = Offset(off.x.toFloat(), off.y.toFloat()), size = androidx.compose.ui.geometry.Size(w, h))
+    }
 }
 
 @Composable

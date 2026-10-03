@@ -27,8 +27,12 @@ import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
 data class ExportJob(val video: VideoInfo, val squeeze: Float, val lutId: String?, val lutStrength: Float,
-    val orientation: Orientation = Orientation.AUTO, val direction: Direction = Direction.AUTO) {
+    val orientation: Orientation = Orientation.AUTO, val direction: Direction = Direction.AUTO,
+    /** Start/end in ms, or null for the whole clip. */
+    val trim: Pair<Long, Long>? = null,
+    val format: OutFormat = OutFormat.ORIGINAL, val fill: Boolean = false) {
     val geo get() = geometry(video, squeeze, orientation, direction)
+    val lengthMs get() = trim?.let { (a, b) -> b - a } ?: video.durationMs
 }
 data class ExportResult(val name: String, val width: Int, val height: Int, val note: String?)
 
@@ -40,7 +44,10 @@ data class ExportResult(val name: String, val width: Int, val height: Int, val n
 @OptIn(UnstableApi::class)
 class Exporter(private val ctx: Context, private val settings: Settings, private val luts: LutManager) {
 
-    fun targetSize(g: Geometry, fps: Float, mime: String): Triple<Int, Int, String?> = fitToEncoder(g.outW, g.outH, mime, fps)
+    fun targetSize(g: Geometry, fps: Float, mime: String, format: OutFormat = OutFormat.ORIGINAL): Triple<Int, Int, String?> {
+        val (w, h) = reencodeTarget(g, format)
+        return fitToEncoder(w, h, mime, fps)
+    }
 
     /** Bitrate Re-encode will request for this size (also used for size estimates). */
     fun bitrateFor(w: Int, h: Int, fps: Float, mime: String): Long {
@@ -75,7 +82,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val first = if (settings.codec == Codec.HEVC && hevcOk) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
         val other = if (first == MimeTypes.VIDEO_H265) MimeTypes.VIDEO_H264 else if (hevcOk) MimeTypes.VIDEO_H265 else null
         val g = job.geo
-        val w0 = g.outW; val h0 = g.outH; val fps = job.video.fps
+        val (w0, h0) = reencodeTarget(g, job.format); val fps = job.video.fps
         val started = System.nanoTime()
 
         val attempts = mutableListOf<Attempt>()
@@ -95,7 +102,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             try {
                 Diag.step("Attempt ${i + 1}: ${a.mime} ${a.w}x${a.h}")
                 runOnce(job, a, onProgress)
-                Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.video.durationMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
+                Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.lengthMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
                 return ExportResult(outName(job), a.w, a.h,
                     listOfNotNull(a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
                         .joinToString(" ").ifEmpty { null })
@@ -112,31 +119,54 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
     /** Lossless: copy the file and tag it with the pixel aspect ratio. No re-encoding at all. */
     suspend fun exportLossless(job: ExportJob, onProgress: (Int) -> Unit): ExportResult = withContext(Dispatchers.IO) {
         val ext = job.video.name.substringAfterLast('.', "mp4").lowercase().let { if (it == "mov") "mov" else "mp4" }
-        val name = outName(job).removeSuffix(".mp4") + ".$ext"
+        val name = outName(job.copy(format = OutFormat.ORIGINAL)).removeSuffix(".mp4") + ".$ext" // formats need Re-encode
         Diag.step("Lossless: start, output $name")
         val g = job.geo; val t0 = System.nanoTime()
-        saveStream(name, if (ext == "mov") "video/quicktime" else "video/mp4") { out ->
-            PaspWriter.write(ctx, job.video.uri, out, job.squeeze, g.storedHorizontal,
-                if (g.extraRotation != 0) g.rotation else null) { p -> onProgress(p) }
-        }
-        Speed.recordCopy(ctx, job.video.sizeBytes, (System.nanoTime() - t0) / 1e9)
+        // Trim first (copying the compressed samples, no re-encode), then tag the result.
+        var trimmed: LosslessTrim.Result? = null
+        try {
+            val src = job.trim?.let { (a, b) ->
+                Diag.step("Lossless trim ${a}..${b} ms")
+                trimmed = LosslessTrim.trim(ctx, job.video.uri, ((job.video.rotation % 360) + 360) % 360, a, b) { p -> onProgress(p / 2) }
+                android.net.Uri.fromFile(trimmed!!.file)
+            } ?: job.video.uri
+            val half = if (trimmed != null) 50 else 0
+            saveStream(if (trimmed != null) name.replace(".$ext", ".mp4") else name,
+                if (trimmed == null && ext == "mov") "video/quicktime" else "video/mp4") { out ->
+                PaspWriter.write(ctx, src, out, job.squeeze, g.storedHorizontal,
+                    if (g.extraRotation != 0) g.rotation else null) { p -> onProgress(half + p * (100 - half) / 100) }
+            }
+        } finally { trimmed?.file?.delete() }
+        Speed.recordCopy(ctx, job.video.sizeBytes * job.lengthMs / maxOf(1L, job.video.durationMs), (System.nanoTime() - t0) / 1e9)
         Diag.step("Lossless: done")
         val (a0, b0) = PaspWriter.ratio(job.squeeze)
         val (hs, vs) = if (g.storedHorizontal) a0 to b0 else b0 to a0
-        ExportResult(name, g.dispW, g.dispH,
+        val t = trimmed
+        ExportResult(if (t != null) name.replace(".$ext", ".mp4") else name, g.dispW, g.dispH,
             "Lossless: original pixels kept, tagged $hs:$vs pixel aspect" + (if (g.extraRotation != 0) ", shown rotated ${g.rotation}°" else "") +
-                ". Displays as ${g.outW}×${g.outH}.")
+                ". Displays as ${g.outW}×${g.outH}." +
+                (if (t != null) " Trimmed ${fmtDuration(t.actualStartMs)}–${fmtDuration(t.actualEndMs)} (starts on the nearest keyframe)." else ""))
     }
 
     private fun outName(job: ExportJob) =
-        "${job.video.name.substringBeforeLast('.')}_DESQUEEZED_${"%.2f".format(job.squeeze).trimEnd('0').trimEnd('.')}X.mp4"
+        "${job.video.name.substringBeforeLast('.')}_DESQUEEZED_${"%.2f".format(job.squeeze).trimEnd('0').trimEnd('.')}X" +
+            job.format.suffix + (if (job.trim != null) "_TRIM" else "") + ".mp4"
 
     private suspend fun runOnce(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit) {
         val effects = mutableListOf<Effect>()
         val extra = job.geo.extraRotation
         // Media3 rotates counter-clockwise; metadata rotation is clockwise.
         if (extra != 0) effects += ScaleAndRotateTransformation.Builder().setRotationDegrees((360 - extra).toFloat()).build()
-        effects += Presentation.createForWidthAndHeight(a.w, a.h, Presentation.LAYOUT_STRETCH_TO_FIT)
+        val g = job.geo
+        if (job.format == OutFormat.ORIGINAL) {
+            effects += Presentation.createForWidthAndHeight(a.w, a.h, Presentation.LAYOUT_STRETCH_TO_FIT)
+        } else {
+            // 1) de-squeeze at a size that still covers the target, 2) fit (bars) or fill (crop) into the frame.
+            val k = maxOf(a.w.toFloat() / g.outW, a.h.toFloat() / g.outH).coerceAtMost(1f)
+            effects += Presentation.createForWidthAndHeight(even(g.outW * k), even(g.outH * k), Presentation.LAYOUT_STRETCH_TO_FIT)
+            effects += Presentation.createForWidthAndHeight(a.w, a.h,
+                if (job.fill) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT)
+        }
         if (job.lutId != null && job.lutStrength > 0f)
             effects += SingleColorLut.createFromCube(luts.load(job.lutId).toArgbCube(job.lutStrength))
 
@@ -145,7 +175,12 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
 
         val tmp = File(ctx.cacheDir, "export_${System.nanoTime()}.mp4")
         val isHdr = job.video.isHdr
-        val item = EditedMediaItem.Builder(MediaItem.fromUri(job.video.uri)).setEffects(Effects(listOf(), effects)).build()
+        val media = MediaItem.Builder().setUri(job.video.uri).apply {
+            job.trim?.let { (a, b) ->
+                setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(a).setEndPositionMs(b).build())
+            }
+        }.build()
+        val item = EditedMediaItem.Builder(media).setEffects(Effects(listOf(), effects)).build()
         val composition = Composition.Builder(EditedMediaItemSequence(item))
             .setHdrMode(if (isHdr && settings.keepHdr) Composition.HDR_MODE_KEEP_HDR
                         else Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)

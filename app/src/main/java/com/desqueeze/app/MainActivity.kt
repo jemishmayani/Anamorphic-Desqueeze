@@ -60,7 +60,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val settings = Settings(this); val luts = LutManager(this)
-        val state = AppState(settings, luts)
+        // One state per process: an export running in the background is still here when you come back.
+        val state = ExportController.state ?: AppState(settings, luts).also { ExportController.state = it }
+        if (ExportController.exporter == null) ExportController.exporter = Exporter(applicationContext, settings, luts)
+        this.settings = settings; this.state = state
+        handleShare(intent)
         Diag.init(this)
         val crashFile = java.io.File(filesDir, "last_crash.txt")
         if (crashFile.exists()) { state.crashLog = crashFile.readText(); crashFile.delete(); Diag.previousExit(this) }
@@ -86,17 +90,44 @@ class MainActivity : ComponentActivity() {
                         (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (fwd) it / 8 else -it / 8 }) togetherWith
                             fadeOut(tween(140))
                     }) { s ->
-                        when (s) {
-                            Screen.Main -> MainScreen(this@MainActivity, state, settings, luts)
-                            Screen.Settings -> SettingsScreen(state, settings, luts)
-                            Screen.Limits -> LimitsScreen { state.screen = Screen.Settings }
-                            Screen.Luts -> LutLibraryScreen(state, luts) { state.screen = Screen.Settings }
+                        if (s == Screen.Main) MainScreen(this@MainActivity, state, settings, luts)
+                        // Settings-type pages stay a comfortable reading width on tablets and in landscape.
+                        else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                            Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
+                                when (s) {
+                                    Screen.Settings -> SettingsScreen(state, settings, luts)
+                                    Screen.Limits -> LimitsScreen { state.screen = Screen.Settings }
+                                    Screen.Luts -> LutLibraryScreen(state, luts) { state.screen = Screen.Settings }
+                                    else -> {}
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+    private lateinit var settings: Settings
+    private lateinit var state: AppState
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent); setIntent(intent); handleShare(intent)
+    }
+
+    /** "Share to De-Squeeze": add the shared videos and jump to the clip list. */
+    private fun handleShare(intent: android.content.Intent?) {
+        if (intent == null || intent.getBooleanExtra("handled", false)) return
+        val uris: List<Uri> = when (intent.action) {
+            android.content.Intent.ACTION_SEND -> listOfNotNull(androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_STREAM, Uri::class.java))
+            android.content.Intent.ACTION_SEND_MULTIPLE -> androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, android.content.Intent.EXTRA_STREAM, Uri::class.java) ?: emptyList()
+            else -> emptyList()
+        }
+        if (uris.isEmpty()) return
+        intent.putExtra("handled", true)
+        state.screen = Screen.Main; state.step = Step.Clips
+        importClips(this, state, settings, uris, append = state.videos.isNotEmpty())
+    }
+
     fun keepScreenOn(on: Boolean) =
         if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 }
@@ -240,28 +271,29 @@ fun SqueezeChips(st: AppState) {
     }
 }
 
-fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
-    val list = st.videos; act.keepScreenOn(true); st.busy = true; st.progress = 0f; st.results = emptyList(); st.status = ""
-    Diag.start()
-    st.job = act.lifecycleScope.launch {
-        val log = mutableListOf<String>()
-        list.forEachIndexed { i, vid ->
-            st.status = (if (modeFor(st, exporter, vid) == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
-            try {
-                val j = ExportJob(vid, st.effectiveSqueeze(vid), st.lutId, st.strength, st.orientation, st.direction)
-                val main = android.os.Handler(android.os.Looper.getMainLooper())
-                val prog: (Int) -> Unit = { p -> main.post { st.progress = (i + p / 100f) / list.size } }
-                Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${modeFor(st, exporter, vid)}, squeeze=${st.effectiveSqueeze(vid)} (picked ${st.squeezeFor(vid)}, tag ${existingTag(vid)}, ${st.tagPolicy[st.keyOf(vid)]}), lut=${st.lutId != null}")
-                val m = modeFor(st, exporter, vid)
-                val r = if (m == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
-                log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
-            } catch (e: CancellationException) { throw e
-            } catch (e: Throwable) {
-                Diag.step("FAILED: ${e.javaClass.simpleName}: ${e.message}")
-                log += "✗  ${vid.name}\n    ${e.message ?: e.javaClass.simpleName}"
-            }
+/** Starts exporting every clip in the background (keeps running with the screen off or in another app). */
+fun startExport(ctx: android.content.Context, st: AppState, exporter: Exporter) = ExportController.start(ctx, st, exporter)
+
+/** Reads clips (from the picker or "Share to De-Squeeze") and adds them to the list. */
+fun importClips(ctx: android.content.Context, st: AppState, settings: Settings, uris: List<Uri>, append: Boolean) {
+    if (uris.isEmpty()) return
+    ExportController.scope.launch {
+        st.status = "Reading clips…"
+        val errs = mutableListOf<String>()
+        val found = withContext(Dispatchers.IO) {
+            uris.mapNotNull { u -> try { VideoProbe.probe(ctx, u) } catch (e: Exception) { errs += (e.message ?: "Couldn't read this file"); null } }
         }
-        st.results = log; st.status = ""; st.busy = false; act.keepScreenOn(false)
+        val known = if (append) st.videos.map { it.uri }.toSet() else emptySet()
+        val fresh = found.filter { it.uri !in known }
+        val before = if (append) st.videos.size else 0
+        st.videos = (if (append) st.videos else emptyList()) + fresh
+        if (fresh.isNotEmpty()) { st.selected = before.coerceAtMost(st.videos.size - 1); st.memory.positionMs = 0 }
+        if (!st.busy) st.results = emptyList()
+        // Keep the factor the user already chose; only fall back to the saved default if they haven't.
+        if (!st.squeezeChosen) st.newClipSqueeze = settings.defaultSqueeze
+        // New clips get the current factor; clips already in the list keep their own.
+        found.forEach { st.clipSqueeze.putIfAbsent(st.keyOf(it), st.newClipSqueeze) }
+        st.status = errs.joinToString("\n")
     }
 }
 

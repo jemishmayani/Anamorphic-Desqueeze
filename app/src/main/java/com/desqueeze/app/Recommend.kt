@@ -7,7 +7,8 @@ data class Recommendation(
 )
 
 /** Plain-language advice for the selected clip, so nobody has to know what a pixel aspect tag is. */
-fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, fit: Pair<Int, Int>?): Recommendation {
+fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, fit: Pair<Int, Int>?,
+              format: OutFormat = OutFormat.ORIGINAL, fill: Boolean = false): Recommendation {
     val f = v.footage
     val look = when { f.log != null && !f.logEstimated -> f.log; f.log != null -> "log"; f.hdr != null -> f.hdr; else -> null }
     val facts = listOfNotNull(
@@ -16,13 +17,19 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         look?.let { if (f.logEstimated) "Log (estimated)" else it },
         "${v.bitDepth}-bit ${v.codec}",
         fmtSqueeze(squeeze) + if (g.vertical) " vertical" else "",
+        if (format != OutFormat.ORIGINAL) "Output ${format.short} (${if (fill) "fill" else "fit"})" else null,
     )
     val decodable = DeviceCaps.canDecode(v.codec, v.bitDepth)
-    val scaled = fit != null && (fit.first < g.outW || fit.second < g.outH)
+    val target = reencodeTarget(g, format)
+    val scaled = fit != null && (fit.first < target.first || fit.second < target.second)
     val scaledText = if (scaled) " This phone's encoder will scale it to ${fit!!.first}×${fit.second}." else ""
     val precious = look != null || v.bitDepth >= 10
     val desc = listOfNotNull("${v.bitDepth}-bit", look).joinToString(" ")
     return when {
+        decodable && format != OutFormat.ORIGINAL -> Recommendation(facts, ExportMode.REENCODE, "Re-encode for ${format.short}",
+            "Only Re-encode can reframe into ${format.short} for ${format.where}: the wide picture is " +
+                (if (fill) "cropped to fill the frame." else "fitted with black bars, nothing cut off.") + scaledText,
+            ExportMode.LOSSLESS, "Lossless, original wide frame", "Keeps every original pixel, but no ${format.short} reframing.")
         !decodable -> Recommendation(facts, ExportMode.LOSSLESS, "Lossless Desqueeze",
             "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode isn't possible. Lossless doesn't need to decode, and keeps every pixel.",
             null, null, null)
@@ -43,8 +50,8 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
 fun recommendFor(st: AppState, exporter: Exporter, v: VideoInfo): Recommendation {
     val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
     val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-    val fit = exporter.targetSize(g, v.fps, mime).let { it.first to it.second }
-    return recommend(v, g, st.effectiveSqueeze(v), st.lutId != null, fit)
+    val fit = exporter.targetSize(g, v.fps, mime, st.format).let { it.first to it.second }
+    return recommend(v, g, st.effectiveSqueeze(v), st.lutId != null, fit, st.format, st.formatFill)
 }
 
 /** The method a clip will actually be exported with. */

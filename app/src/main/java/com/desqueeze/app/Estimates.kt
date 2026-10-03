@@ -25,13 +25,16 @@ object Speed {
 
 data class Estimate(val bytes: Long, val seconds: Double, val outW: Int, val outH: Int, val scaledNote: String?)
 
-fun estimate(ctx: Context, exporter: Exporter, settings: Settings, v: VideoInfo, g: Geometry, mode: ExportMode): Estimate {
+fun estimate(ctx: Context, exporter: Exporter, settings: Settings, v: VideoInfo, g: Geometry, mode: ExportMode,
+             lengthMs: Long = v.durationMs, format: OutFormat = OutFormat.ORIGINAL): Estimate {
+    val part = if (v.durationMs > 0) lengthMs.toDouble() / v.durationMs else 1.0
     if (mode == ExportMode.LOSSLESS) {
-        return Estimate(v.sizeBytes, v.sizeBytes / Speed.copyBps(ctx).toDouble() + 1.0, g.outW, g.outH, null)
+        val bytes = (v.sizeBytes * part).toLong()
+        return Estimate(bytes, bytes / Speed.copyBps(ctx).toDouble() + 1.0, g.outW, g.outH, null)
     }
     val mime = if (settings.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-    val (w, h, note) = exporter.targetSize(g, v.fps, mime)
-    val secs = v.durationMs / 1000.0
+    val (w, h, note) = exporter.targetSize(g, v.fps, mime, format)
+    val secs = lengthMs / 1000.0
     val fps = if (v.fps > 0) v.fps else 30f
     val audioBps = if (v.hasAudio) 256_000L else 0L
     val bytes = ((exporter.bitrateFor(w, h, v.fps, mime) + audioBps) * secs / 8).toLong()

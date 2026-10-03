@@ -89,4 +89,19 @@ class AppState(settings: Settings, luts: LutManager) {
     var quality by mutableStateOf(settings.quality)
     var codec by mutableStateOf(settings.codec)
     var crashLog by mutableStateOf<String?>(null)
+    /** Playback position shared by the Frame and Look previews. */
+    val memory = PlayheadMemory()
+    /** Per-clip trim (start ms to end ms), keyed by uri. Missing = whole clip. */
+    val clipTrim = mutableStateMapOf<String, Pair<Long, Long>>()
+    fun trimFor(v: VideoInfo): Pair<Long, Long>? = clipTrim[keyOf(v)]?.takeIf { (a, b) -> a > 0 || b < v.durationMs }
+    /** Length that will actually be exported. */
+    fun lengthMs(v: VideoInfo): Long = trimFor(v)?.let { (a, b) -> b - a } ?: v.durationMs
+    /** Social-ready output frame for Re-encode, and whether to crop to fill it (else black bars). */
+    var format by mutableStateOf(settings.format)
+    var formatFill by mutableStateOf(settings.formatFill)
+    /** Exposure tool shown with the preview. */
+    var scope by mutableStateOf(Scope.OFF)
+
+    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutId, strength, orientation, direction,
+        trim = trimFor(v), format = format, fill = formatFill)
 }
