@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     state.crashLog?.let { log -> CrashDialog(log) { state.crashLog = null } }
                     BackHandler(state.screen != Screen.Main) {
-                        state.screen = if (state.screen == Screen.Limits) Screen.Settings else Screen.Main
+                        state.screen = if (state.screen == Screen.Limits || state.screen == Screen.Luts) Screen.Settings else Screen.Main
                     }
                     AnimatedContent(state.screen, label = "nav", transitionSpec = {
                         val fwd = targetState.ordinal > initialState.ordinal
@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
                             Screen.Main -> MainScreen(this@MainActivity, state, settings, luts)
                             Screen.Settings -> SettingsScreen(state, settings, luts)
                             Screen.Limits -> LimitsScreen { state.screen = Screen.Settings }
+                            Screen.Luts -> LutLibraryScreen(state, luts) { state.screen = Screen.Settings }
                         }
                     }
                 }
@@ -245,13 +246,14 @@ fun startExport(act: MainActivity, st: AppState, exporter: Exporter) {
     st.job = act.lifecycleScope.launch {
         val log = mutableListOf<String>()
         list.forEachIndexed { i, vid ->
-            st.status = (if (st.mode == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
+            st.status = (if (modeFor(st, exporter, vid) == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
             try {
                 val j = ExportJob(vid, st.squeeze, st.lutId, st.strength, st.orientation, st.direction)
                 val main = android.os.Handler(android.os.Looper.getMainLooper())
                 val prog: (Int) -> Unit = { p -> main.post { st.progress = (i + p / 100f) / list.size } }
-                Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${st.mode}, squeeze=${st.squeeze}, lut=${st.lutId != null}")
-                val r = if (st.mode == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
+                Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=${modeFor(st, exporter, vid)}, squeeze=${st.squeeze}, lut=${st.lutId != null}")
+                val m = modeFor(st, exporter, vid)
+                val r = if (m == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
                 log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
             } catch (e: CancellationException) { throw e
             } catch (e: Throwable) {
@@ -336,90 +338,6 @@ fun ToggleRow(label: String, detail: String?, value: Boolean, onChange: (Boolean
             if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         }
         Switch(value, onChange)
-    }
-}
-
-/* ---------------------------------------------------------------- Settings */
-
-@Composable
-fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
-    val ctx = LocalContext.current
-    var tick by remember { mutableIntStateOf(0) }
-    val refresh = { tick++ }
-    var renaming by remember { mutableStateOf<LutEntry?>(null) }
-    var customDefault by remember { mutableStateOf(false) }
-    var msg by remember { mutableStateOf("") }
-    val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
-        if (u != null) try { luts.import(u, displayName(ctx, u)); st.lutList = luts.list(); msg = "" }
-        catch (e: Exception) { msg = "This LUT couldn't be loaded: ${e.message}" } }
-    val c = MaterialTheme.colorScheme
-
-    key(tick) {
-    Column(Modifier.fillMaxSize()) {
-        TopBar("Settings") { st.screen = Screen.Main }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            Group("Export") {
-                val isPreset = PRESETS.any { kotlin.math.abs(it - s.defaultSqueeze) < 0.001f }
-                PickerRow("Default squeeze", fmtSqueeze(s.defaultSqueeze) + if (isPreset) "" else " (custom)",
-                    PRESETS.map { fmtSqueeze(it) } + "Custom value…") {
-                    if (it < PRESETS.size) { s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.squeeze = PRESETS[it]; refresh() }
-                    else customDefault = true
-                }
-                PickerRow("Quality", s.quality.label, Quality.entries.map { it.label }) { s.quality = Quality.entries[it]; st.quality = s.quality; refresh() }
-                PickerRow("Codec", if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; st.codec = s.codec; refresh() }
-                if (!Exporter.hasEncoder("video/hevc"))
-                    Text("This phone has no HEVC encoder, so H.264 will be used.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-                ToggleRow("Keep HDR", "10-bit output for HLG or PQ clips", s.keepHdr) { s.keepHdr = it; refresh() }
-                ToggleRow("Preserve metadata", "Rotation, frame rate and original audio", s.preserveMeta) { s.preserveMeta = it; refresh() }
-            }
-            Group("This phone") {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
-                    .border(1.dp, c.outlineVariant, RoundedCornerShape(14.dp)).clickable { st.screen = Screen.Limits }
-                    .padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Device diagnostics", style = MaterialTheme.typography.bodyLarge)
-                        Text("Decode / encode support, 10-bit, max frame width, and which squeezes work at full size", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(20.dp).rotate(-90f), tint = c.onSurfaceVariant)
-                }
-                Text("Hardware acceleration is always on: video is decoded, scaled and encoded on the phone's media chip and GPU.",
-                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
-            }
-            Group("LUT library") {
-                if (st.lutList.isEmpty()) Text("No LUTs yet. Import 3D .cube files, such as your camera maker's official log-to-Rec.709 LUT.",
-                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
-                st.lutList.forEach { l ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
-                        .border(1.dp, c.outlineVariant, RoundedCornerShape(14.dp)).padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(l.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton(onClick = { renaming = l }) { Text("Rename") }
-                        TextButton(onClick = { luts.delete(l.id); if (st.lutId == l.id) st.lutId = null; st.lutList = luts.list() }) { Text("Delete", color = c.error) }
-                    }
-                }
-                OutlinedButton(onClick = { lutPicker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(14.dp)) { Text("Import .cube LUT") }
-                if (msg.isNotEmpty()) Text(msg, color = c.error, style = MaterialTheme.typography.bodySmall)
-            }
-            Group("App") {
-                var folder by remember { mutableStateOf(s.folder) }
-                OutlinedTextField(folder, { folder = it.replace(Regex("[^A-Za-z0-9_ -]"), ""); if (folder.isNotBlank()) s.folder = folder.trim() },
-                    label = { Text("Save to Movies/") }, singleLine = true, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth())
-                PickerRow("Theme", s.theme.label, ThemeMode.entries.map { it.label }) { s.theme = ThemeMode.entries[it]; st.theme = s.theme; refresh() }
-            }
-        }
-    }
-    }
-    if (customDefault) SqueezeDialog(s.defaultSqueeze, onDismiss = { customDefault = false }) { value ->
-        s.defaultSqueeze = value; if (!st.squeezeChosen) st.squeeze = value; customDefault = false; refresh()
-    }
-    renaming?.let { l ->
-        var name by remember { mutableStateOf(l.name) }
-        AlertDialog(onDismissRequest = { renaming = null },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) luts.rename(l.id, name); st.lutList = luts.list(); renaming = null }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
-            title = { Text("Rename LUT") }, text = { OutlinedTextField(name, { name = it }, singleLine = true) })
     }
 }
 

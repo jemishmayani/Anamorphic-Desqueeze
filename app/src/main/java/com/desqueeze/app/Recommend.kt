@@ -38,3 +38,15 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
             ExportMode.LOSSLESS, "Lossless for editing", "Instant and untouched. Editors like Resolve and players like VLC show it wide.")
     }
 }
+
+/** Recommendation for a clip using the current shared settings (encoder fit is cached, so this is cheap). */
+fun recommendFor(st: AppState, exporter: Exporter, v: VideoInfo): Recommendation {
+    val g = geometry(v, st.squeeze, st.orientation, st.direction)
+    val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
+    val fit = exporter.targetSize(g, v.fps, mime).let { it.first to it.second }
+    return recommend(v, g, st.squeeze, st.lutId != null, fit)
+}
+
+/** The method a clip will actually be exported with. */
+fun modeFor(st: AppState, exporter: Exporter, v: VideoInfo): ExportMode =
+    st.clipModes[v.uri.toString()] ?: if (st.followRecommendation) recommendFor(st, exporter, v).mode else st.mode

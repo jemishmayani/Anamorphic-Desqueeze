@@ -228,13 +228,42 @@ fun clipFacts(v: VideoInfo) = listOfNotNull(
     if (v.fps > 0) fmtFps(v.fps) else null,
 ).joinToString(" • ")
 
+/** Thumbnail strip to switch the clip being previewed/inspected. Optional caption under each (e.g. its export method). */
+@Composable
+fun ClipSwitcher(st: AppState, caption: ((VideoInfo) -> String?)? = null) {
+    if (st.videos.size < 2) return
+    val c = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Clip ${st.selected + 1} of ${st.videos.size}. Tap to switch.", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(st.videos.size) { i ->
+                val v = st.videos[i]; val sel = i == st.selected
+                Column(Modifier.width(96.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = !st.busy) { st.selected = i }) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color.Black)
+                        .border(if (sel) 2.dp else 1.dp, if (sel) c.primary else c.outlineVariant, RoundedCornerShape(12.dp))) {
+                        val img = remember(v.thumb) { v.thumb?.asImageBitmap() }
+                        if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(18.dp).clip(CircleShape)
+                            .background(if (sel) c.primary else Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                            Text("${i + 1}", style = MaterialTheme.typography.labelSmall, color = if (sel) c.onPrimary else Color.White)
+                        }
+                    }
+                    Text(caption?.invoke(v) ?: v.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = if (sel) c.onSurface else c.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, start = 2.dp))
+                }
+            }
+        }
+    }
+}
+
 /* ------------------------------------------------------------------ 2. Frame */
 
 @Composable
 fun FrameStep(st: AppState, memory: PlayheadMemory) {
     val v = st.videos.getOrNull(st.selected) ?: return
     val g = geometry(v, st.squeeze, st.orientation, st.direction)
-    if (st.busy) ExportingPlaceholder(g.outRatio) else PreviewPlayer(v, g, st.desqueezed, memory)
+    ClipSwitcher(st)
+    key(v.uri) { if (st.busy) ExportingPlaceholder(g.outRatio) else PreviewPlayer(v, g, st.desqueezed, memory) }
     ViewToggle(st.desqueezed) { st.desqueezed = it }
 
     Section("Squeeze factor", trailing = {
@@ -247,6 +276,8 @@ fun FrameStep(st: AppState, memory: PlayheadMemory) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
+    if (st.videos.size > 1) Text("Squeeze, orientation and direction apply to all ${st.videos.size} clips.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Section("Orientation") {
         Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
     }
@@ -285,19 +316,22 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
     }
     val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) try {
-            st.lutId = luts.import(u, displayName(ctx, u)).id; st.lutList = luts.list(); st.mode = ExportMode.REENCODE
+            st.lutId = luts.import(u, displayName(ctx, u)).id; st.lutList = luts.list()
         } catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
     }
 
-    if (st.busy) ExportingPlaceholder(g.outRatio)
-    else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview)
+    ClipSwitcher(st)
+    key(v.uri) {
+        if (st.busy) ExportingPlaceholder(g.outRatio)
+        else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview)
+    }
 
     Section("LUT") {
         PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
             listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
             when {
                 i == 0 -> st.lutId = null
-                i <= st.lutList.size -> { st.lutId = st.lutList[i - 1].id; st.mode = ExportMode.REENCODE }
+                i <= st.lutList.size -> st.lutId = st.lutList[i - 1].id
                 else -> lutPicker.launch(arrayOf("*/*"))
             }
         }
@@ -310,7 +344,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory) {
                 }
                 Slider(st.strength, { st.strength = it }, enabled = !st.busy)
                 Text("The live preview uses a lighter ~720p proxy so it plays smoothly. Tap Compare on the video for a full-quality before/after still. " +
-                    "LUTs are applied in Re-encode, so export switched to Re-encode.",
+                    "LUTs are only applied in Re-encode, so clips are now recommended for Re-encode.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -326,30 +360,44 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
     val ctx = LocalContext.current
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
-    val g = geometry(v, st.squeeze, st.orientation, st.direction)
-    val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-
-    val fit by produceState<Pair<Int, Int>?>(null, v, g, st.codec) {
-        value = withContext(Dispatchers.Default) { exporter.targetSize(g, v.fps, mime).let { it.first to it.second } }
+    val key = v.uri.toString()
+    val deps = arrayOf<Any?>(st.videos, st.squeeze, st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap())
+    val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
+        value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
-    val rec = remember(v, g, st.squeeze, st.lutId, fit) { recommend(v, g, st.squeeze, st.lutId != null, fit) }
-    val est by produceState<List<Estimate>?>(null, st.videos, st.squeeze, st.orientation, st.direction, st.mode, st.quality, st.codec) {
+    val modes = st.videos.associate { clip ->
+        clip.uri.toString() to (st.clipModes[clip.uri.toString()] ?: if (st.followRecommendation) recs[clip.uri.toString()]?.mode ?: st.mode else st.mode)
+    }
+    val mode = modes[key] ?: st.mode
+    val est by produceState<Map<String, Estimate>?>(null, *deps) {
         value = withContext(Dispatchers.Default) {
-            st.videos.map { clip -> estimate(ctx, exporter, settings, clip, geometry(clip, st.squeeze, st.orientation, st.direction), st.mode) }
+            st.videos.associate { clip ->
+                clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.squeeze, st.orientation, st.direction), modes[clip.uri.toString()] ?: st.mode)
+            }
         }
     }
+    fun setMode(m: ExportMode) { st.clipModes[key] = m }
 
-    RecommendationCard(rec, st.mode, enabled = !st.busy) { st.mode = it; settings.mode = it }
+    ClipSwitcher(st) { clip -> if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" else "Re-encode" }
 
-    Section("Export method") {
-        MethodToggle(st.mode, enabled = !st.busy) { st.mode = it; settings.mode = it }
+    recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { setMode(it) } }
+        ?: LinearProgressIndicator(Modifier.fillMaxWidth())
+
+    Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
+        MethodToggle(mode, enabled = !st.busy) { setMode(it) }
         Spacer(Modifier.height(8.dp))
-        Text(if (st.mode == ExportMode.LOSSLESS)
+        Text(if (mode == ExportMode.LOSSLESS)
             "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag." +
                 if (st.lutId != null) " Your LUT won't be applied in Lossless." else ""
         else "Renders new pixels so every app shows it de-squeezed${if (st.lutId != null) ", with your LUT baked in" else ""}. Slower and re-compressed.",
             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-        AnimatedVisibility(st.mode == ExportMode.REENCODE) {
+        if (st.videos.size > 1) Row(Modifier.padding(top = 4.dp)) {
+            TextButton(onClick = { st.videos.forEach { st.clipModes[it.uri.toString()] = mode } }, enabled = !st.busy) {
+                Text("Use ${if (mode == ExportMode.LOSSLESS) "Lossless" else "Re-encode"} for all")
+            }
+            TextButton(onClick = { st.clipModes.clear() }, enabled = !st.busy && st.clipModes.isNotEmpty()) { Text("Reset to recommended") }
+        }
+        AnimatedVisibility(mode == ExportMode.REENCODE) {
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PickerRow("Quality", st.quality.label, Quality.entries.map { it.label }, enabled = !st.busy) {
                     st.quality = Quality.entries[it]; settings.quality = st.quality }
@@ -360,16 +408,17 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
     }
 
     Section("Estimate") {
-        val list = est
+        val all = est
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surfaceContainer)
             .border(1.dp, c.outlineVariant, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (list == null) Text("Calculating…", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            val e = all?.get(key)
+            if (all == null || e == null) Text("Calculating…", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             else {
-                val e = list[st.selected.coerceIn(0, list.size - 1)]
+                if (st.videos.size > 1) Text("This clip", style = MaterialTheme.typography.labelMedium, color = c.primary)
                 EstRow("Output", "${e.outW} × ${e.outH}")
-                EstRow("Output size", "≈ " + fmtSize(list.sumOf { it.bytes }) + if (list.size > 1) " (all ${list.size})" else "")
-                EstRow("Processing time", fmtEta(list.sumOf { it.seconds }))
-                if (st.mode == ExportMode.REENCODE) {
+                EstRow("Output size", "≈ " + fmtSize(e.bytes))
+                EstRow("Processing time", fmtEta(e.seconds))
+                if (mode == ExportMode.REENCODE) {
                     val full = e.scaledNote == null
                     Row(verticalAlignment = Alignment.Top) {
                         StatusIcon(if (full) Status.OK else Status.WARN)
@@ -377,6 +426,13 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter) {
                         Text(if (full) "This phone's encoder handles the full size." else (e.scaledNote + " Lossless keeps full resolution."),
                             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                     }
+                }
+                if (st.videos.size > 1) {
+                    HorizontalDivider(color = c.outlineVariant)
+                    val nL = modes.values.count { it == ExportMode.LOSSLESS }
+                    Text("All ${st.videos.size} clips ($nL Lossless, ${st.videos.size - nL} Re-encode)", style = MaterialTheme.typography.labelMedium, color = c.primary)
+                    EstRow("Total size", "≈ " + fmtSize(all.values.sumOf { it.bytes }))
+                    EstRow("Total time", fmtEta(all.values.sumOf { it.seconds }))
                 }
                 Text("Estimates" + if (Speed.learned(ctx)) ", based on this phone's previous exports." else "; they get more accurate after your first export.",
                     style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant)

@@ -10,19 +10,37 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: '8.9' }
+        with: { gradle-version: '8.11.1' }
+      - name: Signing key (from secrets)
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Signing with the permanent release key."
+          else
+            echo "::warning::No SIGNING_KEYSTORE_B64 secret: building with a temporary debug key."
+          fi
       - name: Build
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           set -o pipefail
-          gradle :app:assembleRelease --stacktrace 2>&1 | tee build-log.txt
+          gradle :app:assembleGithubRelease :app:bundlePlayRelease --stacktrace 2>&1 | tee build-log.txt
+          mkdir -p out
+          cp app/build/outputs/apk/github/release/*.apk out/AnamorphicDesqueeze.apk
+          cp app/build/outputs/bundle/playRelease/*.aab out/AnamorphicDesqueeze-play.aab
       - uses: actions/upload-artifact@v4
         with:
-          name: AnamorphicDesqueeze-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: AnamorphicDesqueeze
+          path: out/*
       - name: Publish APK to apk branch
         run: |
-          mkdir /tmp/a && cp app/build/outputs/apk/release/*.apk /tmp/a/AnamorphicDesqueeze.apk
+          mkdir /tmp/a && cp out/AnamorphicDesqueeze.apk /tmp/a/
           cd /tmp/a && git init -q -b apk && git add -A
           git -c user.name=ci -c user.email=ci@x commit -qm "apk ${{ github.sha }}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
@@ -30,12 +48,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
-          cp app/build/outputs/apk/release/*.apk "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk"
+          cp out/AnamorphicDesqueeze.apk "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk"
+          cp out/AnamorphicDesqueeze-play.aab "AnamorphicDesqueeze-${GITHUB_REF_NAME}-play.aab"
           # Release notes = this version's section of CHANGELOG.md (heading line excluded) + install footer
           awk -v tag="$GITHUB_REF_NAME" '/^## /{p=($2==tag); next} p' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "See [CHANGELOG.md](https://github.com/jemishmayani/Anamorphic-Desqueeze/blob/main/CHANGELOG.md)." > notes.md; fi
           cat .github/release-footer.md >> notes.md
-          gh release create "$GITHUB_REF_NAME" "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" \
+          gh release create "$GITHUB_REF_NAME" "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" "AnamorphicDesqueeze-${GITHUB_REF_NAME}-play.aab" \
             --title "Anamorphic De-Squeeze ${GITHUB_REF_NAME}" --notes-file notes.md
       - name: Save log on failure
         if: failure()

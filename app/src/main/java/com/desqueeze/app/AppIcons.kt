@@ -135,4 +135,29 @@ object AppIcons {
     val Spark = icon("spark") {
         solid { moveTo(12f, 3f); quadTo(13f, 11f, 21f, 12f); quadTo(13f, 13f, 12f, 21f); quadTo(11f, 13f, 3f, 12f); quadTo(11f, 11f, 12f, 3f); close() }
     }
+
+    val Folder = icon("folder") { line { moveTo(3.5f, 7f); quadTo(3.5f, 5.5f, 5f, 5.5f); lineTo(9.5f, 5.5f); lineTo(11.5f, 7.5f); lineTo(19f, 7.5f)
+        quadTo(20.5f, 7.5f, 20.5f, 9f); lineTo(20.5f, 17.5f); quadTo(20.5f, 19f, 19f, 19f); lineTo(5f, 19f); quadTo(3.5f, 19f, 3.5f, 17.5f); close() } }
+    val Palette = icon("palette") {
+        line { moveTo(12f, 3.5f); curveTo(6.8f, 3.5f, 3.5f, 7.3f, 3.5f, 12f); curveTo(3.5f, 16.7f, 7.3f, 20.5f, 12f, 20.5f)
+            curveTo(13.4f, 20.5f, 13.8f, 19.4f, 13.1f, 18.4f); curveTo(12.3f, 17.2f, 13.1f, 15.8f, 14.5f, 15.8f); lineTo(16.5f, 15.8f)
+            curveTo(18.9f, 15.8f, 20.5f, 14.2f, 20.5f, 11.8f); curveTo(20.5f, 7.2f, 16.7f, 3.5f, 12f, 3.5f); close() }
+        solid { circle(8f, 11f, 1.3f); circle(11f, 7.5f, 1.3f); circle(15.5f, 8.5f, 1.3f) }
+    }
+    val Moon = icon("moon") { line { moveTo(19.5f, 14.5f); arcToRelative(8f, 8f, 0f, true, true, -10f, -10f); arcToRelative(6.2f, 6.2f, 0f, false, false, 10f, 10f); close() } }
+    val Pulse = icon("pulse") { line { moveTo(3f, 12f); lineTo(7f, 12f); lineTo(9.5f, 6f); lineTo(14f, 18f); lineTo(16.5f, 12f); lineTo(21f, 12f) } }
+    val Update = icon("update") { line { moveTo(12f, 4f); lineTo(12f, 15f); moveTo(7.5f, 10.5f); lineTo(12f, 15f); lineTo(16.5f, 10.5f); moveTo(5f, 19.5f); lineTo(19f, 19.5f) } }
+    val Coffee = icon("coffee") {
+        line { moveTo(5f, 9f); lineTo(16f, 9f); lineTo(16f, 15f); quadTo(16f, 19.5f, 10.5f, 19.5f); quadTo(5f, 19.5f, 5f, 15f); close() }
+        line { moveTo(16f, 10.5f); lineTo(17.5f, 10.5f); quadTo(19.8f, 10.5f, 19.8f, 12.8f); quadTo(19.8f, 15f, 16f, 15f) }
+        line { moveTo(8.5f, 3.5f); quadTo(7.5f, 5f, 8.5f, 6.5f); moveTo(12f, 3.5f); quadTo(11f, 5f, 12f, 6.5f) }
+    }
+    val Code = icon("code") { line { moveTo(8.5f, 7f); lineTo(3.5f, 12f); lineTo(8.5f, 17f); moveTo(15.5f, 7f); lineTo(20.5f, 12f); lineTo(15.5f, 17f); moveTo(13.5f, 5f); lineTo(10.5f, 19f) } }
+    val Shield = icon("shield") { line { moveTo(12f, 3.5f); lineTo(19.5f, 6.5f); lineTo(19.5f, 11.5f); quadTo(19.5f, 17.5f, 12f, 20.5f); quadTo(4.5f, 17.5f, 4.5f, 11.5f); lineTo(4.5f, 6.5f); close() } }
+    val Doc = icon("doc") { line { moveTo(6f, 3.5f); lineTo(14f, 3.5f); lineTo(18.5f, 8f); lineTo(18.5f, 20.5f); lineTo(6f, 20.5f); close(); moveTo(14f, 3.5f); lineTo(14f, 8f); lineTo(18.5f, 8f)
+        moveTo(9f, 12.5f); lineTo(15.5f, 12.5f); moveTo(9f, 16f); lineTo(15.5f, 16f) } }
+    val Chevron = icon("chevron") { line(2f) { moveTo(9.5f, 6f); lineTo(15.5f, 12f); lineTo(9.5f, 18f) } }
+    val Sliders = icon("sliders") { line { moveTo(4f, 7f); lineTo(20f, 7f); moveTo(4f, 17f); lineTo(20f, 17f) }; solid { circle(9f, 7f, 2.4f); circle(15f, 17f, 2.4f) } }
+    val Heart = icon("heart") { solid { moveTo(12f, 20f); curveTo(5f, 15f, 3f, 12f, 3f, 8.8f); curveTo(3f, 6f, 5.2f, 4f, 7.8f, 4f); curveTo(9.6f, 4f, 11f, 5f, 12f, 6.5f)
+        curveTo(13f, 5f, 14.4f, 4f, 16.2f, 4f); curveTo(18.8f, 4f, 21f, 6f, 21f, 8.8f); curveTo(21f, 12f, 19f, 15f, 12f, 20f); close() } }
 }

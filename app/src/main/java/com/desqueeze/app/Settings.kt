@@ -20,6 +20,8 @@ class Settings(ctx: Context) {
     var preserveMeta: Boolean get() = p.getBoolean("meta", true); set(v) = p.edit().putBoolean("meta", v).apply()
     var folder: String get() = p.getString("folder", "AnamorphicDesqueeze")!!; set(v) = p.edit().putString("folder", v).apply()
     var mode: ExportMode get() = ExportMode.valueOf(p.getString("mode", ExportMode.LOSSLESS.name)!!); set(v) = p.edit().putString("mode", v.name).apply()
+    /** New clips use their own recommendation unless the user picks a fixed default method. */
+    var followRecommendation: Boolean get() = p.getBoolean("followRec", true); set(v) = p.edit().putBoolean("followRec", v).apply()
     var theme: ThemeMode get() = ThemeMode.valueOf(p.getString("theme", ThemeMode.SYSTEM.name)!!); set(v) = p.edit().putString("theme", v.name).apply()
 }
 

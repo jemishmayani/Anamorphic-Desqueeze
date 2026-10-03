@@ -9,6 +9,8 @@ data class CodecCap(
     val name: String, val mime: String, val encoder: Boolean, val hardware: Boolean,
     val maxW: Int, val maxH: Int, val maxW1080: Int?, val maxW2160: Int?,
     val fps4k: Int?, val fps1080: Int?, val maxBitrateMbps: Int, val tenBit: Boolean,
+    /** Frame rates the manufacturer measured at 4K, e.g. "28–45 fps" (null if not published). */
+    val measured4k: String? = null, val vendor: Boolean = false,
 ) {
     val codecLabel get() = if (mime == MediaFormat.MIMETYPE_VIDEO_HEVC) "HEVC" else "H.264"
 }
@@ -43,7 +45,9 @@ object DeviceCaps {
         }
         return CodecCap(ci.name, mime, ci.isEncoder, ci.isHardwareAccelerated,
             vc.supportedWidths.upper, vc.supportedHeights.upper, widthAt(1080), widthAt(2160),
-            fps(3840, 2160), fps(1920, 1080), vc.bitrateRange.upper / 1_000_000, ten)
+            fps(3840, 2160), fps(1920, 1080), vc.bitrateRange.upper / 1_000_000, ten,
+            measured4k = try { vc.getAchievableFrameRatesFor(3840, 2160)?.let { r -> "${r.lower.toInt()}–${r.upper.toInt()} fps" } } catch (_: Exception) { null },
+            vendor = ci.isVendor)
     }
 }
 

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only used when you tap "Check for updates" (asks GitHub for the latest release). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
