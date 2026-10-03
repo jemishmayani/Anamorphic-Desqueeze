@@ -5,8 +5,8 @@
 <h1 align="center">Anamorphic De-Squeeze</h1>
 
 <p align="center">
-  A small, offline Android app that de-squeezes anamorphic video, built for
-  <b>DJI Osmo Pocket</b> D-Log 10-bit HEVC footage shot with an anamorphic lens or adapter.
+  A small, offline Android app that de-squeezes anamorphic video from <b>any camera</b>:
+  phones, action cams, gimbals, mirrorless and cinema cameras shooting through an anamorphic lens or adapter.
 </p>
 
 <p align="center">
@@ -33,12 +33,31 @@ thin and stretched. This app restores the correct shape by widening the image by
 The original file is never modified. Exports are saved to `Movies/AnamorphicDesqueeze/`
 as `ORIGINALNAME_DESQUEEZED_1.33X.mp4` (or `.mov` for MOV sources in Lossless mode).
 
+## Works with your camera
+
+The app isn't tied to one device. It reads each clip's header and shows what it finds as
+badges, with full details one tap away:
+
+| Detected | How |
+|---|---|
+| **Log profile:** D-Log / D-Log M, S-Log2/3, V-Log, Canon Log 2/3, F-Log/F-Log2, N-Log, Apple Log, L-Log, I-Log, Samsung Log, GoPro Log, Z-Log2, Blackmagic Film, ARRI LogC, RED Log3G10 | From the file's metadata when the camera records it. If it doesn't, a frame is checked for the flat look of log (lifted blacks, compressed range, low saturation) and shown as **"Looks like log"**, clearly marked as an estimate |
+| **HDR:** HLG, HDR10 (PQ), Dolby Vision; mastering metadata | Color tags and Dolby Vision boxes in the video track |
+| **SDR** | Standard transfer tags and no log detected |
+| **Bit depth & chroma:** 8/10/12-bit, 4:2:0, 4:2:2, 4:4:4 | Read from the codec configuration (`hvcC`, `avcC`, `av1C`, `vpcC`, ProRes type) |
+| **Codec & profile:** HEVC, H.264, AV1, VP9, ProRes (Proxy to 4444 XQ), MPEG-4 | Sample entry type |
+| **Color:** primaries (BT.709, BT.2020, P3), transfer, matrix, full/limited range | `colr` box, falling back to Android's track info |
+| **Camera make & model** | QuickTime/iTunes metadata, Sony XML, or brand names in the header |
+| **Existing pixel-aspect tag** | `pasp` box (shown as "Tagged 1.33×") |
+| **Frame rate, audio format, duration, size, average bitrate** | Android's media extractor |
+
+Only the header is read, so analysis is instant even for multi-GB files.
+
 ## Two export methods
 
 | | **Lossless** (default) | **Re-encode** |
 |---|---|---|
 | How it works | Copies the file byte-for-byte and adds a pixel-aspect-ratio tag (`pasp`), like setting pixel aspect in DaVinci Resolve | Decodes, stretches the pixels on the GPU, and encodes a new video |
-| Quality | Bit-identical to the original: 10-bit D-Log, bitrate, frame rate, audio and metadata untouched | Re-compressed; quality depends on the chosen preset |
+| Quality | Bit-identical to the original: bit depth, log/HDR, bitrate, frame rate, audio and metadata untouched | Re-compressed; quality depends on the chosen preset |
 | Speed | About as fast as copying the file | Real-time-ish; depends on the phone |
 | Resolution | Always full original resolution, any squeeze | Limited by the phone's video encoder (often 4096 px wide), so large squeezes on 4K are scaled down evenly |
 | LUTs | Not applied | Can apply a `.cube` LUT |
@@ -60,11 +79,11 @@ actual image detail is similar or lower.
 ## Features
 
 - **Squeeze presets:** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus a custom factor (slider or typed, 1.0–3.0×)
-- **Default squeeze factor** saved in Settings and used for new imports (unless you've already picked one)
-- **Live preview** with a Squeezed / De-squeezed toggle, using hardware playback (the original file is never touched)
-- **Clip info:** resolution, codec, bit depth, frame rate and color tags (e.g. `3840×2160, HEVC 10-bit, 30 fps, BT.709 SDR limited`)
+- **Default squeeze factor** in Settings: pick a preset or set any custom value. It's used for new imports unless you've already picked a factor
+- **Cinema-style preview:** the frame springs between squeezed and de-squeezed widths; press and hold to compare with the original; play/pause, mute, scrubbing, a live aspect-ratio readout. Hardware playback; the file is never touched
+- **Footage badges:** log, HDR/SDR, bit depth, chroma, codec, frame rate, gamut, existing pixel-aspect tag and audio, each with its own icon; tap **All details** for the full technical breakdown
 - **Batch export:** select several clips and export them all with the same settings
-- **LUT library** (Re-encode): import, select, rename and delete your own 3D `.cube` LUTs, with 0–100% strength. No LUTs are bundled; for D-Log → Rec.709, import DJI's official LUT from DJI's website
+- **LUT library** (Re-encode): import, select, rename and delete your own 3D `.cube` LUTs, with 0–100% strength. No LUTs are bundled; import your camera maker's official log-to-Rec.709 LUT
 - **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File quality; frame rate and audio kept; automatic retries with safer settings if the encoder refuses
 - **Export limits screen:** shows what your phone's hardware can do: 10-bit HEVC decode, maximum frame size, maximum squeeze for 4K and 1080p, maximum frame rate and bitrate, and the full codec list
 - **Crash reports:** if the app ever closes unexpectedly, it shows a report on next launch that you can copy and send
@@ -85,9 +104,13 @@ uninstall the previous version before installing a new one.
 
 ## Known limitations
 
-- **Re-encode is 8-bit for D-Log footage.** DJI D-Log clips are tagged as standard (SDR)
+- **Re-encode is 8-bit for log footage.** Log clips are almost always tagged as standard (SDR)
   video, and Android's GPU video pipeline processes SDR at 8-bit, so Re-encode output is
   8-bit. Use Lossless to keep true 10-bit. Clips tagged HLG/PQ HDR stay 10-bit in Re-encode.
+- **Log detection depends on the camera.** Many cameras write the profile name into the file;
+  some phones and action cams don't, and then the app can only estimate from the picture.
+- **Preview and Re-encode need the phone to decode the codec.** ProRes, for example, usually
+  can't be played on Android; Lossless tagging still works for it.
 - **LUTs are applied at 8-bit precision**, and only in Re-encode. The preview shows framing only, not the LUT.
 - **Some DJI-specific metadata** may not carry over in Re-encode (Lossless keeps everything).
 - **Keep the app open while exporting**; the screen stays on automatically.
@@ -114,7 +137,10 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `AppState.kt` | Screen state that survives navigation |
 | `PaspWriter.kt` | Lossless pixel-aspect tagging |
 | `Exporter.kt` | Re-encode pipeline, encoder-size fitting, retries, saving to the gallery |
-| `VideoProbe.kt` | Reads resolution, codec, bit depth, frame rate, color info |
+| `VideoProbe.kt` | Combines header analysis with Android's track info |
+| `FootageAnalyzer.kt` | Camera-agnostic header analysis: log, HDR, bit depth, chroma, color, camera |
+| `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
+| `PreviewPlayer.kt` | Preview with hold-to-compare and custom controls |
 | `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and the Export limits screen |
 | `LutManager.kt` | `.cube` parsing and the LUT library |
 | `Settings.kt` | Saved preferences |

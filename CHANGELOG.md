@@ -2,6 +2,29 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.5 — 2026-10-03
+
+### Added
+- **Works with any camera.** The app is no longer DJI-specific. Clips from phones, action cams, gimbals, mirrorless and cinema cameras are analyzed the same way.
+- **Automatic footage detection**, shown as badges with custom icons:
+  - Log profiles: D-Log / D-Log M, S-Log2/3, V-Log, Canon Log 2/3, F-Log/F-Log2, N-Log, Apple Log, L-Log, I-Log, Samsung Log, GoPro Log, Z-Log2, Blackmagic Film, ARRI LogC and RED Log3G10, read from the file's metadata.
+  - For cameras that don't record their log profile, a frame is checked for the flat log look and shown as "Looks like log" (marked as an estimate; dark night scenes aren't mistaken for log).
+  - HDR (HLG, HDR10, Dolby Vision) or SDR; 8/10/12-bit; 4:2:0 / 4:2:2 / 4:4:4; color primaries; camera make and model; an existing pixel-aspect tag; audio format.
+- **All details** panel: codec and profile, transfer and matrix tags, range, HDR metadata, pixel aspect, duration, file size and average bitrate.
+- **New preview:**
+  - the frame springs between squeezed and de-squeezed widths
+  - press and hold to compare with the original
+  - play/pause, mute and a scrub bar
+  - live aspect-ratio readout and mode label
+- **Custom default squeeze:** Settings → Default squeeze → "Custom value…" accepts any factor from 1.00× to 3.00×.
+- Lossless mode now also tags ProRes, AV1, VP9, Dolby Vision, MPEG-4 and Motion JPEG video tracks.
+- Brand mark next to the app title.
+
+### Changed
+- The clip card is redesigned with grouped badges and camera info; batch clips are listed inside it.
+- Wording throughout is camera-neutral (LUT hint, export method description, Export limits).
+- Re-encode decides whether to keep HDR from the detected HDR type rather than from a text label.
+
 ## v1.4 — 2026-10-03
 
 ### Fixed
