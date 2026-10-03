@@ -2,6 +2,37 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.7 — 2026-10-03
+
+### Fixed
+- **"App not installed as package conflicts with an existing package."** Every build used to be signed with a new temporary key, so each update needed an uninstall. Releases are now signed with one permanent key, so future versions install straight over the old one. *Uninstall v1.6 or older one last time before installing v1.7.*
+- The Frame and Look steps only showed the clip picked on the Clips step. A clip switcher now appears on Frame, Look and Export.
+
+### Added
+- **Per-clip recommendations and methods:** each clip gets its own recommendation on the Export step and is exported with its own method (Lossless or Re-encode). "Use … for all" and "Reset to recommended" buttons; estimates per clip plus totals.
+- **About & support** in Settings:
+  - Support the development (Buy Me a Coffee)
+  - Check for updates (GitHub version)
+  - What's new, Source code, Privacy, Open-source licenses
+- **Default export method** setting: Recommended per clip, Always Lossless, or Always Re-encode.
+- **Device diagnostics, more informative:**
+  - a "What this means for you" summary: largest full-size squeeze for 4K and 1080p Re-encode, 10-bit preview, HDR re-encoding, live LUT preview
+  - a phone card: chipset, Android version and security patch, CPU, memory, free storage, display resolution / refresh / HDR support, graphics version
+  - speeds: your measured Re-encode and Lossless speeds, plus the manufacturer's rated 4K encode speed
+  - Dolby Vision and VP9 decode checks
+  - **Copy diagnostics** for support requests
+- **Google Play ready:** targets Android 16 (API 36), Play's requirement for new apps and updates. Also:
+  - an Android App Bundle (`-play.aab`) attached to each release
+  - a Play version without network access
+  - a privacy policy, store listing text, data-safety answers, a 512 px icon and a feature graphic (`docs/play/`)
+
+### Changed
+- **Settings redesigned:** an app header with version, then grouped cards with icons (Defaults, Re-encode, Output & looks, This phone, About & support). The LUT library has its own page.
+- Smaller app: release builds are now shrunk with R8 (class names are kept so crash reports stay readable).
+- Removed an unused permission (foreground service).
+- Choosing a LUT no longer silently switches the export method; clips with a LUT are recommended for Re-encode instead.
+- Build tools updated (Android Gradle Plugin 8.9, Gradle 8.11).
+
 ## v1.6 — 2026-10-03
 
 ### Added

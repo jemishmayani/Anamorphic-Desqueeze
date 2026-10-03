@@ -110,9 +110,11 @@ actual image detail is similar or lower.
 - **Batch export:** select several clips and export them all with the same settings
 - **LUT library** (Re-encode): import, select, rename and delete your own 3D `.cube` LUTs, with 0–100% strength. No LUTs are bundled; import your camera maker's official log-to-Rec.709 LUT
 - **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File quality; frame rate and audio kept; automatic retries with safer settings if the encoder refuses
-- **Device diagnostics:** a ✓ / ⚠ / ✗ checklist of HEVC, 10-bit HEVC, H.264 and AV1 decode; HEVC, 10-bit and H.264 encode; maximum frame width, 4K frame rate and bitrate. Each item explains what it means for you, and a squeeze check shows which squeezes Re-encode can make at full size on 4K and 1080p
+- **Per-clip recommendations:** switch clips on the Frame, Look and Export steps; each clip gets its own recommendation and export method (or apply one to all)
+- **Device diagnostics:** a "what this means for you" summary; your phone's chipset, memory, storage, display HDR and graphics; measured and manufacturer speeds; a ✓ / ⚠ / ✗ checklist of HEVC, 10-bit HEVC, H.264 and AV1 decode; HEVC, 10-bit and H.264 encode; maximum frame width, 4K frame rate and bitrate. Each item explains what it means for you, and a squeeze check shows which squeezes Re-encode can make at full size on 4K and 1080p
 - **Crash reports:** if the app ever closes unexpectedly, it shows a report on next launch that you can copy and send
-- Light, dark or system theme; works fully offline; no ads, accounts or tracking, and no internet permission
+- **Organized settings** with defaults, Re-encode options, output, LUT library, theme, diagnostics, and **About & support** (check for updates, what's new, source code, privacy, licenses, and [support the development](https://buymeacoffee.com/jemishmayani))
+- Light, dark or system theme; works fully offline; no ads, accounts or tracking. The GitHub version goes online only when you tap *Check for updates*; the Play version never does
 
 ## Install
 
@@ -121,11 +123,12 @@ actual image detail is similar or lower.
 3. Allow **Install unknown apps** for your browser or file manager when Android asks.
    Google Play Protect may warn about an unknown developer; tap **Install anyway**.
 
-**Requirements:** Android 10 or newer. 10-bit HEVC playback and Re-encode need hardware
+**Requirements:** Android 10 or newer (built for Android 16 / API 36). 10-bit HEVC playback and Re-encode need hardware
 support, which most phones from 2019 onwards have.
 
-**Updating:** each build is currently signed with a temporary key, so you may need to
-uninstall the previous version before installing a new one.
+**Updating:** from v1.7, every release is signed with the same permanent key, so new versions
+install straight over the old one. (If you have v1.6 or older, uninstall it once first: those
+builds used temporary keys.)
 
 ## Known limitations
 
@@ -174,13 +177,32 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and the Device diagnostics screen |
 | `LutManager.kt` | `.cube` parsing and the LUT library |
 | `Settings.kt` | Saved preferences |
+| `SettingsScreen.kt` | Settings, LUT library, About & support, update check |
 | `Diag.kt` | Crash, freeze and low-memory reports |
 | `Theme.kt` | Colors and typography |
 
+## Google Play
+
+The app meets Google Play's current requirements: it targets Android 16 (API 36), its native
+library supports 16 KB memory pages, it has no unnecessary permissions, and it ships as an
+Android App Bundle. It's built in two versions:
+
+| Version | File | Differences |
+|---|---|---|
+| **GitHub** | `.apk` | Can *Check for updates* against GitHub releases (internet used only then) |
+| **Play** | `-play.aab` | No update checker (Play delivers updates) and no internet use |
+
+Listing text, data-safety answers, the 512 px icon and the feature graphic are in
+[`docs/play/`](docs/play/PLAY_STORE.md). The privacy policy is [`PRIVACY.md`](PRIVACY.md).
+
 ## Building it yourself
 
-Every push to `main` builds the APK automatically with GitHub Actions
-(`.github/workflows/build.yml`). The APK appears under the run's **Artifacts** and on the `apk` branch.
+Every push to `main` builds the GitHub APK and the Play bundle with GitHub Actions
+(`.github/workflows/build.yml`). They appear under the run's **Artifacts**, and the APK also on the `apk` branch.
+
+Release builds are signed with a permanent key stored in the repository's **Actions secrets**
+(`SIGNING_KEYSTORE_B64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`).
+The key is never committed. Without the secrets, builds fall back to a temporary key.
 
 To publish a release, add a section for the new version to [`CHANGELOG.md`](CHANGELOG.md),
 bump `versionCode`/`versionName` in `app/build.gradle.kts`, then push a tag:
@@ -193,5 +215,5 @@ git push origin v1.5
 The workflow builds the APK, creates the GitHub Release, and uses that version's
 CHANGELOG section as the release notes.
 
-To build locally, open the project in Android Studio (JDK 17, Android SDK 34) and choose
-**Build → Build APK(s)**, or run `gradle :app:assembleRelease`.
+To build locally, open the project in Android Studio (JDK 17, Android SDK 36), choose the `githubRelease`
+or `playRelease` variant, and build; or run `gradle :app:assembleGithubRelease :app:bundlePlayRelease`.
