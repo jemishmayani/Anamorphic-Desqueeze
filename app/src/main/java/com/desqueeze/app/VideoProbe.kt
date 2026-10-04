@@ -77,6 +77,7 @@ object VideoProbe {
 
         val mmr = MediaMetadataRetriever()
         var rot = 0; var fps = f?.floatOrNull(MediaFormat.KEY_FRAME_RATE) ?: 0f; var dur = 0L; var thumb: Bitmap? = null
+        var gamma: Gamma? = null
         try {
             mmr.setDataSource(ctx, uri)
             rot = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
@@ -85,23 +86,35 @@ object VideoProbe {
                 val frames = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toLongOrNull()
                 if (frames != null && dur > 0) fps = frames * 1000f / dur
             }
-            // 3) One small frame: the list thumbnail, and (if metadata didn't say) the log-look check.
+            // 3) Thumbnail only. (Never used for gamma: intros, fades and title cards would mislead.)
             val bmp = mmr.getScaledFrameAtTime(minOf(dur * 500L, 1_000_000L), MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 320, 320)
             if (bmp != null) {
                 val sw = bmp.copy(Bitmap.Config.ARGB_8888, false)
                 thumb = Frames.orient(sw, f?.getInteger(MediaFormat.KEY_WIDTH) ?: 0, f?.getInteger(MediaFormat.KEY_HEIGHT) ?: 0, rot, 0)
-                if (footage.log == null && footage.hdr == null) {
-                    val px = IntArray(sw.width * sw.height); sw.getPixels(px, 0, sw.width, 0, 0, sw.width, sw.height)
-                    if (FootageAnalyzer.looksLikeLog(px)) footage = footage.copy(log = "Log", logEstimated = true)
-                }
                 if (sw !== bmp) bmp.recycle()
             }
+            // 4) Gamma: metadata first. Pixels are only consulted when metadata doesn't settle it, and then
+            //    from several frames spread through the clip, skipping the intro and the ending.
+            val settled = footage.dolbyVision || footage.transfer == 16 || footage.transfer == 18 || footage.logHints.any { it.structured }
+            val samples = if (settled) null else GammaClassifier.sampleTimes(dur).mapNotNull { t ->
+                try {
+                    mmr.getScaledFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 160)?.let { b ->
+                        val a = if (b.config == Bitmap.Config.ARGB_8888) b else b.copy(Bitmap.Config.ARGB_8888, false)
+                        IntArray(a.width * a.height).also { px -> a.getPixels(px, 0, a.width, 0, 0, a.width, a.height); if (a !== b) a.recycle(); b.recycle() }
+                    }
+                } catch (_: Throwable) { null }
+            }
+            gamma = GammaClassifier.classify(footage.transfer, footage.primaries, footage.dolbyVision, footage.masteringInfo,
+                footage.bitDepth, footage.make, footage.logHints, samples)
         } catch (_: Throwable) { } finally { mmr.release() }
 
         val w = f?.getInteger(MediaFormat.KEY_WIDTH) ?: footage.width!!
         val h = f?.getInteger(MediaFormat.KEY_HEIGHT) ?: footage.height!!
         val color = listOfNotNull(footage.primariesName, footage.hdr ?: if (transfer != null) "SDR" else null,
             range?.let { if (it) "full" else "limited" }).joinToString(" ")
+        footage = footage.copy(gamma = gamma ?: GammaClassifier.classify(footage.transfer, footage.primaries, footage.dolbyVision,
+            footage.masteringInfo, footage.bitDepth, footage.make, footage.logHints, null))
+        Diag.step("Gamma for $name: ${footage.gamma.diagnosis}")
         return VideoInfo(uri, name, w, h, rot, codec, fps, bitDepth, color, audio != null, dur, size, footage, audio, thumb)
     }
 

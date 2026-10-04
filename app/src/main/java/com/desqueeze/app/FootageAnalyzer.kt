@@ -21,10 +21,10 @@ data class Footage(
     val pixelAspect: Pair<Int, Int>? = null,
     val make: String? = null,
     val model: String? = null,
-    /** Log profile named in the file's metadata, e.g. "S-Log3". */
-    val log: String? = null,
-    /** True when [log] comes from a picture-statistics estimate, not metadata. */
-    val logEstimated: Boolean = false,
+    /** Log profile names found in the file, each marked structured (camera field) or free text. */
+    val logHints: List<LogHint> = emptyList(),
+    /** Final classification (metadata first; see [GammaClassifier]). Filled in by VideoProbe. */
+    val gamma: Gamma = Gamma(),
 ) {
     val hdr: String? get() = when {
         dolbyVision -> "Dolby Vision"
@@ -53,30 +53,75 @@ object FootageAnalyzer {
 
     private class B(val type: String, val start: Int, val ps: Int, val pe: Int)
 
-    private val LOG_PATTERNS = listOf(
-        "D-Log M" to "d[-_ ]?log[-_ ]?m(?![a-z])",
-        "D-Log" to "d[-_ ]?log(?![a-z])",
-        "S-Log3" to "s[-_ ]?log ?3",
-        "S-Log2" to "s[-_ ]?log ?2",
-        "V-Log L" to "v[-_ ]?log[-_ ]?l(?![a-z])",
-        "V-Log" to "v[-_ ]?log(?![a-z])",
-        "Canon Log 3" to "(c[-_ ]?log ?3|canon ?log ?3)",
-        "Canon Log 2" to "(c[-_ ]?log ?2|canon ?log ?2)",
-        "Canon Log" to "(c[-_ ]?log(?![a-z0-9])|canon ?log)",
-        "F-Log2" to "f[-_ ]?log ?2",
-        "F-Log" to "f[-_ ]?log(?![a-z0-9])",
-        "N-Log" to "n[-_ ]?log(?![a-z])",
+    /**
+     * Log names. `S` is the separator: optional in structured camera values ("slog3", "dlogm"),
+     * required in free text, so "vlog" in a YouTube title is never read as Panasonic V-Log.
+     */
+    private val LOG_NAMES = listOf(
+        "D-Log M" to "d{S}log{S}m(?![a-z])",
+        "D-Log" to "d{S}log(?![a-z])",
+        "S-Log3" to "s{S}log ?3",
+        "S-Log2" to "s{S}log ?2",
+        "V-Log L" to "v{S}log{S}l(?![a-z])",
+        "V-Log" to "v{S}log(?![a-z])",
+        "Canon Log 3" to "(c{S}log ?3|canon ?log ?3)",
+        "Canon Log 2" to "(c{S}log ?2|canon ?log ?2)",
+        "Canon Log" to "(c{S}log(?![a-z0-9])|canon ?log)",
+        "F-Log2" to "f{S}log ?2",
+        "F-Log" to "f{S}log(?![a-z0-9])",
+        "N-Log" to "n{S}log(?![a-z])",
         "Apple Log" to "apple ?log",
-        "L-Log" to "l[-_ ]?log(?![a-z])",
-        "I-Log" to "i[-_ ]?log(?![a-z])",
+        "L-Log" to "l{S}log(?![a-z])",
+        "I-Log" to "i{S}log(?![a-z])",
         "Samsung Log" to "samsung ?log",
         "GoPro Log" to "gopro ?log",
-        "Z-Log2" to "z[-_ ]?log ?2",
+        "Z-Log2" to "z{S}log ?2",
         "Blackmagic Film" to "(bmd ?film|blackmagic design film|gen ?5 ?film)",
         "ARRI LogC" to "(arri ?log ?c|log ?c[34](?![0-9]))",
         "RED Log3G10" to "log3g10",
-        "Cineon / Log" to "cineon",
-    ).map { (name, re) -> name to Regex("(?<![a-z0-9])$re", RegexOption.IGNORE_CASE) }
+    )
+    private val LOOSE = LOG_NAMES.map { (n, re) -> n to Regex("(?<![a-z0-9])" + re.replace("{S}", "[-_ ]?"), RegexOption.IGNORE_CASE) }
+    private val STRICT = LOG_NAMES.map { (n, re) -> n to Regex("(?<![a-z0-9])" + re.replace("{S}", "[-_ ]"), RegexOption.IGNORE_CASE) }
+    fun logName(text: String, structured: Boolean): String? = (if (structured) LOOSE else STRICT).firstOrNull { it.second.containsMatchIn(text) }?.first
+
+    /** Metadata keys / XML fields that describe the camera's gamma or picture profile. */
+    private val GAMMA_FIELD = Regex("gamma|colou?r[ ._-]?profile|picture[ ._-]?profile|log[ ._-]?(mode|profile)|colou?r[ ._-]?mode|transfer", RegexOption.IGNORE_CASE)
+
+    /** Friendly names for free-text metadata fields. */
+    private fun fieldName(k: String) = when (k.lowercase()) {
+        "\u00a9nam", "com.apple.quicktime.title", "title" -> "title"
+        "\u00a9cmt", "com.apple.quicktime.comment", "comment" -> "comment"
+        "\u00a9des", "desc", "com.apple.quicktime.description", "description" -> "description"
+        "\u00a9too", "com.apple.quicktime.software" -> "encoder tag"
+        "keyw", "com.apple.quicktime.keywords" -> "keywords"
+        else -> "metadata text"
+    }
+
+    /**
+     * Separates log mentions into structured camera fields (trusted) and free text (hints only).
+     * [meta] = QuickTime/iTunes keys and values; [xml] = top-level metadata boxes (e.g. Sony XML, XMP).
+     */
+    fun logHints(meta: Map<String, String>, xml: String, otherText: String): List<LogHint> {
+        val out = mutableListOf<LogHint>()
+        for ((k, v) in meta) {
+            if (GAMMA_FIELD.containsMatchIn(k)) logName(v, true)?.let { out += LogHint(it, "metadata key \"$k\" = \"${v.take(40)}\"", true) }
+        }
+        val fieldRes = listOf(
+            Regex("<([A-Za-z:]*(?:Gamma|ColorProfile|ColourProfile|PictureProfile|LogMode|LogProfile)[A-Za-z]*)\\b[^>]*?\\bvalue\\s*=\\s*\"([^\"]{1,60})\"", RegexOption.IGNORE_CASE),
+            Regex("\\b([A-Za-z:]*(?:Gamma|ColorProfile|ColourProfile|PictureProfile|LogMode|LogProfile)[A-Za-z]*)\\s*=\\s*\"([^\"]{1,60})\"", RegexOption.IGNORE_CASE),
+            Regex("<([A-Za-z:]*(?:Gamma|ColorProfile|ColourProfile|PictureProfile|LogMode|LogProfile)[A-Za-z]*)>([^<]{1,60})</", RegexOption.IGNORE_CASE),
+        )
+        for (re in fieldRes) for (m in re.findAll(xml)) {
+            val (name, value) = m.destructured
+            logName(value, true)?.let { out += LogHint(it, "camera XML $name = \"$value\"", true) }
+        }
+        for ((k, v) in meta) {
+            if (GAMMA_FIELD.containsMatchIn(k)) continue
+            logName(v, false)?.let { out += LogHint(it, fieldName(k), false) }
+        }
+        if (out.none { !it.structured }) logName(otherText, false)?.let { out += LogHint(it, "embedded header text", false) }
+        return out.distinctBy { it.profile to it.structured }
+    }
 
     private val BRANDS = listOf("DJI", "GoPro", "Insta360", "Sony", "Canon", "Panasonic", "FUJIFILM", "Nikon", "Apple",
         "samsung", "Blackmagic", "Xiaomi", "Google", "OnePlus", "Leica", "Z CAM", "SIGMA", "OLYMPUS", "OM Digital", "Huawei", "vivo", "OPPO")
@@ -140,7 +185,7 @@ object FootageAnalyzer {
         }
 
         val text = String(mask, Charsets.ISO_8859_1) + " " + meta.values.joinToString(" ") + " " + extra
-        val log = LOG_PATTERNS.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+        val hints = logHints(meta, extra.toString(), String(mask, Charsets.ISO_8859_1))
 
         var make = meta["com.apple.quicktime.make"] ?: meta["\u00A9mak"]
         var model = meta["com.apple.quicktime.model"] ?: meta["\u00A9mod"] ?: meta["\u00A9mdl"]
@@ -150,7 +195,7 @@ object FootageAnalyzer {
         if (make == null) make = BRANDS.firstOrNull { b -> Regex("(?<![A-Za-z])${Regex.escape(b)}(?![A-Za-z])").containsMatchIn(text) }
             ?.let { if (it == "samsung") "Samsung" else it }
 
-        return f.copy(log = log, make = make?.trim()?.take(40), model = model?.trim()?.take(40))
+        return f.copy(logHints = hints, make = make?.trim()?.take(40), model = model?.trim()?.take(40))
     }
 
     private fun sampleEntry(d: ByteArray, e: B, base: Footage): Footage {
@@ -278,27 +323,5 @@ object FootageAnalyzer {
         return b.array()
     }
 
-    /**
-     * Fallback estimate for clips whose camera doesn't record the log profile:
-     * log footage has lifted blacks, rolled-off highlights and low saturation.
-     * [argb] is a small downscaled frame. Returns true when it looks flat like log.
-     */
-    fun looksLikeLog(argb: IntArray): Boolean {
-        if (argb.isEmpty()) return false
-        val lum = FloatArray(argb.size); var satSum = 0f
-        for (i in argb.indices) {
-            val c = argb[i]
-            val r = (c shr 16 and 255) / 255f; val g = (c shr 8 and 255) / 255f; val b = (c and 255) / 255f
-            lum[i] = 0.2126f * r + 0.7152f * g + 0.0722f * b
-            val mx = maxOf(r, g, b); val mn = minOf(r, g, b)
-            satSum += if (mx > 0f) (mx - mn) / mx else 0f
-        }
-        lum.sort()
-        val p1 = lum[(lum.size * 0.01).toInt()]; val p99 = lum[(lum.size * 0.99).toInt().coerceAtMost(lum.size - 1)]
-        val sat = satSum / argb.size
-        // Log curves never reach true black (S-Log3 ≈ 0.09, V-Log ≈ 0.12, D-Log M ≈ 0.08 in full range),
-        // so lifted blacks are required; dark night scenes with real blacks don't qualify.
-        val lifted = p1 > 0.075f
-        return lifted && (p99 - p1 < 0.72f || sat < 0.20f)
-    }
+
 }

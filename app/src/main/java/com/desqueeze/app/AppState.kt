@@ -101,6 +101,9 @@ class AppState(settings: Settings, luts: LutManager) {
     var formatFill by mutableStateOf(settings.formatFill)
     /** Exposure tool shown with the preview. */
     var scope by mutableStateOf(Scope.OFF)
+    /** Selected tool tab in the Frame / Look steps (preview stays pinned above). */
+    var frameTool by mutableIntStateOf(0)
+    var lookTool by mutableIntStateOf(0)
 
     fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutId, strength, orientation, direction,
         trim = trimFor(v), format = format, fill = formatFill)

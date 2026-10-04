@@ -236,8 +236,7 @@ fun specLine(v: VideoInfo) = buildString {
     append("${v.displayW}×${v.displayH}, ${v.codec} ${v.bitDepth}-bit")
     v.footage.chroma?.let { append(" $it") }
     if (v.fps > 0) append(", ${fmtFps(v.fps)}")
-    v.footage.log?.let { append(", ${if (v.footage.logEstimated) "log (estimated)" else it}") }
-    v.footage.hdr?.let { append(", $it") }
+    lookLabel(v.footage.gamma)?.let { append(", $it") }
     v.footage.camera?.let { append(", $it") }
     if (!v.hasAudio) append(", no audio")
 }

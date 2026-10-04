@@ -17,7 +17,7 @@ data class CompatReport(
 fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode): CompatReport {
     val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
     val f = v.footage
-    val look = when { f.log != null && !f.logEstimated -> f.log; f.log != null -> "log"; else -> f.hdr }
+    val look = lookLabel(f.gamma)
     val input = listOfNotNull(resolutionName(v.displayW, v.displayH), "${v.bitDepth}-bit", look, v.codec).joinToString(" ")
     val tag = existingTag(v); val policy = st.tagPolicy[st.keyOf(v)]
     val picked = st.squeezeFor(v)

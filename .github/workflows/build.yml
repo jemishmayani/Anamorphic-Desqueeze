@@ -28,7 +28,7 @@ jobs:
           if [ -z "$KEYSTORE_PASSWORD" ]; then echo "::warning::No KEYSTORE_PASSWORD secret: building with a temporary debug key."; fi
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           set -o pipefail
-          gradle :app:assembleGithubRelease :app:bundlePlayRelease --stacktrace 2>&1 | tee build-log.txt
+          gradle :app:testGithubDebugUnitTest :app:assembleGithubRelease :app:bundlePlayRelease --stacktrace 2>&1 | tee build-log.txt
           mkdir -p out
           cp app/build/outputs/apk/github/release/*.apk out/AnamorphicDesqueeze.apk
           cp app/build/outputs/bundle/playRelease/*.aab out/AnamorphicDesqueeze-play.aab

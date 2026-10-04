@@ -10,11 +10,13 @@ data class Recommendation(
 fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, fit: Pair<Int, Int>?,
               format: OutFormat = OutFormat.ORIGINAL, fill: Boolean = false): Recommendation {
     val f = v.footage
-    val look = when { f.log != null && !f.logEstimated -> f.log; f.log != null -> "log"; f.hdr != null -> f.hdr; else -> null }
+    val gm = f.gamma
+    // Only metadata-confirmed log or HDR is named as a fact or changes the advice.
+    val look = if (gm.isConfirmedLog || gm.isHdr) gm.title else null
     val facts = listOfNotNull(
         f.camera,
         "${v.displayW} × ${v.displayH}",
-        look?.let { if (f.logEstimated) "Log (estimated)" else it },
+        lookLabel(gm),
         "${v.bitDepth}-bit ${v.codec}",
         fmtSqueeze(squeeze) + if (g.vertical) " vertical" else "",
         if (format != OutFormat.ORIGINAL) "Output ${format.short} (${if (fill) "fill" else "fit"})" else null,
@@ -39,7 +41,8 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         precious -> Recommendation(facts, ExportMode.LOSSLESS, "Lossless Desqueeze",
             "Preserves your original $desc footage exactly, at full ${g.outW}×${g.outH}, in seconds.",
             ExportMode.REENCODE, "Re-encode for sharing",
-            "Makes a file every app and website shows wide." + (if (look != null) " The picture stays $look-flat unless you add a LUT." else "") + scaledText)
+            "Makes a file every app and website shows wide." +
+                (if (gm.isConfirmedLog) " The picture stays ${gm.title}-flat unless you add your camera's official LUT." else "") + scaledText)
         else -> Recommendation(facts, ExportMode.REENCODE, "Re-encode for sharing",
             "Standard 8-bit footage loses very little, and every app and website will show it wide.$scaledText",
             ExportMode.LOSSLESS, "Lossless for editing", "Instant and untouched. Editors like Resolve and players like VLC show it wide.")

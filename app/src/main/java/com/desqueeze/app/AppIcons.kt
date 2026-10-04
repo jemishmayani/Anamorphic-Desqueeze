@@ -160,4 +160,22 @@ object AppIcons {
     val Sliders = icon("sliders") { line { moveTo(4f, 7f); lineTo(20f, 7f); moveTo(4f, 17f); lineTo(20f, 17f) }; solid { circle(9f, 7f, 2.4f); circle(15f, 17f, 2.4f) } }
     val Heart = icon("heart") { solid { moveTo(12f, 20f); curveTo(5f, 15f, 3f, 12f, 3f, 8.8f); curveTo(3f, 6f, 5.2f, 4f, 7.8f, 4f); curveTo(9.6f, 4f, 11f, 5f, 12f, 6.5f)
         curveTo(13f, 5f, 14.4f, 4f, 16.2f, 4f); curveTo(18.8f, 4f, 21f, 6f, 21f, 8.8f); curveTo(21f, 12f, 19f, 15f, 12f, 20f); close() } }
+
+    /** Trim: scissors. */
+    val Scissors = icon("scissors") {
+        line { circle(6.5f, 6.5f, 2.6f) }
+        line { circle(6.5f, 17.5f, 2.6f) }
+        line { moveTo(8.6f, 8.1f); lineTo(20f, 17f); moveTo(8.6f, 15.9f); lineTo(20f, 7f) }
+    }
+    /** Guides: frame-line corners around a wide frame. */
+    val FrameLines = icon("frame_lines") {
+        line { moveTo(3f, 9f); lineTo(3f, 6f); lineTo(7f, 6f); moveTo(17f, 6f); lineTo(21f, 6f); lineTo(21f, 9f)
+            moveTo(21f, 15f); lineTo(21f, 18f); lineTo(17f, 18f); moveTo(7f, 18f); lineTo(3f, 18f); lineTo(3f, 15f) }
+        line(1.4f) { moveTo(9f, 12f); lineTo(15f, 12f) }
+    }
+    /** Exposure: histogram bars on a baseline. */
+    val Histogram = icon("histogram") {
+        line { moveTo(3f, 20f); lineTo(21f, 20f) }
+        line(2.4f) { moveTo(6f, 20f); lineTo(6f, 15f); moveTo(10f, 20f); lineTo(10f, 9f); moveTo(14f, 20f); lineTo(14f, 5f); moveTo(18f, 20f); lineTo(18f, 12f) }
+    }
 }

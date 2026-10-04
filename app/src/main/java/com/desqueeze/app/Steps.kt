@@ -14,6 +14,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -69,7 +70,7 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
         BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
             // Two panes on tablets, foldables and phones in landscape.
             val wide = maxWidth >= 700.dp || (maxWidth > maxHeight && maxWidth >= 560.dp)
-            val previewMax = if (wide) (maxHeight - 150.dp).coerceAtLeast(160.dp) else null
+            val previewMax = if (wide) (maxHeight - 150.dp).coerceAtLeast(160.dp) else (maxHeight * 0.34f).coerceAtLeast(150.dp)
             Column(Modifier.fillMaxSize()) {
                 Column(Modifier.padding(horizontal = 20.dp).padding(top = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -111,6 +112,60 @@ fun TwoPane(panes: Panes, left: @Composable ColumnScope.() -> Unit, right: @Comp
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), verticalArrangement = spacing, content = right)
     } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = spacing) {
         left(); right(); Spacer(Modifier.height(4.dp))
+    }
+}
+
+/** One tool tab: an icon, a label, its current value (shown on the tab), and its controls. */
+class Tool(val label: String, val icon: ImageVector, val value: String?, val content: @Composable ColumnScope.() -> Unit)
+
+/**
+ * Preview pinned in place with the tools as tabs. Changing a setting never scrolls the preview
+ * away: on phones the preview stays on top and only the selected tool's controls scroll; on wide
+ * screens the preview sits on the left and the tools on the right.
+ */
+@Composable
+fun PreviewWithTools(panes: Panes, tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit, preview: @Composable ColumnScope.() -> Unit) {
+    val sel = selected.coerceIn(0, tools.size - 1)
+    if (panes.wide) Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(Modifier.weight(1.15f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp), content = preview)
+        Column(Modifier.weight(1f).fillMaxHeight().padding(top = 16.dp)) {
+            ToolTabs(tools, sel, onSelect)
+            key(sel) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+            }
+        }
+    } else Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = preview)
+        Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
+        key(sel) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+        }
+    }
+}
+
+@Composable
+private fun ToolTabs(tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        tools.forEachIndexed { i, t ->
+            val on = i == selected
+            Row(Modifier.clip(RoundedCornerShape(14.dp))
+                .background(if (on) c.primary.copy(alpha = 0.16f) else c.surfaceContainer)
+                .border(1.dp, if (on) c.primary.copy(alpha = 0.7f) else c.outlineVariant, RoundedCornerShape(14.dp))
+                .clickable { onSelect(i) }.padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(t.icon, null, Modifier.size(18.dp), tint = if (on) c.primary else c.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(t.label, style = MaterialTheme.typography.labelLarge, color = if (on) c.onSurface else c.onSurfaceVariant, maxLines = 1)
+                    t.value?.let { Text(it, style = MaterialTheme.typography.labelSmall.merge(Mono), color = if (on) c.primary else c.onSurfaceVariant, maxLines = 1) }
+                }
+            }
+        }
     }
 }
 
@@ -266,7 +321,7 @@ fun resolutionName(w: Int, h: Int): String {
 
 fun clipFacts(v: VideoInfo) = listOfNotNull(
     resolutionName(v.displayW, v.displayH), "${v.bitDepth}-bit",
-    v.footage.log?.let { if (v.footage.logEstimated) "Log?" else it } ?: v.footage.hdr,
+    lookLabel(v.footage.gamma),
     if (v.fps > 0) fmtFps(v.fps) else null,
 ).joinToString(" • ")
 
@@ -305,57 +360,61 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
     val v = st.videos.getOrNull(st.selected) ?: return
     val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
     val c = MaterialTheme.colorScheme
-    TwoPane(panes, left = {
+    val trim = st.trimFor(v)
+    val tools = listOf(
+        Tool("Squeeze", AppIcons.Aspect, fmtSqueeze(st.squeeze)) {
+            Section(if (st.videos.size > 1) "Squeeze factor for clip ${st.selected + 1}" else "Squeeze factor", trailing = {
+                Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
+            }) {
+                SqueezeChips(st)
+                if (st.videos.size > 1) {
+                    val allSame = st.videos.all { kotlin.math.abs(st.squeezeFor(it) - st.squeeze) < 0.001f }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        Text(if (allSame) "All clips use ${fmtSqueeze(st.squeeze)}." else "Clips use different factors, e.g. for different adapters.",
+                            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        if (!allSame) TextButton(onClick = { val f = st.squeeze; st.videos.forEach { st.clipSqueeze[st.keyOf(it)] = f } }, enabled = !st.busy) {
+                            Text("Apply ${fmtSqueeze(st.squeeze)} to all")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("${g.dispW} × ${g.dispH}  displays as  ${g.outW} × ${g.outH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
+                Text("${g.ratioLabel()}. Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            }
+            existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
+        },
+        Tool("Trim", AppIcons.Scissors, trim?.let { (a, b) -> fmtDuration(b - a) } ?: "Full") { TrimSection(st, v, memory) },
+        Tool("Guides", AppIcons.FrameLines, null) {
+            Section("Guides") { GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it } }
+        },
+        Tool("Orientation", AppIcons.Rotate, if (st.orientation == Orientation.AUTO && st.direction == Direction.AUTO) "Auto"
+                else "${st.orientation.label} · ${if (g.vertical) "↕" else "↔"}") {
+            if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            Section("Orientation") {
+                Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
+            }
+            Section("Desqueeze direction") {
+                Segmented(Direction.entries.map { it.label }, st.direction.ordinal, enabled = !st.busy) { st.direction = Direction.entries[it] }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
+                    Spacer(Modifier.width(8.dp))
+                    Text(directionHint(v, g, st.orientation, st.direction) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
+                        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                }
+            }
+        },
+        Tool("Exposure", AppIcons.Histogram, st.scope.label) { ExposureSection(st) },
+    )
+    PreviewWithTools(panes, tools, st.frameTool, { st.frameTool = it }) {
         ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + (if (st.trimFor(clip) != null) "  · trimmed" else "") + if (existingTag(clip) != null) "  · tagged" else "" }
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio)
-            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = st.trimFor(v), exposure = st.scope, maxHeight = previewMax)
+            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, maxHeight = previewMax)
         }
         ViewToggle(st.desqueezed) { st.desqueezed = it }
-        TrimSection(st, v, memory)
-        ExposureSection(st)
-    }, right = {
-    Section(if (st.videos.size > 1) "Squeeze factor for clip ${st.selected + 1}" else "Squeeze factor", trailing = {
-            Text(fmtSqueeze(st.squeeze), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
-        }) {
-            SqueezeChips(st)
-            if (st.videos.size > 1) {
-                val allSame = st.videos.all { kotlin.math.abs(st.squeezeFor(it) - st.squeeze) < 0.001f }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(if (allSame) "All clips use ${fmtSqueeze(st.squeeze)}." else "Clips use different factors, e.g. for different adapters.",
-                        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
-                    if (!allSame) TextButton(onClick = { val f = st.squeeze; st.videos.forEach { st.clipSqueeze[st.keyOf(it)] = f } }, enabled = !st.busy) {
-                        Text("Apply ${fmtSqueeze(st.squeeze)} to all")
-                    }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text("${g.dispW} × ${g.dispH}  displays as  ${g.outW} × ${g.outH}", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-            Text("${g.ratioLabel()}. Full frame kept, nothing cropped.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-        }
-
-        existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
-
-        Section("Guides") {
-            GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it }
-        }
-
-        if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
-            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-        Section("Orientation") {
-            Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
-        }
-        Section("Desqueeze direction") {
-            Segmented(Direction.entries.map { it.label }, st.direction.ordinal, enabled = !st.busy) { st.direction = Direction.entries[it] }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.Top) {
-                Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
-                Spacer(Modifier.width(8.dp))
-                Text(directionHint(v, g, st.orientation, st.direction) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
-                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-            }
-        }
-    })
+    }
 }
 
 /** Trim before export: in and out points per clip. */
@@ -474,15 +533,9 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
         } catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
     }
 
-    TwoPane(panes, left = {
-    ClipSwitcher(st)
-    key(v.uri) {
-        if (st.busy) ExportingPlaceholder(g.outRatio)
-        else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
-            guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, maxHeight = previewMax)
-    }
-    ExposureSection(st)
-    }, right = {
+    val lutName = st.lutList.firstOrNull { it.id == st.lutId }?.name
+    val tools = listOf(
+        Tool("LUT", AppIcons.Gamut, lutName?.let { if (st.lutPreview) "${(st.strength * 100).toInt()}%" else "Off" } ?: "None") {
     Section("LUT") {
         PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
             listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
@@ -518,10 +571,24 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (st.lutId == null) Text("Optional. Import your camera maker's official log-to-Rec.709 LUT, or any creative 3D .cube LUT.",
+        if (st.lutId == null) Text(when {
+                v.footage.gamma.isConfirmedLog -> "This clip is ${v.footage.gamma.title} (confirmed by camera metadata). For a normal look, import your camera maker's official ${v.footage.gamma.title}-to-Rec.709 LUT."
+                v.footage.gamma.isLog -> "Optional. ${v.footage.gamma.title}: the camera didn't confirm a log profile, so check the footage before using a log LUT. Creative 3D .cube LUTs work on anything."
+                else -> "Optional. Any creative 3D .cube LUT."
+            },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
-    })
+        },
+        Tool("Exposure", AppIcons.Histogram, st.scope.label) { ExposureSection(st) },
+    )
+    PreviewWithTools(panes, tools, st.lookTool, { st.lookTool = it }) {
+        ClipSwitcher(st)
+        key(v.uri) {
+            if (st.busy) ExportingPlaceholder(g.outRatio)
+            else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
+                guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, maxHeight = previewMax)
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ 4. Export */

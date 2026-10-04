@@ -17,8 +17,8 @@ android {
         applicationId = "com.desqueeze.app"
         minSdk = 29          // Android 10+: needed for reliable 10-bit HEVC
         targetSdk = 36       // Google Play requirement from 31 Aug 2026
-        versionCode = 10
-        versionName = "1.9"
+        versionCode = 11
+        versionName = "1.10"
     }
     signingConfigs {
         if (hasReleaseKey) create("release") {
@@ -57,6 +57,7 @@ android {
     buildFeatures { compose = true; buildConfig = true }
 }
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val media3 = "1.4.1"
     implementation("androidx.media3:media3-transformer:$media3")
     implementation("androidx.media3:media3-effect:$media3")

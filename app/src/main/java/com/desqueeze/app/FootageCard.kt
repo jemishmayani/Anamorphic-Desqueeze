@@ -33,9 +33,14 @@ data class Badge(val icon: ImageVector, val label: String, val tone: Tone, val d
 fun badgesFor(v: VideoInfo): List<Badge> {
     val f = v.footage
     return buildList {
-        f.log?.let { add(if (f.logEstimated) Badge(AppIcons.Log, "Looks like log", Tone.Warm, dashed = true) else Badge(AppIcons.Log, it, Tone.Warm)) }
-        f.hdr?.let { add(Badge(if (f.dolbyVision) AppIcons.Vision else AppIcons.Hdr, it, Tone.Warm)) }
-        if (f.hdr == null && f.log == null) add(Badge(AppIcons.Sdr, "SDR", Tone.Neutral))
+        val gm = f.gamma
+        when (gm.kind) {
+            // Confirmed log is solid; Likely/Possible log is dashed, so a guess never looks like a fact.
+            GammaKind.LOG -> add(Badge(AppIcons.Log, gm.title, Tone.Warm, dashed = !gm.isConfirmedLog))
+            GammaKind.HLG, GammaKind.PQ -> add(Badge(if (f.dolbyVision) AppIcons.Vision else AppIcons.Hdr, gm.title, Tone.Warm))
+            GammaKind.SDR -> add(Badge(AppIcons.Sdr, if (gm.confidence == Confidence.POSSIBLE) "SDR?" else "SDR", Tone.Neutral))
+            GammaKind.UNKNOWN -> add(Badge(AppIcons.Sdr, "Gamma unknown", Tone.Neutral, dashed = true))
+        }
         add(Badge(AppIcons.Bits, "${v.bitDepth}-bit", if (v.bitDepth >= 10) Tone.Accent else Tone.Neutral))
         f.chroma?.let { add(Badge(AppIcons.Chroma, it, if (it != "4:2:0") Tone.Accent else Tone.Neutral)) }
         add(Badge(AppIcons.Codec, v.codec, Tone.Neutral))
@@ -140,10 +145,9 @@ private fun DetailRow(k: String, v: String) = Row {
 private fun footageHint(v: VideoInfo): String? {
     val f = v.footage
     return when {
-        f.log != null && f.logEstimated ->
-            "The picture looks flat like log footage, but the file doesn't name the profile. Lossless keeps it untouched for grading."
-        f.log != null -> "Shot in ${f.log}. Lossless keeps it untouched for grading; in Re-encode you can apply your camera's official LUT."
-        f.hdr != null -> "${f.hdr} clip. Lossless keeps it exactly; Re-encode keeps HDR when “Keep HDR” is on in Settings."
+        f.gamma.isConfirmedLog -> "${f.gamma.profile ?: "Log"}, confirmed by camera metadata. Lossless keeps it untouched for grading; in Re-encode you can apply your camera's official LUT."
+        f.gamma.isLog -> "${f.gamma.title}: ${f.gamma.reasons.firstOrNull() ?: ""} Lossless keeps it untouched either way. Check the footage before applying a log LUT."
+        f.gamma.isHdr -> "${f.gamma.title} clip (${f.gamma.reasons.firstOrNull()?.removeSuffix(".")?.lowercase() ?: "from metadata"}). Lossless keeps it exactly; Re-encode keeps HDR when “Keep HDR” is on in Settings."
         else -> null
     }
 }
@@ -157,12 +161,7 @@ private fun detailsFor(v: VideoInfo): List<Pair<String, String>> {
         "Resolution" to "${v.displayW} × ${v.displayH}" + if (v.rotation != 0) " (rotated ${v.rotation}°)" else "",
         if (v.fps > 0) "Frame rate" to fmtFps(v.fps) else null,
         "Bit depth" to "${v.bitDepth}-bit" + (f.chroma?.let { ", $it" } ?: ""),
-        "Gamma" to when {
-            f.log != null && !f.logEstimated -> "${f.log} (from file metadata)"
-            f.log != null -> "Looks like log (estimated from the picture)"
-            f.hdr != null -> f.hdr!!
-            else -> "Standard (not log)"
-        },
+        "Gamma" to "${f.gamma.title} (${f.gamma.confidence.label.lowercase()})",
         f.primariesName?.let { "Primaries" to it },
         f.transferName?.let { "Transfer tag" to it },
         f.matrixName?.let { "Matrix" to it },
@@ -173,5 +172,5 @@ private fun detailsFor(v: VideoInfo): List<Pair<String, String>> {
         if (v.durationMs > 0) "Duration" to fmtDuration(v.durationMs) else null,
         if (v.sizeBytes > 0) "File size" to fmtSize(v.sizeBytes) else null,
         if (kbps > 0) "Avg. bitrate" to "${(kbps / 1000.0).roundToInt()} Mbps" else null,
-    ) + listOf("Note" to "Log is read from the file's metadata when the camera records it; otherwise it's estimated from a frame.")
+    ) + f.gamma.reasons.mapIndexed { i, r -> (if (i == 0) "Why" else "") to r }
 }
