@@ -245,7 +245,7 @@ fun PreviewPlayer(
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     // In landscape / two-pane layouts the preview shrinks to stay fully visible.
     // Tall pictures may use more of the screen height so the stretch is actually visible.
-    val mh = maxHeight?.let { if (frame < 1f) it * 1.5f else it }
+    val mh = maxHeight?.let { if (frame < 1f) it * 1.3f else it }
     val boxWidth = if (mh != null) minOf(this.maxWidth, mh * frame) else this.maxWidth
     Column(Modifier.width(boxWidth).align(Alignment.TopCenter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(

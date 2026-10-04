@@ -2,6 +2,11 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.17 — 2026-10-05
+
+### Fixed
+- **Frame step settings couldn't be reached with tall (vertical desqueeze) clips.** v1.16 let tall previews grow so the stretch was easier to see, but on phones the preview, filmstrip and toggle then filled the whole screen. The tool bar was pushed off the bottom, and its settings panel had no room and couldn't be scrolled to. The preview area now takes at most 60% of the screen height, so the tool bar and its panel always stay visible; if the preview area needs more room, it scrolls by itself. Tall previews get a smaller boost (1.3× instead of 1.5×), so they usually fit without scrolling.
+
 ## v1.16 — 2026-10-05
 
 ### Fixed

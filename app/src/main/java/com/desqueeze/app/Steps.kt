@@ -140,13 +140,19 @@ fun PreviewWithTools(panes: Panes, tools: List<Tool>, selected: Int, onSelect: (
                     verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
             }
         }
-    } else Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = preview)
-        Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
-        key(sel) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+    } else BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The preview area may take at most 60% of the height, so the tool bar and its panel always stay
+        // reachable (a tall preview used to push them off screen). If the preview area needs more, it scrolls itself.
+        val topMax = maxHeight * 0.6f
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.heightIn(max = topMax).verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = preview)
+            Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
+            key(sel) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+            }
         }
     }
 }
