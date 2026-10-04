@@ -45,26 +45,28 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
     }
     if (mode == ExportMode.LOSSLESS) {
         rows += "Output" to "${g.outW} × ${g.outH} on screen (pixels unchanged)"
-        if (st.format != OutFormat.ORIGINAL)
-            issues += Status.WARN to "${st.format.short} framing only applies in Re-encode; this clip stays in its original wide frame."
+        val f = st.formatOf(v)Of(v)
+        // A real conflict (not just advice): the chosen format can't be made without re-encoding.
+        if (f != OutFormat.ORIGINAL)
+            issues += Status.NO to "${f.short} can't be made in Lossless: this clip would export in its original wide frame. Switch it to Re-encode, or pick Wide."
         rows += "Encoder" to "Not used (Lossless)"
         if (st.lutId != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode to bake it in."
     } else {
         val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-        val (w, h, _) = exporter.targetSize(g, v.fps, mime, st.format)
-        val (tw, th) = reencodeTarget(g, st.format)
+        val (w, h, _) = exporter.targetSize(g, v.fps, mime, st.formatOf(v))
+        val (tw, th) = reencodeTarget(g, st.formatOf(v))
         val maxW = DeviceCaps.maxWidthAt(mime, th)
-        rows += "Output" to if (st.format == OutFormat.ORIGINAL) "$tw × $th"
-            else "$tw × $th, ${st.format.short} for ${st.format.where} (" +
-                (if (st.formatFill) "cropped to fill, ${fillKeepsPercent(g, st.format)}% of the picture kept" else "fitted with black bars") + ")"
+        rows += "Output" to if (st.formatOf(v) == OutFormat.ORIGINAL) "$tw × $th"
+            else "$tw × $th, ${st.formatOf(v).short} for ${st.formatOf(v).where} (" +
+                (if (st.formatOf(v)Fill) "cropped to fill, ${fillKeepsPercent(g, st.formatOf(v))}% of the picture kept" else "fitted with black bars") + ")"
         rows += "Your encoder" to (maxW?.let { "Max width $it at $th tall (${if (mime == "video/hevc") "HEVC" else "H.264"})" } ?: "Can't encode $th px tall")
         if (!DeviceCaps.canDecode(v.codec, v.bitDepth))
             issues += Status.NO to "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode will fail. Use Lossless."
         if (w < tw || h < th)
             issues += (if (w.toFloat() / tw >= 0.75f) Status.WARN else Status.NO) to
-                "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + if (st.format == OutFormat.ORIGINAL) " Lossless keeps full resolution." else ""
-        if (st.format != OutFormat.ORIGINAL && st.formatFill && fillKeepsPercent(g, st.format) < 60)
-            issues += Status.WARN to "Filling ${st.format.short} crops away ${100 - fillKeepsPercent(g, st.format)}% of the wide picture. Fit keeps it all with black bars."
+                "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + if (st.formatOf(v) == OutFormat.ORIGINAL) " Lossless keeps full resolution." else ""
+        if (st.formatOf(v) != OutFormat.ORIGINAL && st.formatOf(v)Fill && fillKeepsPercent(g, st.formatOf(v)) < 60)
+            issues += Status.WARN to "Filling ${st.formatOf(v).short} crops away ${100 - fillKeepsPercent(g, st.formatOf(v))}% of the wide picture. Fit keeps it all with black bars."
         if (v.bitDepth >= 10 && v.footage.hdr == null)
             issues += Status.WARN to "10-bit becomes 8-bit: Android re-encodes standard/log video in 8-bit. Lossless keeps 10-bit."
         if (v.footage.hdr != null && !st.keepHdrSetting)

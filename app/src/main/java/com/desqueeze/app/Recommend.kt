@@ -53,8 +53,8 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
 fun recommendFor(st: AppState, exporter: Exporter, v: VideoInfo): Recommendation {
     val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
     val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-    val fit = exporter.targetSize(g, v.fps, mime, st.format).let { it.first to it.second }
-    return recommend(v, g, st.effectiveSqueeze(v), st.lutId != null, fit, st.format, st.formatFill)
+    val fit = exporter.targetSize(g, v.fps, mime, st.formatOf(v)).let { it.first to it.second }
+    return recommend(v, g, st.effectiveSqueeze(v), st.lutId != null, fit, st.formatOf(v), st.formatOf(v)Fill)
 }
 
 /** The method a clip will actually be exported with. */

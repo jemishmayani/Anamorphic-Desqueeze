@@ -151,14 +151,14 @@ actual image detail is similar or lower.
 - **LUT preview:** off / on while the video plays (a lighter ~720p proxy keeps 4K 10-bit smooth), strength with 0% / 50% / 100% marks, and a full-quality **before / after** still with a draggable divider
 
 **Export**
-- **Social formats** (Re-encode): **16:9** for YouTube (up to 3840 × 2160), **4:5** feed (1080 × 1350), **9:16** Reels/Shorts/TikTok (1080 × 1920), **1:1** (1080 × 1080). **Fit** with black bars or **Fill** by cropping, with a live preview. They also avoid the encoder's width limit
+- **Social formats** (Re-encode), chosen per clip: **16:9** for YouTube (up to 3840 × 2160), **4:5** feed (1080 × 1350), **9:16** Reels/Shorts/TikTok (1080 × 1920), **1:1** (1080 × 1080). **Fit** with black bars or **Fill** by cropping, with a live preview. They also avoid the encoder's width limit
 
   <img src="docs/format-icons.png" width="560" alt="Format icons: Wide, 16:9, 4:5, 9:16, 1:1, Fit and Fill">
 
 - **Background export:** keeps running when you switch apps or lock the phone, with a progress notification and Cancel
 - **Progress everywhere you wait:** reading clips ("clip 2 of 5"), the preview starting, filmstrip thumbnails, LUTs being read, scopes warming up and size/time estimates
 - **Smart recommendations** in plain language for each clip (e.g. "Lossless Desqueeze: preserves your original 10-bit D-Log footage"), with the alternative and why
-- **Per-clip export method:** a batch can mix Lossless and Re-encode; **Apply to all** or **Reset to recommended**
+- **Per-clip export method and format:** a batch can mix Lossless and Re-encode, and each clip has its own format; **Apply to all** or **Reset to recommended**. Picking a format on a Lossless clip switches it to Re-encode (amber notice with Undo); Lossless with a format set is flagged as a conflict in red
 - **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
 - **Estimates** of output size and processing time, which learn your phone's real speed
 - **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File; frame rate and audio kept; automatic retries with safer settings if the encoder refuses

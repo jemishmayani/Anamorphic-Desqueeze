@@ -706,7 +706,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
     val key = v.uri.toString()
-    val deps = arrayOf<Any?>(st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.format, st.formatFill, st.clipTrim.toMap())
+    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.format, st.formatFill, st.clipTrim.toMap())
     val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
@@ -718,19 +718,26 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
         value = withContext(Dispatchers.Default) {
             st.videos.associate { clip ->
                 clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.effectiveSqueeze(clip), st.orientation, st.direction),
-                    modes[clip.uri.toString()] ?: st.mode, st.lengthMs(clip), st.format)
+                    modes[clip.uri.toString()] ?: st.mode, st.lengthMs(clip), st.formatOf(clip))
             }
         }
     }
-    fun setMode(m: ExportMode) { st.clipModes[key] = m }
+    fun setMode(m: ExportMode) { st.clipModes[key] = m; st.formatSwitch = null }
 
     val compat by produceState<CompatReport?>(null, key, mode, *deps, st.keepHdrSetting) {
         value = withContext(Dispatchers.Default) { compatFor(st, exporter, v, mode) }
     }
     TwoPane(panes, left = {
-    ClipSwitcher(st) { clip -> if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" else "Re-encode" + if (st.format != OutFormat.ORIGINAL) " ${st.format.short}" else "" }
+    ClipSwitcher(st) { clip ->
+        val f = st.formatOf(clip)
+        if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" + (if (f != OutFormat.ORIGINAL) " ✗ ${f.short}" else "")
+        else "Re-encode" + if (f != OutFormat.ORIGINAL) " ${f.short}" else ""
+    }
 
-    recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { setMode(it) } }
+    recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { m ->
+        setMode(m)
+        if (m == ExportMode.LOSSLESS && st.formatOf(v) != OutFormat.ORIGINAL) { st.clipFormat.remove(key); st.formatSwitch = null }
+    } }
         ?: LinearProgressIndicator(Modifier.fillMaxWidth())
 
 
@@ -758,7 +765,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
         }
     }
 
-    FormatSection(st, settings, v, geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction))
+    FormatSection(st, settings, v, geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction), mode, modes)
     }, right = {
     compat?.let { CompatibilityCard(it) }
     Section("Estimate") {
@@ -800,9 +807,28 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
 /** Social-ready output frames (Re-encode): fit with black bars or crop to fill, with a live mini preview. */
 @kotlin.OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry) {
+fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, mode: ExportMode, modes: Map<String, ExportMode>) {
     val c = MaterialTheme.colorScheme
-    Section("Format") {
+    val key = v.uri.toString()
+    val format = st.formatOf(v)
+    val fill = st.fillOf(v)
+
+    /** Sets [f] on [clips]. A format needs new pixels, so any of them in Lossless are moved to Re-encode (with Undo). */
+    fun choose(f: OutFormat, clips: List<VideoInfo>) {
+        val switched = LinkedHashMap<String, Pair<ExportMode?, OutFormat>>()
+        clips.forEach { clip ->
+            val k = clip.uri.toString()
+            val before = st.formatOf(clip)
+            if (f == OutFormat.ORIGINAL) st.clipFormat.remove(k) else st.clipFormat[k] = f
+            if (f != OutFormat.ORIGINAL && modes[k] == ExportMode.LOSSLESS) {
+                switched[k] = st.clipModes[k] to before
+                st.clipModes[k] = ExportMode.REENCODE
+            }
+        }
+        st.formatSwitch = if (switched.isEmpty()) null else FormatSwitch(f, switched)
+    }
+
+    Section(if (st.videos.size > 1) "Format for this clip" else "Format") {
         // Icon tiles: each icon is drawn in that format's real shape.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutFormat.entries.forEach { f ->
@@ -813,35 +839,83 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry) {
                     OutFormat.VERTICAL -> AppIcons.Format916 to "Reels"
                     OutFormat.SQUARE -> AppIcons.Format11 to "Square"
                 }
-                IconTile(icon, f.short, on = st.format == f, enabled = !st.busy, mono = f != OutFormat.ORIGINAL, sub = sub,
-                    modifier = Modifier.weight(1f)) { st.format = f; settings.format = f }
+                IconTile(icon, f.short, on = format == f, enabled = !st.busy, mono = f != OutFormat.ORIGINAL, sub = sub,
+                    modifier = Modifier.weight(1f)) { choose(f, listOf(v)) }
             }
         }
+        if (st.videos.size > 1) TextButton(onClick = { choose(format, st.videos); st.videos.forEach { st.clipFill[it.uri.toString()] = fill } },
+            enabled = !st.busy, modifier = Modifier.padding(top = 2.dp)) { Text("Use ${format.short} for all clips") }
+
+        // Amber notice: we changed the export method for them, and say why (with Undo).
+        st.formatSwitch?.let { sw ->
+            if (sw.previous.isNotEmpty()) Notice(
+                color = Warm, icon = AppIcons.Warn,
+                title = if (sw.previous.size == 1) "Switched to Re-encode" else "Switched ${sw.previous.size} clips to Re-encode",
+                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless always keeps the original wide frame. " +
+                    "Re-encode makes new pixels, so 10-bit log becomes 8-bit.",
+                action = "Undo",
+            ) {
+                sw.previous.forEach { (k, prev) ->
+                    if (prev.first == null) st.clipModes.remove(k) else st.clipModes[k] = prev.first!!
+                    if (prev.second == OutFormat.ORIGINAL) st.clipFormat.remove(k) else st.clipFormat[k] = prev.second
+                }
+                st.formatSwitch = null
+            }
+        }
+
+        // Red conflict: Lossless is selected AND a format is set (e.g. after "Use Lossless for all").
+        if (mode == ExportMode.LOSSLESS && format != OutFormat.ORIGINAL) Notice(
+            color = c.error, icon = AppIcons.Cross,
+            title = "${format.short} can't be made in Lossless",
+            text = "Lossless copies the original pixels, so this clip would export in its original wide frame, not ${format.short}.",
+            action = "Switch to Re-encode", secondary = "Use Wide",
+            onSecondary = { st.clipFormat.remove(key); st.formatSwitch = null },
+        ) { st.clipModes[key] = ExportMode.REENCODE; st.formatSwitch = null }
+
         Spacer(Modifier.height(8.dp))
-        if (st.format == OutFormat.ORIGINAL) {
-            Text("Keeps the full de-squeezed frame. Pick 16:9, 4:5, 9:16 or 1:1 to make a file ready for YouTube, Instagram, Reels, Shorts or TikTok (Re-encode).",
+        if (format == OutFormat.ORIGINAL) {
+            Text("Keeps the full de-squeezed frame. Pick 16:9, 4:5, 9:16 or 1:1 to make a file ready for YouTube, Instagram, Reels, Shorts or TikTok (uses Re-encode).",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         } else {
-            val size = formatSize(st.format, g)!!
+            val size = formatSize(format, g)!!
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconTile(AppIcons.FitBars, "Fit", on = !st.formatFill, enabled = !st.busy, sub = "Whole picture, black bars",
-                    modifier = Modifier.weight(1f)) { st.formatFill = false; settings.formatFill = false }
-                IconTile(AppIcons.FillCrop, "Fill", on = st.formatFill, enabled = !st.busy, sub = "Fills the frame, crops sides",
-                    modifier = Modifier.weight(1f)) { st.formatFill = true; settings.formatFill = true }
+                IconTile(AppIcons.FitBars, "Fit", on = !fill, enabled = !st.busy, sub = "Whole picture, black bars",
+                    modifier = Modifier.weight(1f)) { st.clipFill[key] = false; st.formatFill = false; settings.formatFill = false }
+                IconTile(AppIcons.FillCrop, "Fill", on = fill, enabled = !st.busy, sub = "Fills the frame, crops sides",
+                    modifier = Modifier.weight(1f)) { st.clipFill[key] = true; st.formatFill = true; settings.formatFill = true }
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FormatPreview(v, g, st.format, st.formatFill, Modifier.width(if (st.format.aspect >= 1f) 140.dp else 92.dp))
+                FormatPreview(v, g, format, fill, Modifier.width(if (format.aspect >= 1f) 140.dp else 92.dp))
                 Spacer(Modifier.width(14.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${size.first} × ${size.second}", style = MaterialTheme.typography.titleMedium.merge(Mono))
-                    Text("For ${st.format.where}.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-                    Text(if (st.formatFill) "Crops the sides to fill the frame: ${fillKeepsPercent(g, st.format)}% of the picture is kept."
+                    Text("For ${format.where}.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                    Text(if (fill) "Crops the sides to fill the frame: ${fillKeepsPercent(g, format)}% of the picture is kept."
                         else "The whole wide picture fits, with black bars.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                 }
             }
-            Text("Formats need Re-encode, so clips are recommended for Re-encode.", style = MaterialTheme.typography.labelSmall,
-                color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+/** Coloured notice with an icon, explanation and one or two actions. Amber = we changed something; red = conflict. */
+@Composable
+fun Notice(color: Color, icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, text: String, action: String,
+           secondary: String? = null, onSecondary: () -> Unit = {}, onAction: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(14.dp)).background(color.copy(alpha = 0.12f))
+        .border(1.dp, color.copy(alpha = 0.7f), RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 4.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(icon, null, Modifier.size(18.dp).padding(top = 1.dp), tint = color)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, color = color)
+                Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            if (secondary != null) TextButton(onClick = onSecondary) { Text(secondary, color = color) }
+            TextButton(onClick = onAction) { Text(action, color = color) }
         }
     }
 }

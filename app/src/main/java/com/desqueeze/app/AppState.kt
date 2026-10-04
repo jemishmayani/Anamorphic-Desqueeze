@@ -98,8 +98,15 @@ class AppState(settings: Settings, luts: LutManager) {
     /** Length that will actually be exported. */
     fun lengthMs(v: VideoInfo): Long = trimFor(v)?.let { (a, b) -> b - a } ?: v.durationMs
     /** Social-ready output frame for Re-encode, and whether to crop to fill it (else black bars). */
-    var format by mutableStateOf(settings.format)
+    /** Default Fit/Fill for clips that haven't chosen one. */
     var formatFill by mutableStateOf(settings.formatFill)
+    /** Output format per clip (key = clip uri). A clip without an entry keeps its original wide frame. */
+    val clipFormat = mutableStateMapOf<String, OutFormat>()
+    val clipFill = mutableStateMapOf<String, Boolean>()
+    fun formatOf(v: VideoInfo): OutFormat = clipFormat[keyOf(v)] ?: OutFormat.ORIGINAL
+    fun fillOf(v: VideoInfo): Boolean = clipFill[keyOf(v)] ?: formatFill
+    /** Shown after picking a format moved Lossless clips to Re-encode; holds what Undo restores. */
+    var formatSwitch by mutableStateOf<FormatSwitch?>(null)
     /** Exposure tool shown with the preview. */
     var scope by mutableStateOf(Scope.OFF)
     /** Scope overlay drawn large (tap it to toggle), and its latest readings for the Exposure panel. */
@@ -116,5 +123,8 @@ class AppState(settings: Settings, luts: LutManager) {
     var lookTool by mutableIntStateOf(0)
 
     fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutId, strength, orientation, direction,
-        trim = trimFor(v), format = format, fill = formatFill)
+        trim = trimFor(v), format = formatOf(v), fill = fillOf(v))
 }
+
+/** Clips that were switched to Re-encode because a format was picked: key to (previous mode, previous format). */
+data class FormatSwitch(val format: OutFormat, val previous: Map<String, Pair<ExportMode?, OutFormat>>)

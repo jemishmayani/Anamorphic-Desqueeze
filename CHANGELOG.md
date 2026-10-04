@@ -2,6 +2,17 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.15 — 2026-10-05
+
+### Fixed
+- **A format picked for one clip applied to every clip.** The output format (16:9, 4:5, 9:16, 1:1) was one setting for the whole batch, so choosing 9:16 on clip 2 also gave clip 1 a 9:16 format. That's why a Lossless clip with no format chosen still showed "9:16 framing only applies in Re-encode" in its compatibility check and in the pre-export warning. Each clip now has its own format and Fit/Fill, like its own squeeze and export method; clips you don't touch keep their original wide frame and get no warning. **Use … for all clips** applies one format to the whole batch.
+
+### Changed
+- **Picking a format switches the clip to Re-encode.** Only Re-encode can reframe into 16:9, 4:5, 9:16 or 1:1, so choosing one on a Lossless clip now moves that clip to Re-encode, with an amber notice that says why (and that 10-bit log becomes 8-bit) and an **Undo**.
+- **Lossless with a format is shown as a conflict, in red.** If a clip ends up in Lossless with a format set (for example after **Use Lossless for all**), a red card says the format can't be made in Lossless, with **Switch to Re-encode** and **Use Wide**. The compatibility check and the pre-export warning mark it with a red ✗ instead of the amber ⚠ used for advice.
+- Choosing the recommendation card's **Lossless, original wide frame** alternative now also sets that clip back to Wide, as its title says.
+- Clip labels in the Export step show each clip's own method and format, e.g. "Re-encode 9:16", "Lossless", or "Lossless ✗ 9:16" for a conflict.
+
 ## v1.14 — 2026-10-05
 
 ### Changed
