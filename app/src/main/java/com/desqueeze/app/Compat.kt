@@ -44,6 +44,9 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
             issues += Status.OK to "Lossless trim starts on the nearest keyframe at or before ${fmtDuration(a)}, usually under a second earlier."
     }
     if (mode == ExportMode.LOSSLESS) {
+        if (rotatedStretch(g))
+            issues += Status.WARN to "Turned 90° and stretched: players apply Lossless's rotation and stretch tags in different orders, so phone " +
+                "galleries may show ${g.ratioLabel(misreadRatio(g))} instead of ${g.ratioLabel()}. Re-encode bakes the right shape into the pixels."
         rows += "Output" to "${g.outW} × ${g.outH} on screen (pixels unchanged)"
         val f = st.formatOf(v)
         // A real conflict (not just advice): the chosen format can't be made without re-encoding.

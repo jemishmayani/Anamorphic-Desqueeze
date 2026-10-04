@@ -100,7 +100,7 @@ on the picture's vertical axis. The **Frame** step has two controls for this:
 
 | Control | Options |
 |---|---|
-| **Orientation** | **Auto** uses the file's rotation metadata; **Horizontal** / **Vertical** force a landscape or portrait display, for files with missing or wrong rotation |
+| **Orientation** | **Auto** uses the file's rotation metadata; **Landscape** / **Portrait** turn the picture to force that display, only for files whose rotation is missing or wrong (on a correctly recorded clip they lay the picture on its side) |
 | **Desqueeze direction** | **Auto** stretches along the lens's squeeze axis (the sensor's horizontal axis, so vertically on screen when the clip is rotated 90°); **Horizontal** / **Vertical** choose the on-screen axis yourself |
 
 Lossless writes a vertical pixel aspect (for example `100:133`) and, if you override orientation,
@@ -244,6 +244,7 @@ No. Google re-signs Play installs, so the two can't update each other. Pick one 
 - **LUTs are applied at 8-bit precision, and only in Re-encode.** On some phones live LUT preview isn't
   supported; the app says so, and the before/after still still works.
 - **Some camera-specific metadata** may not carry over in Re-encode (Lossless keeps everything).
+- **Rotated + stretched clips in Lossless:** Lossless tags rotation and stretch separately, and some phone galleries apply them in the wrong order (showing e.g. 1 : 1.48 instead of 1 : 2.13). The app recommends Re-encode for these clips and warns before export.
 - **Lossless trims start on a keyframe,** usually under a second before your in-point (re-encoding is the
   only way to cut on an exact frame). A trimmed Lossless file is rewritten as MP4, so camera-specific
   metadata may not carry over; the video and audio data stay untouched.

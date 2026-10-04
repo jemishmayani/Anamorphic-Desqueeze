@@ -3,7 +3,7 @@ package com.desqueeze.app
 import kotlin.math.roundToInt
 
 /** How the clip should be shown. Auto = the file's own rotation metadata. */
-enum class Orientation(val label: String) { AUTO("Auto"), HORIZONTAL("Horizontal"), VERTICAL("Vertical") }
+enum class Orientation(val label: String) { AUTO("Auto"), HORIZONTAL("Landscape"), VERTICAL("Portrait") }
 
 /** Which on-screen axis gets stretched. Auto = the lens/sensor's horizontal axis (follows rotation). */
 enum class Direction(val label: String) { AUTO("Auto"), HORIZONTAL("Horizontal"), VERTICAL("Vertical") }
@@ -63,4 +63,14 @@ fun directionHint(v: VideoInfo, g: Geometry, o: Orientation, d: Direction): Stri
         else -> "Stretching ${d.label.lowercase()}ly, as you chose."
     }
     return "$orient $dir"
+}
+
+/** True when the clip is shown turned 90° AND its pixels are stretched: players disagree on which to apply first. */
+fun rotatedStretch(g: Geometry): Boolean =
+    g.rotated && (if (g.vertical) g.outH.toFloat() / g.dispH.coerceAtLeast(1) else g.outW.toFloat() / g.dispW.coerceAtLeast(1)) > 1.001f
+
+/** The shape some players (e.g. phone galleries) show for a Lossless rotated + stretched clip: the stretch on the other axis. */
+fun misreadRatio(g: Geometry): Float {
+    val f = if (g.vertical) g.outH.toFloat() / g.dispH.coerceAtLeast(1) else g.outW.toFloat() / g.dispW.coerceAtLeast(1)
+    return if (g.vertical) g.dispW * f / g.dispH else g.dispW / (g.dispH * f)
 }

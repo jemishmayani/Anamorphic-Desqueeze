@@ -406,6 +406,16 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
                 Segmented(Orientation.entries.map { it.label }, o.ordinal, enabled = !st.busy) {
                     val n = Orientation.entries[it]; if (n == Orientation.AUTO) st.clipOrientation.remove(key) else st.clipOrientation[key] = n
                 }
+                Text("Turns the whole picture. Only needed when a clip plays sideways; to stretch up and down, use Desqueeze direction below.",
+                    style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                // Rotating a clip that wasn't rotated puts the picture on its side: say so, with a one-tap undo.
+                if (g.extraRotation != 0) Notice(
+                    color = Warm, icon = AppIcons.Rotate,
+                    title = "Picture turned ${g.extraRotation}°",
+                    text = "This clip was recorded ${if (v.rotation % 180 == 0 && v.width >= v.height) "in landscape" else "as shown on Auto"}, so ${o.label} lays it on its side. " +
+                        "Lossless can only tag the rotation, and some players then show the wrong shape; Re-encode is recommended.",
+                    action = "Reset to Auto",
+                ) { st.clipOrientation.remove(key) }
             }
             Section(if (st.videos.size > 1) "Desqueeze direction for this clip" else "Desqueeze direction") {
                 Segmented(Direction.entries.map { it.label }, d.ordinal, enabled = !st.busy) {

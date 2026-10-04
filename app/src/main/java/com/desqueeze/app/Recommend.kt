@@ -38,6 +38,12 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         lutSelected -> Recommendation(facts, ExportMode.REENCODE, "Re-encode with your LUT",
             "Only Re-encode can bake your LUT into the picture.$scaledText",
             ExportMode.LOSSLESS, "Lossless for grading later", "Keeps the original $desc pixels; apply the LUT in your editor instead.")
+        // Lossless stores rotation and pixel stretch as two separate tags; players apply them in different orders.
+        rotatedStretch(g) -> Recommendation(facts, ExportMode.REENCODE, "Re-encode (rotated clip)",
+            "This clip is shown turned 90°. Lossless stores the rotation and the stretch as separate tags, and players apply them " +
+                "in different orders, so phone galleries can show ${g.ratioLabel(misreadRatio(g))} instead of ${g.ratioLabel()}. " +
+                "Re-encode bakes the right shape into the pixels." + scaledText,
+            ExportMode.LOSSLESS, "Lossless for editors", "Keeps the original $desc pixels. Shows correctly in editors like Resolve, but some players stretch it the wrong way.")
         precious -> Recommendation(facts, ExportMode.LOSSLESS, "Lossless Desqueeze",
             "Preserves your original $desc footage exactly, at full ${g.outW}×${g.outH}, in seconds.",
             ExportMode.REENCODE, "Re-encode for sharing",

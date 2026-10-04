@@ -17,8 +17,8 @@ android {
         applicationId = "com.desqueeze.app"
         minSdk = 29          // Android 10+: needed for reliable 10-bit HEVC
         targetSdk = 36       // Google Play requirement from 31 Aug 2026
-        versionCode = 18
-        versionName = "1.17"
+        versionCode = 19
+        versionName = "1.18"
     }
     signingConfigs {
         if (hasReleaseKey) create("release") {

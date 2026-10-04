@@ -2,6 +2,17 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.18 — 2026-10-05
+
+### Fixed
+- **Rotated + stretched Lossless exports showed the wrong shape in phone galleries** (e.g. 1 : 1.48 instead of 1 : 2.13). Lossless stores the rotation and the pixel stretch as two separate tags. Editors and players like Resolve and VLC apply the stretch to the pixels as recorded and then rotate, which is correct. Some galleries rotate first and then stretch, which widens the wrong side. For a clip shown turned 90° with a stretch:
+  - The recommendation is now **Re-encode (rotated clip)**, which bakes the correct shape into the pixels, with Lossless offered as the "for editors" alternative.
+  - The compatibility check warns in Lossless and shows the shape some galleries will display.
+  - This also covers portrait phone clips, which are stored sideways and rotated by metadata.
+
+### Changed
+- **Orientation is clearer.** Its options are now **Auto / Landscape / Portrait**; they used to share the "Horizontal / Vertical" labels with Desqueeze direction, which made it easy to rotate a clip when you only meant to stretch it vertically. The panel explains that it turns the whole picture and is only needed when a clip plays sideways. Rotating a clip shows an amber notice with **Reset to Auto**.
+
 ## v1.17 — 2026-10-05
 
 ### Fixed
