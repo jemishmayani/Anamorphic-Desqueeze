@@ -2,6 +2,15 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.13 — 2026-10-04
+
+### Fixed
+- **"This phone can't play HEVC for preview" appearing at random** on clips and phones that play them fine. Three causes, all fixed:
+  - **Two previews at once.** Moving between Frame and Look (the slide animation briefly shows both screens), switching clips, or changing a LUT or orientation setting started a new preview player before the old one had released its 4K 10-bit decoder. Phones have only a few of those, so the new one sometimes got none. Previews now take turns: a new one waits (normally a fraction of a second) until the previous one has let go before claiming a decoder.
+  - **The filmstrip opened eight decoders.** Each of its eight thumbnails used its own frame reader, started at the same moment as the player, and re-ran every time you entered Frame or Look. Now one reader extracts all eight, it starts after the player, and thumbnails are cached per clip.
+  - **Every error was reported as "can't play".** The message now appears only when the phone really has no decoder for the clip's codec and bit depth. A busy decoder is retried automatically (three times, waiting a little longer each time), then a **Retry** button appears with a message that the decoder is busy (another app or a running export may be using it).
+- Preview errors are written to the diagnostics log, so a copied crash or diagnostics report shows exactly what the decoder said.
+
 ## v1.12 — 2026-10-04
 
 ### Changed

@@ -230,6 +230,9 @@ No. Google re-signs Play installs, so the two can't update each other. Pick one 
   Android's GPU video pipeline processes SDR at 8-bit. Use Lossless to keep true 10-bit. Clips tagged
   HLG/PQ HDR stay 10-bit in Re-encode when *Keep HDR* is on.
 - **Log detection depends on the camera** (see the FAQ).
+- **Previews share the phone's video decoders.** Phones have only a few that handle 4K 10-bit, so the
+  preview briefly waits for a free one when you change steps, clips or effects, and retries automatically
+  if another app (or a running export) is using them. If it still can't start, tap **Retry**.
 - **Preview and Re-encode need the phone to decode the codec.** ProRes, for example, usually can't be
   played on Android; Lossless tagging still works for it.
 - **LUTs are applied at 8-bit precision, and only in Re-encode.** On some phones live LUT preview isn't
@@ -275,7 +278,7 @@ Listing text, data-safety answers, the 512 px icon and the feature graphic are i
 | Exposure scopes | RGB histogram, IRE waveform, RGB parade, BT.709 vectorscope and false color, computed a few times per second from a small frame of the preview (with the LUT applied when it's on), drawn as an overlay |
 | Background export | A foreground service (`mediaProcessing` on Android 15+, `dataSync` before) that only shows progress; the export itself runs in an app-wide scope |
 | Audio | Passed through unchanged (no re-encode) |
-| Preview | ExoPlayer; live LUT and rotation use Media3 video effects on a ~720p proxy |
+| Preview | ExoPlayer; live LUT and rotation use Media3 video effects on a ~720p proxy. Players take turns for the hardware decoder (`DecoderGate`), busy-decoder errors are retried, and filmstrip thumbnails come from one frame reader and are cached |
 | UI | Jetpack Compose, Material 3 |
 
 No FFmpeg is bundled, which keeps the app small (about 4 MB, with R8 code shrinking) and avoids
@@ -294,6 +297,7 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `VideoProbe.kt`, `FootageAnalyzer.kt` | Clip analysis: HDR, bit depth, chroma, color, camera, log hints |
 | `Gamma.kt` | Gamma classification with confidence and reasons; frame sampling and filtering |
 | `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
+| `DecoderGate.kt` | Makes preview players take turns for the hardware video decoder |
 | `PreviewPlayer.kt`, `Frames.kt`, `Guides.kt` | Preview, live LUT, before/after still, filmstrip; still frames; framing guides |
 | `Formats.kt` | Social formats: target sizes, fit/fill, how much is kept |
 | `LosslessTrim.kt` | Keyframe trim without re-encoding |

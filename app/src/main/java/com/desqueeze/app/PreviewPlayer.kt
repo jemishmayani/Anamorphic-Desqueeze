@@ -96,7 +96,11 @@ fun PreviewPlayer(
     val useRotate = g.extraRotation != 0 && !effectsFailed
     val effectsKey = Triple(if (useRotate) g.extraRotation else 0, useLut, if (useLut) (appliedStrength * 20).toInt() else -1)
 
-    val player = remember(v.uri, effectsKey, lut) {
+    // Bumped to rebuild the player after a transient decoder failure (or when the user taps Retry).
+    var attempt by remember(v.uri) { mutableIntStateOf(0) }
+    var autoRetries by remember(v.uri) { mutableIntStateOf(0) }
+    var canRetry by remember(v.uri) { mutableStateOf(false) }
+    val player = remember(v.uri, effectsKey, lut, attempt) {
         ExoPlayer.Builder(ctx).build().apply {
             val fx = mutableListOf<Effect>()
             if (useRotate) fx += ScaleAndRotateTransformation.Builder().setRotationDegrees((360 - g.extraRotation).toFloat()).build()
@@ -108,8 +112,13 @@ fun PreviewPlayer(
             }
             if (fx.isNotEmpty()) setVideoEffects(fx) // must be set before prepare()
             setMediaItem(MediaItem.fromUri(v.uri)); repeatMode = Player.REPEAT_MODE_ALL; volume = 0f
-            prepare(); seekTo(memory.positionMs); playWhenReady = memory.playing
+            seekTo(memory.positionMs)
+            // No prepare() here: preparing claims a hardware decoder, so it waits for DecoderGate below.
         }
+    }
+    LaunchedEffect(player) {
+        DecoderGate.acquire(player)
+        player.prepare(); player.playWhenReady = memory.playing
     }
     var playing by remember { mutableStateOf(memory.playing) }
     var pos by remember { mutableLongStateOf(memory.positionMs) }
@@ -124,12 +133,29 @@ fun PreviewPlayer(
         val usingFx = useLut || useRotate
         val l = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
-                if (usingFx) { effectsFailed = true; error = "Live effects aren't supported on this phone. Use Compare to see the LUT." }
-                else error = "This phone can't play ${v.codec} for preview. Lossless export still works."
+                Diag.step("Preview error ${e.errorCodeName} (attempt ${attempt + 1}, fx=$usingFx): ${e.cause?.javaClass?.simpleName}")
+                val unsupported = !DeviceCaps.canDecode(v.codec, v.bitDepth) ||
+                    (e.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED && autoRetries >= 1)
+                when {
+                    // A decoder that's merely busy (another preview releasing it, another app, a running export)
+                    // fails the same way as a missing one, so only blame the phone when it truly has no decoder.
+                    unsupported && !usingFx -> error = "This phone has no decoder for ${v.bitDepth}-bit ${v.codec}, so it can't be previewed. Lossless export still works."
+                    autoRetries < 3 -> {
+                        error = null; canRetry = false
+                        val wait = 400L shl autoRetries
+                        autoRetries++
+                        scope.launch { delay(wait); attempt++ }
+                    }
+                    usingFx -> { effectsFailed = true; error = "Live effects aren't supported on this phone. Use Compare to see the LUT." }
+                    else -> { error = "Preview couldn't start: the phone's video decoder is busy (another app or an export may be using it)."; canRetry = true }
+                }
             }
         }
         player.addListener(l)
-        onDispose { memory.positionMs = player.currentPosition; memory.playing = player.playWhenReady; player.removeListener(l); player.release() }
+        onDispose {
+            memory.positionMs = player.currentPosition; memory.playing = player.playWhenReady
+            player.removeListener(l); player.release(); DecoderGate.release(player)
+        }
     }
     val currentTrim by rememberUpdatedState(trim)
     LaunchedEffect(player) {
@@ -139,6 +165,7 @@ fun PreviewPlayer(
             val tr = currentTrim
             if (tr != null && (pos >= tr.second || pos < tr.first - 250)) { player.seekTo(tr.first); pos = tr.first }
             playing = player.playWhenReady; memory.positionMs = pos; memory.playing = playing
+            if (player.playbackState == Player.STATE_READY && autoRetries > 0) { autoRetries = 0 }
             delay(120)
         }
     }
@@ -243,7 +270,12 @@ fun PreviewPlayer(
             }
             if (hint && error == null) Box(Modifier.align(Alignment.Center)) { Pill("Hold to compare with the original", accent = false) }
             if (comparing) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
-            error?.let { msg -> Text(msg, color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.Center).padding(28.dp)) }
+            error?.let { msg ->
+                Column(Modifier.align(Alignment.Center).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(msg, color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    if (canRetry) TextButton(onClick = { error = null; canRetry = false; autoRetries = 0; attempt++ }) { Text("Retry", color = Color.White) }
+                }
+            }
 
             Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
@@ -304,14 +336,20 @@ fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pai
     val ctx = LocalContext.current
     val c = MaterialTheme.colorScheme
     val n = 8
-    val frames = remember(v.uri, g.extraRotation) { mutableStateListOf<ImageBitmap?>().apply { repeat(n) { add(null) } } }
-    LaunchedEffect(v.uri, g.extraRotation) {
+    val cacheKey = "${v.uri}|${g.extraRotation}"
+    val frames = remember(cacheKey) {
+        mutableStateListOf<ImageBitmap?>().apply { addAll(FilmstripCache.get(cacheKey) ?: List(n) { null }) }
+    }
+    LaunchedEffect(cacheKey) {
+        if (frames.all { it != null }) return@LaunchedEffect          // already extracted for this clip
+        // Let the preview claim its decoder first; then read all thumbnails with ONE frame reader,
+        // instead of eight readers each opening a decoder alongside the player.
+        delay(900)
+        val times = List(n) { i -> if (v.durationMs > 0) v.durationMs * (2 * i + 1) / (2 * n) else 0L }
         withContext(Dispatchers.IO) {
-            for (i in 0 until n) {
-                val t = if (v.durationMs > 0) v.durationMs * (2 * i + 1) / (2 * n) else 0L
-                Frames.frameAt(ctx, v, t, 200, g.extraRotation, exact = false)?.let { b -> withContext(Dispatchers.Main) { frames[i] = b.asImageBitmap() } }
-            }
+            Frames.framesAt(ctx, v, times, 200, g.extraRotation) { i, b -> withContext(Dispatchers.Main) { frames[i] = b.asImageBitmap() } }
         }
+        if (frames.all { it != null }) FilmstripCache.put(cacheKey, frames.toList())
     }
     val seek by rememberUpdatedState(onSeek)
     var drag by remember { mutableStateOf<Float?>(null) }
@@ -483,4 +521,13 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVectorscope(v: 
         drawRect(col, topLeft = Offset(p.x - 3f, p.y - 3f), size = androidx.compose.ui.geometry.Size(6f, 6f),
             style = androidx.compose.ui.graphics.drawscope.Stroke(1.2f))
     }
+}
+
+/** Filmstrip thumbnails per clip (and rotation), so moving between Frame and Look doesn't re-read them. */
+object FilmstripCache {
+    private val map = object : LinkedHashMap<String, List<ImageBitmap?>>(16, 0.75f, true) {
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, List<ImageBitmap?>>) = size > 12
+    }
+    @Synchronized fun get(k: String) = map[k]
+    @Synchronized fun put(k: String, v: List<ImageBitmap?>) { map[k] = v }
 }

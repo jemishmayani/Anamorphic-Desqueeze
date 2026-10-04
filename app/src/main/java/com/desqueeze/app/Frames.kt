@@ -30,4 +30,18 @@ object Frames {
             orient(argb, v.width, v.height, v.rotation, extraRot)
         } catch (_: Throwable) { null } finally { mmr.release() }
     }
+
+    /** Several frames through one retriever (one decoder), reported as each arrives. */
+    suspend fun framesAt(ctx: Context, v: VideoInfo, timesMs: List<Long>, maxSide: Int, extraRot: Int,
+                         onFrame: suspend (Int, Bitmap) -> Unit) {
+        val mmr = MediaMetadataRetriever()
+        try {
+            mmr.setDataSource(ctx, v.uri)
+            for ((i, t) in timesMs.withIndex()) {
+                val b = try { mmr.getScaledFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, maxSide, maxSide) } catch (_: Throwable) { null } ?: continue
+                val argb = if (b.config == Bitmap.Config.ARGB_8888) b else b.copy(Bitmap.Config.ARGB_8888, false)
+                onFrame(i, orient(argb, v.width, v.height, v.rotation, extraRot))
+            }
+        } catch (_: Throwable) { } finally { try { mmr.release() } catch (_: Throwable) { } }
+    }
 }
