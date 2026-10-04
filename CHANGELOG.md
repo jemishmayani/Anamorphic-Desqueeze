@@ -2,6 +2,29 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.11 — 2026-10-04
+
+### Fixed
+- **Scopes could take over the screen and couldn't be turned off.** The scope panel sat inside the pinned preview, making it about 250 dp taller and pushing the tool panel (with the Off switch) off the screen. Scopes now float over the video instead, so the preview never changes size.
+
+### Changed
+- **Scopes overlay the video**, like on a camera monitor: a compact see-through scope in the top-right corner. **Tap** it to switch between small and large; **×** turns it off. False color colours the picture itself and shows a small label with ×.
+- **Better scopes:**
+  - **Histogram** in RGB: red, green and blue as soft overlapping fills, overall brightness as a white outline, grid lines at 0/25/50/75/100 IRE. It's scaled so a clipped sky or black border doesn't flatten everything else.
+  - **Waveform** with IRE grid lines at 0, 25, 50, 75 and 100.
+  - New **RGB parade**: red, green and blue waveforms side by side, for checking white balance.
+  - New **Vectorscope** (BT.709): hue as angle, saturation as distance from the centre, 75% colour-bar targets and a skin-tone line.
+  - **False color** as before, with a clearer legend.
+- **Exposure panel:** a 3 × 2 grid of equal tiles (Off, Histogram, Waveform, Parade, Vector, False color), a Small / Large switch, live readings (shadows, median, highlights, clipped %, crushed %) and a one-line explanation of each scope. For log footage it reminds you that readings are of the flat picture.
+- **Tool bar is icon-only:** equal square buttons spread evenly across the width. A small dot marks a tool that's been changed from its default (trim set, a scope on, orientation overridden, LUT chosen). Long-press an icon to see its name and value.
+- **Theme:**
+  - Backgrounds are neutral graphite instead of blue-tinted, so the footage is the most colourful thing on screen.
+  - New **Accent colour** setting: Flare blue (default), Cyan, Mint, Violet, Rose, Mono, or **Wallpaper**, which follows your phone's Material You colours on Android 12+.
+  - Every accent passes WCAG AA contrast (4.5:1) in both dark and light themes; light mode darkens each accent just enough.
+
+### Added
+- **Automated tests for the scopes** (7 cases): histogram statistics on a ramp, black and white frames, false-color zones, RGB histogram channels, the waveform's slope, the parade's channels, and the vectorscope's geometry (neutral at the centre, BT.709 red at 103°).
+
 ## v1.10 — 2026-10-04
 
 ### Fixed

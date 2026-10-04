@@ -46,8 +46,10 @@ fun darkScheme(accent: Color) = darkColorScheme(
 )
 
 fun lightScheme(accent: Color): ColorScheme {
-    // Darken light accents so text and icons on white keep their contrast.
-    val p = if (accent.luminance() > 0.3f) lerp(accent, Color.Black, 0.35f) else accent
+    // Darken the accent just enough for text and icons on white to reach WCAG AA (4.5:1).
+    fun contrastOnWhite(c: Color) = 1.05f / (c.luminance() + 0.05f)
+    var p = accent; var i = 0
+    while (contrastOnWhite(p) < 4.6f && i++ < 30) p = lerp(p, Color.Black, 0.06f)
     return lightColorScheme(
         primary = p, onPrimary = onColor(p),
         primaryContainer = lerp(Color.White, accent, 0.18f), onPrimaryContainer = lerp(p, Color.Black, 0.45f),

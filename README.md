@@ -137,11 +137,11 @@ actual image detail is similar or lower.
 - **Squeeze presets** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus any custom factor (1.00–3.00×, slider or typed). A **default squeeze** (preset or custom) is set in Settings
 - **Per-clip squeeze:** every clip keeps its own factor, so one batch can mix adapters; **Apply to all** copies one factor to every clip
 - **Double Desqueeze Protection:** a clip that's already tagged (e.g. 1.33×) triggers a warning with **Keep existing**, **Replace tag** or **Force anyway** (multiplies the factors)
-- **Pinned preview with tool tabs** (Frame and Look steps): the preview stays put while you switch between Squeeze, Trim, Guides, Orientation, Exposure and LUT, and each tab shows its current value, so there's no scrolling back and forth
+- **Pinned preview with an icon tool bar** (Frame and Look steps): the preview stays put while you switch between Squeeze, Trim, Guides, Orientation, Exposure and LUT. A dot marks tools you've changed; long-press an icon for its name. No scrolling back and forth
 - **Framing guides:** 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 frame lines with an optional mask; action safe (93%) and title safe (90%) per SMPTE ST 2046-1; rule of thirds; center marker; crosshair. Guides never crop the export
 - **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
 - **Trim:** a range slider plus **Start here / End here** at the playhead. Re-encode cuts exactly; Lossless starts on the nearest keyframe (usually under a second earlier) and still never re-encodes
-- **Exposure tools for log:** histogram (with % crushed/clipped), waveform in IRE, and false color with a legend; with a LUT on, they show the graded picture
+- **Exposure scopes** that float over the video like on a camera monitor (tap to enlarge, × to close): **RGB histogram**, **waveform** in IRE, **RGB parade**, **vectorscope** with colour-bar targets and a skin-tone line, and **false color** with a legend, plus live readings (shadows, median, highlights, % clipped and crushed). With a LUT on, they show the graded picture
 
 **Look**
 - **LUT library:** import, rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
@@ -165,7 +165,7 @@ actual image detail is similar or lower.
 - Organized settings with **About & support**: check for updates (GitHub version), what's new, source code, privacy, licenses and [support the development](https://buymeacoffee.com/jemishmayani)
 - **Share to De-Squeeze** from Google Photos, your gallery or a file manager (one or many videos)
 - **Tablet & landscape layout:** the preview sits beside the controls on wide screens
-- Light, dark or system theme; about 4 MB; no ads, accounts or tracking
+- Light, dark or system theme with an **accent colour** of your choice (or your wallpaper's Material You colours); about 4 MB; no ads, accounts or tracking
 
 ## Install & update
 
@@ -270,7 +270,7 @@ Listing text, data-safety answers, the 512 px icon and the feature graphic are i
 | LUT | Media3 `SingleColorLut` (3D LUT on the GPU); strength is blended into the LUT table. The before/after still uses an equivalent CPU trilinear LUT, matching ffmpeg's `lut3d` to within 1/255 |
 | Trim | Re-encode: Media3 clipping (frame-exact). Lossless: samples copied from the nearest keyframe with `MediaExtractor`/`MediaMuxer`, then tagged; no decoding |
 | Social formats | A second `Presentation` effect fits (letterbox) or fills (crop) the de-squeezed picture into the target frame |
-| Exposure tools | Histogram, IRE waveform and false color computed from a small frame at the playhead (with the LUT applied when it's on) |
+| Exposure scopes | RGB histogram, IRE waveform, RGB parade, BT.709 vectorscope and false color, computed a few times per second from a small frame of the preview (with the LUT applied when it's on), drawn as an overlay |
 | Background export | A foreground service (`mediaProcessing` on Android 15+, `dataSync` before) that only shows progress; the export itself runs in an app-wide scope |
 | Audio | Passed through unchanged (no re-encode) |
 | Preview | ExoPlayer; live LUT and rotation use Media3 video effects on a ~720p proxy |
@@ -295,14 +295,14 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `PreviewPlayer.kt`, `Frames.kt`, `Guides.kt` | Preview, live LUT, before/after still, filmstrip; still frames; framing guides |
 | `Formats.kt` | Social formats: target sizes, fit/fill, how much is kept |
 | `LosslessTrim.kt` | Keyframe trim without re-encoding |
-| `Scopes.kt` | Histogram, waveform and false-color math |
+| `Scopes.kt` | Histogram, waveform, parade, vectorscope and false-color math |
 | `ExportService.kt` | Background export: foreground service and notifications |
 | `Compat.kt`, `Recommend.kt`, `Estimates.kt` | Compatibility check, recommendations, size/time estimates |
 | `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and Device diagnostics |
 | `LutManager.kt` | `.cube` parsing and the LUT library |
 | `Settings.kt`, `SettingsScreen.kt` | Preferences; Settings, LUT library, About & support, update check |
 | `Diag.kt` | Crash, freeze and low-memory reports |
-| `Theme.kt` | Colors and typography |
+| `Theme.kt` | Neutral palette, accent colours, Material You, typography |
 
 Build variants: `app/src/github/` adds the internet permission used only by *Check for updates*.
 
@@ -328,7 +328,7 @@ git push origin vX.Y
 The workflow builds both files, creates the GitHub Release, and uses that version's CHANGELOG section,
 plus install instructions, as the release notes.
 
-Unit tests live in `app/src/test` (gamma classification, with tiny fixture files in `app/src/test/resources/gamma`);
+Unit tests live in `app/src/test` (gamma classification, with tiny fixture files in `app/src/test/resources/gamma`, and the scope math);
 run them with `gradle :app:testGithubDebugUnitTest`.
 
 To build locally, open the project in Android Studio (JDK 17, Android SDK 36), choose the `githubRelease` or
