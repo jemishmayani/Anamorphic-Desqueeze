@@ -141,7 +141,7 @@ actual image detail is similar or lower.
 - **Framing guides**, each an icon tile you tap on or off: **frame lines** at 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 (each icon shows that ratio's bars to scale) with an optional **mask**; **overlays** for action safe (93%) and title safe (90%) per SMPTE ST 2046-1, rule of thirds, center marker and crosshair, which combine freely. A dot on the Guides tool shows when any guide is on. Guides never crop the export
 
   <img src="docs/guide-icons.png" width="520" alt="Guide icons: none, frame lines 1.85 to 2.76, action safe, title safe, thirds, center, crosshair, mask">
-- **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
+- **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes, with a dashed outline of the original frame and arrows showing the stretch; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
 - **Trim:** a range slider plus **Start here / End here** at the playhead. Re-encode cuts exactly; Lossless starts on the nearest keyframe (usually under a second earlier) and still never re-encodes
 - **Exposure scopes** that float over the video like on a camera monitor (**drag to move it anywhere**, tap to enlarge, × to close): **RGB histogram**, **waveform** in IRE, **RGB parade**, **vectorscope** with colour-bar targets and a skin-tone line, and **false color** with a legend, plus live readings (shadows, median, highlights, % clipped and crushed). With a LUT on, they show the graded picture
   Scopes are sampled at 384 px and drawn like a monitor scope: a phosphor-style brightness curve keeps both busy and faint areas readable, with a labelled IRE graticule; the histogram has 256 levels per channel.
@@ -151,13 +151,14 @@ actual image detail is similar or lower.
 - **LUT preview:** off / on while the video plays (a lighter ~720p proxy keeps 4K 10-bit smooth), strength with 0% / 50% / 100% marks, and a full-quality **before / after** still with a draggable divider
 
 **Export**
-- **Social formats** (Re-encode), chosen per clip: **16:9** for YouTube (up to 3840 × 2160), **4:5** feed (1080 × 1350), **9:16** Reels/Shorts/TikTok (1080 × 1920), **1:1** (1080 × 1080). **Fit** with black bars or **Fill** by cropping, with a live preview. They also avoid the encoder's width limit
+- **Output formats** (Re-encode), chosen per clip: **Cinema:** original wide, **2.39 : 1 Scope**, **2.00 : 1**, **1.85 : 1 Flat**; **Social:** **16:9** (YouTube), **4:5** feed, **9:16** Reels/Shorts/TikTok, **1:1**. **Fit** with black bars or **Fill** by cropping, with a live preview. **Resolution** per clip: Auto, 1080p, 1440p or **4K** (e.g. UHD scope 3840 × 1606, 9:16 at 2160 × 3840), never upscaled past the source
 
   <img src="docs/format-icons.png" width="560" alt="Format icons: Wide, 16:9, 4:5, 9:16, 1:1, Fit and Fill">
 
-- **Background export:** keeps running when you switch apps or lock the phone, with a progress notification and Cancel
+- **Background export:** keeps running when you switch apps or lock the phone, with a progress notification and Cancel. The panel shows overall and per-clip progress, then an **Exported** summary (with **Play**) that stays until you tap Done
 - **Progress everywhere you wait:** reading clips ("clip 2 of 5"), the preview starting, filmstrip thumbnails, LUTs being read, scopes warming up and size/time estimates
 - **Smart recommendations** in plain language for each clip (e.g. "Lossless Desqueeze: preserves your original 10-bit D-Log footage"), with the alternative and why
+- **Per-clip settings:** squeeze, orientation, desqueeze direction, trim, export method, format and resolution are all per clip, each with an **Apply to all** option.
 - **Per-clip export method and format:** a batch can mix Lossless and Re-encode, and each clip has its own format; **Apply to all** or **Reset to recommended**. Picking a format on a Lossless clip switches it to Re-encode (amber notice with Undo); Lossless with a format set is flagged as a conflict in red
 - **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
 - **Estimates** of output size and processing time, which learn your phone's real speed

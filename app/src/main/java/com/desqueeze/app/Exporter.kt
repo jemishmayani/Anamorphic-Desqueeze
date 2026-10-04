@@ -30,7 +30,7 @@ data class ExportJob(val video: VideoInfo, val squeeze: Float, val lutId: String
     val orientation: Orientation = Orientation.AUTO, val direction: Direction = Direction.AUTO,
     /** Start/end in ms, or null for the whole clip. */
     val trim: Pair<Long, Long>? = null,
-    val format: OutFormat = OutFormat.ORIGINAL, val fill: Boolean = false) {
+    val format: OutFormat = OutFormat.ORIGINAL, val fill: Boolean = false, val res: OutRes = OutRes.AUTO) {
     val geo get() = geometry(video, squeeze, orientation, direction)
     val lengthMs get() = trim?.let { (a, b) -> b - a } ?: video.durationMs
 }
@@ -44,8 +44,8 @@ data class ExportResult(val name: String, val width: Int, val height: Int, val n
 @OptIn(UnstableApi::class)
 class Exporter(private val ctx: Context, private val settings: Settings, private val luts: LutManager) {
 
-    fun targetSize(g: Geometry, fps: Float, mime: String, format: OutFormat = OutFormat.ORIGINAL): Triple<Int, Int, String?> {
-        val (w, h) = reencodeTarget(g, format)
+    fun targetSize(g: Geometry, fps: Float, mime: String, format: OutFormat = OutFormat.ORIGINAL, res: OutRes = OutRes.AUTO): Triple<Int, Int, String?> {
+        val (w, h) = reencodeTarget(g, format, res)
         return fitToEncoder(w, h, mime, fps)
     }
 
@@ -82,7 +82,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val first = if (settings.codec == Codec.HEVC && hevcOk) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
         val other = if (first == MimeTypes.VIDEO_H265) MimeTypes.VIDEO_H264 else if (hevcOk) MimeTypes.VIDEO_H265 else null
         val g = job.geo
-        val (w0, h0) = reencodeTarget(g, job.format); val fps = job.video.fps
+        val (w0, h0) = reencodeTarget(g, job.format, job.res); val fps = job.video.fps
         val started = System.nanoTime()
 
         val attempts = mutableListOf<Attempt>()
@@ -251,8 +251,12 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         try {
             r.openOutputStream(uri)!!.use { write(it) }
             values.clear(); values.put(MediaStore.Video.Media.IS_PENDING, 0); r.update(uri, values, null, null)
+            lastSaved = uri
         } catch (e: Throwable) { r.delete(uri, null, null); throw e } // no half-written files left behind
     }
+
+    /** The most recently saved output (exports run one at a time), for "Play" after exporting. */
+    @Volatile var lastSaved: android.net.Uri? = null
 
     companion object {
         fun even(f: Float) = (f.roundToInt() / 2) * 2

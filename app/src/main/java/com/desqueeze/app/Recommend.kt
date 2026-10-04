@@ -8,7 +8,7 @@ data class Recommendation(
 
 /** Plain-language advice for the selected clip, so nobody has to know what a pixel aspect tag is. */
 fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, fit: Pair<Int, Int>?,
-              format: OutFormat = OutFormat.ORIGINAL, fill: Boolean = false): Recommendation {
+              format: OutFormat = OutFormat.ORIGINAL, fill: Boolean = false, res: OutRes = OutRes.AUTO): Recommendation {
     val f = v.footage
     val gm = f.gamma
     // Only metadata-confirmed log or HDR is named as a fact or changes the advice.
@@ -22,7 +22,7 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         if (format != OutFormat.ORIGINAL) "Output ${format.short} (${if (fill) "fill" else "fit"})" else null,
     )
     val decodable = DeviceCaps.canDecode(v.codec, v.bitDepth)
-    val target = reencodeTarget(g, format)
+    val target = reencodeTarget(g, format, res)
     val scaled = fit != null && (fit.first < target.first || fit.second < target.second)
     val scaledText = if (scaled) " This phone's encoder will scale it to ${fit!!.first}×${fit.second}." else ""
     val precious = look != null || v.bitDepth >= 10
@@ -51,10 +51,10 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
 
 /** Recommendation for a clip using the current shared settings (encoder fit is cached, so this is cheap). */
 fun recommendFor(st: AppState, exporter: Exporter, v: VideoInfo): Recommendation {
-    val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
+    val g = st.geoOf(v)
     val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-    val fit = exporter.targetSize(g, v.fps, mime, st.formatOf(v)).let { it.first to it.second }
-    return recommend(v, g, st.effectiveSqueeze(v), st.lutId != null, fit, st.formatOf(v), st.fillOf(v))
+    val fit = exporter.targetSize(g, v.fps, mime, st.formatOf(v), st.resOf(v)).let { it.first to it.second }
+    return recommend(v, g, st.effectiveSqueeze(v), st.lutId != null, fit, st.formatOf(v), st.fillOf(v), st.resOf(v))
 }
 
 /** The method a clip will actually be exported with. */

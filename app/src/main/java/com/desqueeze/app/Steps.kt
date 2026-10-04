@@ -211,7 +211,6 @@ fun StepHeader(st: AppState) {
 
 @Composable
 fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
-    val p by animateFloatAsState(st.progress, tween(300), label = "progress")
     val hasClips = st.videos.isNotEmpty()
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
@@ -219,21 +218,8 @@ fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
                 Text(st.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 3)
                 Spacer(Modifier.height(8.dp))
             }
-            if (st.busy) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(st.status, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text("${(p * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium.merge(Mono))
-                }
-                Spacer(Modifier.height(10.dp))
-                LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
-                Spacer(Modifier.height(10.dp))
-                Text("Keeps going in the background; you can lock the phone or use other apps.",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { ExportController.cancel(st) },
-                    Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Cancel export") }
-                return@Column
-            }
+            if (st.busy) { ExportProgressPanel(st); return@Column }
+            st.exportDone?.let { done -> ExportDonePanel(st, done); return@Column }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (st.step != Step.Clips) OutlinedButton(onClick = { st.step = Step.entries[st.step.ordinal - 1] },
                     Modifier.height(56.dp), shape = RoundedCornerShape(16.dp)) { Text("Back") }
@@ -374,7 +360,7 @@ fun ClipSwitcher(st: AppState, caption: ((VideoInfo) -> String?)? = null) {
 @Composable
 fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: Panes, previewMax: androidx.compose.ui.unit.Dp?) {
     val v = st.videos.getOrNull(st.selected) ?: return
-    val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
+    val g = st.geoOf(v)
     val c = MaterialTheme.colorScheme
     val trim = st.trimFor(v)
     val tools = listOf(
@@ -403,24 +389,37 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
         Tool("Guides", AppIcons.FrameLines, guidesSummary(st.guides), active = guidesSummary(st.guides) != null) {
             Section("Guides") { GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it } }
         },
-        Tool("Orientation", AppIcons.Rotate, if (st.orientation == Orientation.AUTO && st.direction == Direction.AUTO) "Auto"
-                else "${st.orientation.label} · ${if (g.vertical) "↕" else "↔"}",
-            active = st.orientation != Orientation.AUTO || st.direction != Direction.AUTO) {
-            if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
-                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-            Section("Orientation") {
-                Segmented(Orientation.entries.map { it.label }, st.orientation.ordinal, enabled = !st.busy) { st.orientation = Orientation.entries[it] }
+        Tool("Orientation", AppIcons.Rotate, run {
+                val o = st.orientationOf(v); val d = st.directionOf(v)
+                if (o == Orientation.AUTO && d == Direction.AUTO) "Auto" else "${o.label} · ${if (g.vertical) "↕" else "↔"}"
+            },
+            active = st.orientationOf(v) != Orientation.AUTO || st.directionOf(v) != Direction.AUTO) {
+            val key = st.keyOf(v)
+            val o = st.orientationOf(v); val d = st.directionOf(v)
+            Section(if (st.videos.size > 1) "Orientation for this clip" else "Orientation") {
+                Segmented(Orientation.entries.map { it.label }, o.ordinal, enabled = !st.busy) {
+                    val n = Orientation.entries[it]; if (n == Orientation.AUTO) st.clipOrientation.remove(key) else st.clipOrientation[key] = n
+                }
             }
-            Section("Desqueeze direction") {
-                Segmented(Direction.entries.map { it.label }, st.direction.ordinal, enabled = !st.busy) { st.direction = Direction.entries[it] }
+            Section(if (st.videos.size > 1) "Desqueeze direction for this clip" else "Desqueeze direction") {
+                Segmented(Direction.entries.map { it.label }, d.ordinal, enabled = !st.busy) {
+                    val n = Direction.entries[it]; if (n == Direction.AUTO) st.clipDirection.remove(key) else st.clipDirection[key] = n
+                }
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(AppIcons.Rotate, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
                     Spacer(Modifier.width(8.dp))
-                    Text(directionHint(v, g, st.orientation, st.direction) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
+                    Text(directionHint(v, g, o, d) + " Use Vertical when the camera or phone was turned 90° with the lens attached.",
                         style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                 }
             }
+            if (st.videos.size > 1) TextButton(onClick = {
+                st.videos.forEach { clip ->
+                    val k = st.keyOf(clip)
+                    if (o == Orientation.AUTO) st.clipOrientation.remove(k) else st.clipOrientation[k] = o
+                    if (d == Direction.AUTO) st.clipDirection.remove(k) else st.clipDirection[k] = d
+                }
+            }, enabled = !st.busy) { Text("Use ${o.label} / ${d.label} for all ${st.videos.size} clips") }
         },
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
@@ -618,7 +617,7 @@ fun Segmented(options: List<String>, selected: Int, enabled: Boolean = true, onS
 fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Panes, previewMax: androidx.compose.ui.unit.Dp?) {
     val ctx = LocalContext.current
     val v = st.videos.getOrNull(st.selected) ?: return
-    val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
+    val g = st.geoOf(v)
     val cube by produceState<LutManager.CubeLut?>(null, st.lutId) {
         value = st.lutId?.let { id -> withContext(Dispatchers.IO) { try { luts.load(id) } catch (_: Exception) { null } } }
     }
@@ -706,7 +705,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
     val key = v.uri.toString()
-    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.formatFill, st.clipTrim.toMap())
+    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.clipRes.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.clipOrientation.toMap(), st.clipDirection.toMap(), st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.formatFill, st.clipTrim.toMap())
     val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
@@ -717,8 +716,8 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     val est by produceState<Map<String, Estimate>?>(null, *deps) {
         value = withContext(Dispatchers.Default) {
             st.videos.associate { clip ->
-                clip.uri.toString() to estimate(ctx, exporter, settings, clip, geometry(clip, st.effectiveSqueeze(clip), st.orientation, st.direction),
-                    modes[clip.uri.toString()] ?: st.mode, st.lengthMs(clip), st.formatOf(clip))
+                clip.uri.toString() to estimate(ctx, exporter, settings, clip, st.geoOf(clip),
+                    modes[clip.uri.toString()] ?: st.mode, st.lengthMs(clip), st.formatOf(clip), st.resOf(clip))
             }
         }
     }
@@ -765,7 +764,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
         }
     }
 
-    FormatSection(st, settings, v, geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction), mode, modes)
+    FormatSection(st, settings, v, st.geoOf(v), mode, modes)
     }, right = {
     compat?.let { CompatibilityCard(it) }
     Section("Estimate") {
@@ -829,21 +828,54 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
     }
 
     Section(if (st.videos.size > 1) "Format for this clip" else "Format") {
-        // Icon tiles: each icon is drawn in that format's real shape.
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutFormat.entries.forEach { f ->
-                val (icon, sub) = when (f) {
-                    OutFormat.ORIGINAL -> AppIcons.FormatWide to "Original"
-                    OutFormat.YOUTUBE -> AppIcons.Format169 to "YouTube"
-                    OutFormat.FEED -> AppIcons.Format45 to "Feed"
-                    OutFormat.VERTICAL -> AppIcons.Format916 to "Reels"
-                    OutFormat.SQUARE -> AppIcons.Format11 to "Square"
+        // Icon tiles in two rows: cinema frames (wide, letterboxed shapes) and social frames (drawn in their real shape).
+        val cinemaIcons = remember { OutFormat.entries.filter { it.cinema }.associateWith { AppIcons.frameLines(it.aspect) } }
+        @Composable fun tileRow(title: String, list: List<OutFormat>) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp, top = 2.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                list.forEach { f ->
+                    val (icon, sub) = when (f) {
+                        OutFormat.ORIGINAL -> AppIcons.FormatWide to "Original"
+                        OutFormat.SCOPE -> cinemaIcons.getValue(f) to "Scope"
+                        OutFormat.UNIVISIUM -> cinemaIcons.getValue(f) to "2:1"
+                        OutFormat.FLAT -> cinemaIcons.getValue(f) to "Flat"
+                        OutFormat.YOUTUBE -> AppIcons.Format169 to "YouTube"
+                        OutFormat.FEED -> AppIcons.Format45 to "Feed"
+                        OutFormat.VERTICAL -> AppIcons.Format916 to "Reels"
+                        OutFormat.SQUARE -> AppIcons.Format11 to "Square"
+                    }
+                    IconTile(icon, f.short, on = format == f, enabled = !st.busy, mono = f != OutFormat.ORIGINAL, sub = sub,
+                        modifier = Modifier.weight(1f)) { choose(f, listOf(v)) }
                 }
-                IconTile(icon, f.short, on = format == f, enabled = !st.busy, mono = f != OutFormat.ORIGINAL, sub = sub,
-                    modifier = Modifier.weight(1f)) { choose(f, listOf(v)) }
             }
         }
-        if (st.videos.size > 1) TextButton(onClick = { choose(format, st.videos); st.videos.forEach { st.clipFill[it.uri.toString()] = fill } },
+        tileRow("Cinema", listOf(OutFormat.ORIGINAL, OutFormat.SCOPE, OutFormat.UNIVISIUM, OutFormat.FLAT))
+        Spacer(Modifier.height(8.dp))
+        tileRow("Social", listOf(OutFormat.YOUTUBE, OutFormat.FEED, OutFormat.VERTICAL, OutFormat.SQUARE))
+
+        // Resolution (per clip): Auto = the format's default (4K for cinema and YouTube, 1080p for social apps).
+        if (format != OutFormat.ORIGINAL) {
+            val res = st.resOf(v)
+            Text("Resolution", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+            Segmented(OutRes.entries.map { if (it == OutRes.AUTO) "Auto (${autoResLabel(format, g)})" else it.label }, res.ordinal, enabled = !st.busy) {
+                val r = OutRes.entries[it]; if (r == OutRes.AUTO) st.clipRes.remove(key) else st.clipRes[key] = r
+            }
+            val size = formatSize(format, g, res)!!
+            val capped = res != OutRes.AUTO && minOf(g.dispW, g.dispH) < res.px
+            Text(buildString {
+                append("${size.first} × ${size.second}. ")
+                if (capped) append("Limited to the clip's own resolution, so nothing is upscaled. ")
+                if (!format.cinema && format != OutFormat.YOUTUBE && (res == OutRes.P1440 || res == OutRes.P2160))
+                    append("Instagram and TikTok show up to 1080p; higher uploads look slightly sharper after their compression but take longer.")
+                else if (format == OutFormat.YOUTUBE && res != OutRes.P2160 && res != OutRes.AUTO)
+                    append("YouTube streams 4K uploads at a higher quality, even to 1080p viewers.")
+            }, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+        if (st.videos.size > 1) TextButton(onClick = {
+            choose(format, st.videos)
+            val r = st.resOf(v)
+            st.videos.forEach { st.clipFill[it.uri.toString()] = fill; if (r == OutRes.AUTO) st.clipRes.remove(it.uri.toString()) else st.clipRes[it.uri.toString()] = r }
+        },
             enabled = !st.busy, modifier = Modifier.padding(top = 2.dp)) { Text("Use ${format.short} for all clips") }
 
         // Amber notice: we changed the export method for them, and say why (with Undo).
@@ -877,7 +909,7 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             Text("Keeps the full de-squeezed frame. Pick 16:9, 4:5, 9:16 or 1:1 to make a file ready for YouTube, Instagram, Reels, Shorts or TikTok (uses Re-encode).",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         } else {
-            val size = formatSize(format, g)!!
+            val size = formatSize(format, g, st.resOf(v))!!
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconTile(AppIcons.FitBars, "Fit", on = !fill, enabled = !st.busy, sub = "Whole picture, black bars",
                     modifier = Modifier.weight(1f)) { st.clipFill[key] = false; st.formatFill = false; settings.formatFill = false }
@@ -1066,5 +1098,100 @@ fun ImportProgress(st: AppState) {
         LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)))
         Text("Checking codec, color and log/HDR, and sampling a few frames.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** While exporting: overall progress (never goes backwards) plus one line per clip. */
+@Composable
+fun ExportProgressPanel(st: AppState) {
+    val c = MaterialTheme.colorScheme
+    // Keyed by run, so a new export starts its bar at 0 instead of animating down from the last one.
+    key(st.runId) {
+        val p by animateFloatAsState(st.progress, tween(250), label = "progress")
+        val done = st.runs.count { it.state == RunState.DONE }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(if (st.runs.size > 1) "Exporting ${st.runs.size} videos · $done done" else "Exporting",
+                style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text("${(p * 100).toInt()}%", style = MaterialTheme.typography.titleSmall.merge(Mono))
+        }
+        Spacer(Modifier.height(10.dp))
+        LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
+        Spacer(Modifier.height(10.dp))
+        RunList(st.runs, maxRows = 3)
+        Text("Keeps going in the background; you can lock the phone or use other apps.",
+            style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = { ExportController.cancel(st) },
+            Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Cancel export") }
+    }
+}
+
+/** After exporting: stays until Done, so even a one-second export is clearly confirmed (and not accidentally repeated). */
+@Composable
+fun ExportDonePanel(st: AppState, done: ExportSummary) {
+    val c = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
+    val good = done.failed == 0
+    val tint = if (good) Color(0xFF5BD68A) else Warm
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(36.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+            Icon(if (good) AppIcons.Check else AppIcons.Warn, null, Modifier.size(20.dp), tint = tint)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(when {
+                good && done.ok == 1 -> "Exported"
+                good -> "Exported ${done.ok} videos"
+                else -> "${done.ok} exported, ${done.failed} failed"
+            }, style = MaterialTheme.typography.titleMedium)
+            Text("Saved to ${done.folder}. Your originals are untouched.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    RunList(st.runs, maxRows = 3)
+    Spacer(Modifier.height(10.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (done.lastUri != null) OutlinedButton(onClick = {
+            runCatching {
+                ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(done.lastUri, "video/*")
+                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            }
+        }, Modifier.height(52.dp), shape = RoundedCornerShape(16.dp)) {
+            Icon(AppIcons.Play, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Play")
+        }
+        Button(onClick = { st.exportDone = null }, Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Done") }
+    }
+}
+
+/** One line per clip: state icon, name, and percent / size / reason. */
+@Composable
+fun RunList(runs: List<ClipRun>, maxRows: Int) {
+    val c = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().heightIn(max = (maxRows * 30).dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        runs.forEach { r ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                    when (r.state) {
+                        RunState.WAITING -> Box(Modifier.size(6.dp).clip(CircleShape).background(c.outline))
+                        RunState.RUNNING -> CircularProgressIndicator(progress = { r.pct / 100f }, Modifier.size(16.dp), strokeWidth = 2.dp)
+                        RunState.DONE -> Icon(AppIcons.Check, null, Modifier.size(16.dp), tint = Color(0xFF5BD68A))
+                        RunState.FAILED -> Icon(AppIcons.Cross, null, Modifier.size(14.dp), tint = c.error)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(r.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (r.state == RunState.WAITING) c.onSurfaceVariant else c.onSurface)
+                Spacer(Modifier.width(8.dp))
+                Text(when (r.state) {
+                    RunState.WAITING -> if (r.method == ExportMode.LOSSLESS) "Lossless" else "Re-encode"
+                    RunState.RUNNING -> "${r.pct}%"
+                    RunState.DONE -> r.note ?: "Done"
+                    RunState.FAILED -> if (r.note == "Cancelled") "Cancelled" else "Failed"
+                }, style = MaterialTheme.typography.labelSmall.merge(Mono), color = if (r.state == RunState.FAILED) c.error else c.onSurfaceVariant)
+            }
+        }
     }
 }

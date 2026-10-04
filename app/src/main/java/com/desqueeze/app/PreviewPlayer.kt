@@ -6,6 +6,7 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,6 +34,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -97,7 +100,8 @@ fun PreviewPlayer(
     LaunchedEffect(lutStrength) { delay(350); appliedStrength = lutStrength }
     var effectsFailed by remember(v.uri) { mutableStateOf(false) }
     val useLut = lut != null && lutOn && !effectsFailed
-    val useRotate = g.extraRotation != 0 && !effectsFailed
+    // Orientation overrides rotate the video view itself (instant), instead of rebuilding the player with a GPU effect.
+    val useRotate = false
     val effectsKey = Triple(if (useRotate) g.extraRotation else 0, useLut, if (useLut) (appliedStrength * 20).toInt() else -1)
 
     // Bumped to rebuild the player after a transient decoder failure (or when the user taps Retry).
@@ -198,11 +202,12 @@ fun PreviewPlayer(
         if (compareRequest != seenRequest.intValue) { seenRequest.intValue = compareRequest; if (lut != null) startCompare() }
     }
 
-    val frame = ratio.coerceIn(0.8f, 4f)
+    // Portrait results (e.g. vertical desqueeze) get a tall frame that hugs the picture, not a wide black box.
+    val frame = ratio.coerceIn(0.56f, 4f)
     val videoMod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
 
     // Exposure tools read small frames from a TextureView (only while a tool is on).
-    val useTexture = exposure != Scope.OFF
+    val useTexture = exposure != Scope.OFF || g.extraRotation != 0
     var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
     var scopeData by remember { mutableStateOf<ScopeData?>(null) }
     val statsCb by rememberUpdatedState(onStats)
@@ -239,7 +244,9 @@ fun PreviewPlayer(
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     // In landscape / two-pane layouts the preview shrinks to stay fully visible.
-    val boxWidth = if (maxHeight != null) minOf(this.maxWidth, maxHeight * frame) else this.maxWidth
+    // Tall pictures may use more of the screen height so the stretch is actually visible.
+    val mh = maxHeight?.let { if (frame < 1f) it * 1.5f else it }
+    val boxWidth = if (mh != null) minOf(this.maxWidth, mh * frame) else this.maxWidth
     Column(Modifier.width(boxWidth).align(Alignment.TopCenter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(frame).clip(RoundedCornerShape(24.dp)).background(Color.Black)
@@ -258,8 +265,11 @@ fun PreviewPlayer(
             key(player, useTexture) {
                 if (useTexture) {
                     // TextureView stretches the picture to its bounds, like the normal view, and lets us read frames.
-                    AndroidView(factory = { android.view.TextureView(it).also { tv -> player.setVideoTextureView(tv); texture = tv } },
-                        onRelease = { tv -> player.clearVideoTextureView(tv); texture = null }, modifier = videoMod)
+                    Box(videoMod) {
+                        AndroidView(factory = { android.view.TextureView(it).also { tv -> player.setVideoTextureView(tv); texture = tv } },
+                            onRelease = { tv -> player.clearVideoTextureView(tv); texture = null },
+                            modifier = Modifier.fillMaxSize().rotatedContent(g.extraRotation))
+                    }
                 } else {
                     AndroidView(factory = { PlayerView(it).apply {
                         this.player = player; useController = false; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
@@ -267,13 +277,17 @@ fun PreviewPlayer(
                     } }, modifier = videoMod)
                 }
             }
-            if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor?.let { Image(it, "False color", videoMod, contentScale = ContentScale.FillBounds) }
+            if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor?.let {
+                Box(videoMod) { Image(it, "False color", Modifier.fillMaxSize().rotatedContent(g.extraRotation), contentScale = ContentScale.FillBounds) }
+            }
+            // Shows how much the picture was stretched: the original frame's shape as a dashed outline.
+            StretchOutline(g, showWide, videoMod)
             GuideOverlay(guides, videoMod)
 
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))).padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Pill(if (showWide) "De-squeezed ${fmtSqueeze(g.outRatio / g.inRatio).let { if (g.vertical) "$it ↕" else it }}" else "Original", accent = showWide)
+                Pill(if (showWide) "De-squeezed ${fmtSqueeze(stretchFactor(g))} ${if (g.vertical) "↕" else "↔"}" else "Original", accent = showWide)
                 if (useLut) { Spacer(Modifier.width(6.dp)); Pill("LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
@@ -587,4 +601,56 @@ object FilmstripCache {
     }
     @Synchronized fun get(k: String) = map[k]
     @Synchronized fun put(k: String, v: List<ImageBitmap?>) { map[k] = v }
+}
+
+/** How much the picture is stretched along its stretch axis (e.g. 1.20), whichever way it goes. */
+fun stretchFactor(g: Geometry): Float =
+    if (g.vertical) g.outH.toFloat() / g.dispH.coerceAtLeast(1) else g.outW.toFloat() / g.dispW.coerceAtLeast(1)
+
+/**
+ * Lays the child out with width and height swapped for 90°/270° and rotates it, so a view showing the
+ * file's own orientation fills this box at the overridden orientation, without rebuilding the player.
+ */
+fun Modifier.rotatedContent(deg: Int): Modifier {
+    val d = ((deg % 360) + 360) % 360
+    if (d == 0) return this
+    return this.layout { m, c ->
+        val w = c.maxWidth; val h = c.maxHeight
+        val swap = d % 180 != 0
+        val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(if (swap) h else w, if (swap) w else h))
+        layout(w, h) { p.place((w - p.width) / 2, (h - p.height) / 2) }
+    }.graphicsLayer { rotationZ = d.toFloat() }
+}
+
+/** Dashed outline of the original (squeezed) frame with arrows on the stretch axis; fades with the de-squeeze toggle. */
+@Composable
+fun StretchOutline(g: Geometry, show: Boolean, modifier: Modifier) {
+    val f = stretchFactor(g)
+    val a by animateFloatAsState(if (show && f > 1.005f) 1f else 0f, tween(300), label = "outline")
+    if (a <= 0f) return
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val iw = if (g.vertical) w else w / f; val ih = if (g.vertical) h / f else h
+        val l = (w - iw) / 2; val t = (h - ih) / 2
+        val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
+        drawRect(Color.White.copy(alpha = 0.75f * a), Offset(l, t), androidx.compose.ui.geometry.Size(iw, ih),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f, pathEffect = dash))
+        // Arrows from the original edge out to the stretched edge.
+        val arrow = Color.White.copy(alpha = 0.85f * a); val head = 10f
+        if (g.vertical) {
+            for ((from, to) in listOf(t to 0f, t + ih to h)) if (kotlin.math.abs(from - to) > 12f) {
+                val x = w / 2; drawLine(arrow, Offset(x, from), Offset(x, to + if (to > from) -2f else 2f), 3f)
+                val dir = if (to > from) 1f else -1f
+                drawLine(arrow, Offset(x, to - dir * 2f), Offset(x - head, to - dir * (head + 2f)), 3f)
+                drawLine(arrow, Offset(x, to - dir * 2f), Offset(x + head, to - dir * (head + 2f)), 3f)
+            }
+        } else {
+            for ((from, to) in listOf(l to 0f, l + iw to w)) if (kotlin.math.abs(from - to) > 12f) {
+                val y = h / 2; drawLine(arrow, Offset(from, y), Offset(to + if (to > from) -2f else 2f, y), 3f)
+                val dir = if (to > from) 1f else -1f
+                drawLine(arrow, Offset(to - dir * 2f, y), Offset(to - dir * (head + 2f), y - head), 3f)
+                drawLine(arrow, Offset(to - dir * 2f, y), Offset(to - dir * (head + 2f), y + head), 3f)
+            }
+        }
+    }
 }

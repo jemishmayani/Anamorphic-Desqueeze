@@ -29,30 +29,51 @@ object ExportController {
     var exporter: Exporter? = null
 
     fun start(ctx: Context, st: AppState, exporter: Exporter) {
+        if (st.busy) return                                   // a second tap while exporting does nothing
         val app = ctx.applicationContext
         val list = st.videos
-        st.busy = true; st.progress = 0f; st.results = emptyList(); st.status = ""
+        val n = list.size.coerceAtLeast(1)
+        val rid = st.runId + 1; st.runId = rid
+        st.runs.clear(); list.forEach { st.runs += ClipRun(it.name, modeFor(st, exporter, it)) }
+        st.busy = true; st.progress = 0f; st.results = emptyList(); st.status = ""; st.exportDone = null
+        exporter.lastSaved = null
         Diag.start()
         st.job = scope.launch {
             val log = mutableListOf<String>()
+            var ok = 0; var failed = 0
             list.forEachIndexed { i, vid ->
-                val m = modeFor(st, exporter, vid)
-                st.status = (if (m == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else " ${vid.name}"
+                val m = st.runs.getOrNull(i)?.method ?: modeFor(st, exporter, vid)
+                st.status = (if (m == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else ""
+                if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.RUNNING, pct = 0)
                 try {
                     val j = st.jobFor(vid)
                     val main = android.os.Handler(android.os.Looper.getMainLooper())
-                    val prog: (Int) -> Unit = { p -> main.post { st.progress = (i + p / 100f) / list.size } }
+                    // Progress only moves forward, and updates from an earlier run (or an earlier clip) are dropped.
+                    val prog: (Int) -> Unit = { p -> main.post {
+                        if (st.runId == rid && st.busy) {
+                            if (i < st.runs.size && st.runs[i].state == RunState.RUNNING && p > st.runs[i].pct)
+                                st.runs[i] = st.runs[i].copy(pct = p.coerceIn(0, 100))
+                            st.progress = maxOf(st.progress, ((i + p.coerceIn(0, 100) / 100f) / n).coerceAtMost(1f))
+                        }
+                    } }
                     Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=$m, squeeze=${st.effectiveSqueeze(vid)}, " +
                         "trim=${j.trim}, format=${j.format}${if (j.fill) " fill" else ""}, lut=${st.lutId != null}")
                     val r = if (m == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
                     log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
+                    ok++
+                    if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.DONE, pct = 100, note = "${r.width} × ${r.height}")
                 } catch (e: CancellationException) { throw e
                 } catch (e: Throwable) {
                     Diag.step("FAILED: ${e.javaClass.simpleName}: ${e.message}")
                     log += "✗  ${vid.name}\n    ${e.message ?: e.javaClass.simpleName}"
+                    failed++
+                    if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.FAILED, note = e.message ?: e.javaClass.simpleName)
                 }
+                st.progress = maxOf(st.progress, (i + 1f) / n)
             }
-            st.results = log; st.status = ""; st.busy = false
+            st.results = log; st.status = ""
+            st.exportDone = ExportSummary(ok, failed, "Movies/" + Settings(app).folder, exporter.lastSaved)
+            st.busy = false
         }
         // Keeps the process alive with a progress notification while the job runs.
         try {
@@ -65,6 +86,8 @@ object ExportController {
 
     fun cancel(st: AppState) {
         st.job?.cancel(); st.busy = false; st.status = "Export cancelled."
+        st.runId++                                            // ignore any progress still in flight
+        for (i in st.runs.indices) if (st.runs[i].state != RunState.DONE) st.runs[i] = st.runs[i].copy(state = RunState.FAILED, note = "Cancelled")
     }
 }
 

@@ -2,6 +2,30 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.16 — 2026-10-05
+
+### Fixed
+- **Exports looked as if nothing happened, so they were easily repeated.** A Lossless export of two clips takes about a second; the progress bar then disappeared and the bottom bar went straight back to "Export 2 videos", with the results far down the page. In the screen recording this led to three exports in a row (and three copies of each file). Now:
+  - A **"✓ Exported 2 videos"** panel stays until you tap **Done**. It lists each clip with its output size, shows the save folder, and has **Play** to open the result.
+  - Tapping Export again while an export runs does nothing.
+- **Export progress went backwards and showed the wrong clip** (e.g. 91% → 75%, "Copying 1 of 2" while on clip 2). Each export started from the previous run's percentage, and late progress updates from one clip could arrive after the next had started. Progress now starts at 0 for every export, only moves forward, and ignores updates from earlier runs. The panel shows the overall percentage plus one line per clip: waiting, its own %, ✓ with size, or ✗ with the reason.
+- **Orientation and desqueeze direction applied to every clip.** They're now per clip, like squeeze, format and export method, with **Use … for all clips**.
+- **The stretch badge said "0.83× ↕" for a 1.20× vertical stretch** (it divided the output shape by the input shape). It now shows the real factor and axis, e.g. "1.20× ↕" or "1.33× ↔".
+
+### Changed
+- **The stretch is easy to see.** When de-squeezed, the preview shows a dashed outline of the original (squeezed) frame with arrows to the stretched edges, fading out when you switch to Squeezed or hold to compare. Tall results (e.g. vertical desqueeze) get a taller preview that hugs the picture, instead of a thin strip in a black box.
+- **Smooth orientation changes.** Changing orientation used to rebuild the player (black screen and spinner); the video view is now rotated directly, so it's instant. Filmstrip, before/after still and scopes follow the same rotation.
+- **More formats, in two rows.**
+  - **Cinema:** Original wide, **2.39 : 1 Scope**, **2.00 : 1** and **1.85 : 1 Flat**.
+  - **Social:** 16:9 (YouTube), 4:5, 9:16 and 1:1.
+
+### Added
+- **High-resolution export: a resolution per clip** for every format: **Auto, 1080p, 1440p or 4K**.
+  - **Auto** shows what it means, e.g. "Auto (4K)": 4K for cinema frames and YouTube, 1080p for social apps.
+  - Cinema frames use the standard widths, so 4K 2.39 is the UHD scope size 3840 × 1606, and 9:16 at 4K is 2160 × 3840.
+  - Nothing is upscaled past the clip's own resolution; the panel says when that limit applies.
+  - Tips: YouTube streams 4K uploads at higher quality; Instagram and TikTok show up to 1080p.
+
 ## v1.15 — 2026-10-05
 
 ### Fixed

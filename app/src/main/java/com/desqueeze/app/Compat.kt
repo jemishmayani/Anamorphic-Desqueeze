@@ -15,7 +15,7 @@ data class CompatReport(
 
 /** Builds the check from the same data export uses (geometry, encoder fit, decoder support). */
 fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode): CompatReport {
-    val g = geometry(v, st.effectiveSqueeze(v), st.orientation, st.direction)
+    val g = st.geoOf(v)
     val f = v.footage
     val look = lookLabel(f.gamma)
     val input = listOfNotNull(resolutionName(v.displayW, v.displayH), "${v.bitDepth}-bit", look, v.codec).joinToString(" ")
@@ -53,8 +53,8 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
         if (st.lutId != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode to bake it in."
     } else {
         val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-        val (w, h, _) = exporter.targetSize(g, v.fps, mime, st.formatOf(v))
-        val (tw, th) = reencodeTarget(g, st.formatOf(v))
+        val (w, h, _) = exporter.targetSize(g, v.fps, mime, st.formatOf(v), st.resOf(v))
+        val (tw, th) = reencodeTarget(g, st.formatOf(v), st.resOf(v))
         val maxW = DeviceCaps.maxWidthAt(mime, th)
         rows += "Output" to if (st.formatOf(v) == OutFormat.ORIGINAL) "$tw × $th"
             else "$tw × $th, ${st.formatOf(v).short} for ${st.formatOf(v).where} (" +

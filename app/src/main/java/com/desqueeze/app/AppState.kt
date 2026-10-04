@@ -80,8 +80,13 @@ class AppState(settings: Settings, luts: LutManager) {
     var accent by mutableStateOf(settings.accent)
     var mode by mutableStateOf(settings.mode)
     var step by mutableStateOf(Step.Clips)
-    var orientation by mutableStateOf(Orientation.AUTO)
-    var direction by mutableStateOf(Direction.AUTO)
+    /** Orientation and desqueeze direction per clip (key = clip uri); a clip without an entry uses Auto. */
+    val clipOrientation = mutableStateMapOf<String, Orientation>()
+    val clipDirection = mutableStateMapOf<String, Direction>()
+    fun orientationOf(v: VideoInfo): Orientation = clipOrientation[keyOf(v)] ?: Orientation.AUTO
+    fun directionOf(v: VideoInfo): Direction = clipDirection[keyOf(v)] ?: Direction.AUTO
+    /** The clip's full geometry: its own squeeze, orientation and direction. */
+    fun geoOf(v: VideoInfo): Geometry = geometry(v, effectiveSqueeze(v), orientationOf(v), directionOf(v))
     /** LUT applied in the live preview (proxy) when a LUT is selected. */
     var lutPreview by mutableStateOf(true)
     /** Per-clip export method chosen by the user (keyed by uri). Missing = follow the default. */
@@ -105,12 +110,19 @@ class AppState(settings: Settings, luts: LutManager) {
     val clipFill = mutableStateMapOf<String, Boolean>()
     fun formatOf(v: VideoInfo): OutFormat = clipFormat[keyOf(v)] ?: OutFormat.ORIGINAL
     fun fillOf(v: VideoInfo): Boolean = clipFill[keyOf(v)] ?: formatFill
+    /** Output resolution per clip for formats (Auto = the format's default). */
+    val clipRes = mutableStateMapOf<String, OutRes>()
+    fun resOf(v: VideoInfo): OutRes = clipRes[keyOf(v)] ?: OutRes.AUTO
     /** Shown after picking a format moved Lossless clips to Re-encode; holds what Undo restores. */
     var formatSwitch by mutableStateOf<FormatSwitch?>(null)
     /** Exposure tool shown with the preview. */
     var scope by mutableStateOf(Scope.OFF)
     /** Scope overlay drawn large (tap it to toggle), and its latest readings for the Exposure panel. */
     var scopeLarge by mutableStateOf(false)
+    /** Export progress, per clip; [runId] changes each export so late updates from an earlier run are ignored. */
+    val runs = mutableStateListOf<ClipRun>()
+    var runId by mutableIntStateOf(0)
+    var exportDone by mutableStateOf<ExportSummary?>(null)
     /** Clip import in progress: (done, total), or null when idle. */
     var importing by mutableStateOf<Pair<Int, Int>?>(null)
     /** A LUT file is being read and checked. */
@@ -122,9 +134,15 @@ class AppState(settings: Settings, luts: LutManager) {
     var frameTool by mutableIntStateOf(0)
     var lookTool by mutableIntStateOf(0)
 
-    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutId, strength, orientation, direction,
-        trim = trimFor(v), format = formatOf(v), fill = fillOf(v))
+    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutId, strength, orientationOf(v), directionOf(v),
+        trim = trimFor(v), format = formatOf(v), fill = fillOf(v), res = resOf(v))
 }
 
 /** Clips that were switched to Re-encode because a format was picked: key to (previous mode, previous format). */
 data class FormatSwitch(val format: OutFormat, val previous: Map<String, Pair<ExportMode?, OutFormat>>)
+
+/** One clip's line in the export progress panel. */
+enum class RunState { WAITING, RUNNING, DONE, FAILED }
+data class ClipRun(val name: String, val method: ExportMode, val state: RunState = RunState.WAITING, val pct: Int = 0, val note: String? = null)
+/** Shown after an export finishes, until the user taps Done, so a fast export is never missed. */
+data class ExportSummary(val ok: Int, val failed: Int, val folder: String, val lastUri: android.net.Uri?)
