@@ -706,7 +706,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
     val key = v.uri.toString()
-    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.format, st.formatFill, st.clipTrim.toMap())
+    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.orientation, st.direction, st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.formatFill, st.clipTrim.toMap())
     val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
