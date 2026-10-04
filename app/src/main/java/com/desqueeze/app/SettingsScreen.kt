@@ -263,9 +263,17 @@ fun LutLibraryScreen(st: AppState, luts: LutManager, onBack: () -> Unit) {
     val c = MaterialTheme.colorScheme
     var renaming by remember { mutableStateOf<LutEntry?>(null) }
     var msg by remember { mutableStateOf("") }
+    val uiScope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
-        if (u != null) try { luts.import(u, displayName(ctx, u)); st.lutList = luts.list(); msg = "" }
-        catch (e: Exception) { msg = "This LUT couldn't be loaded: ${e.message}" }
+        if (u != null) uiScope.launch {
+            st.lutLoading = true
+            try {
+                val name = displayName(ctx, u)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { luts.import(u, name) }
+                st.lutList = luts.list(); msg = ""
+            } catch (e: Exception) { msg = "This LUT couldn't be loaded: ${e.message}" }
+            finally { st.lutLoading = false }
+        }
     }
     Column(Modifier.fillMaxSize()) {
         TopBar("LUT library", onBack)
@@ -274,6 +282,7 @@ fun LutLibraryScreen(st: AppState, luts: LutManager, onBack: () -> Unit) {
             Text("3D .cube LUTs you import are stored privately in the app. None are bundled; for log footage, import your camera maker's official log-to-Rec.709 LUT.",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             Button(onClick = { picker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Import .cube LUT") }
+            if (st.lutLoading) LoadingRow("Reading the LUT…")
             if (msg.isNotEmpty()) Text(msg, color = c.error, style = MaterialTheme.typography.bodySmall)
             if (st.lutList.isEmpty()) Text("No LUTs yet.", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
             else SettingsGroup("${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}") {

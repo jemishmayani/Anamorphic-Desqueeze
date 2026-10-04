@@ -277,11 +277,18 @@ fun startExport(ctx: android.content.Context, st: AppState, exporter: Exporter) 
 fun importClips(ctx: android.content.Context, st: AppState, settings: Settings, uris: List<Uri>, append: Boolean) {
     if (uris.isEmpty()) return
     ExportController.scope.launch {
-        st.status = "Reading clips…"
+        st.status = ""
+        st.importing = 0 to uris.size
         val errs = mutableListOf<String>()
-        val found = withContext(Dispatchers.IO) {
-            uris.mapNotNull { u -> try { VideoProbe.probe(ctx, u) } catch (e: Exception) { errs += (e.message ?: "Couldn't read this file"); null } }
-        }
+        val found = try {
+            withContext(Dispatchers.IO) {
+                uris.mapIndexedNotNull { i, u ->
+                    val r = try { VideoProbe.probe(ctx, u) } catch (e: Exception) { errs += (e.message ?: "Couldn't read this file"); null }
+                    withContext(Dispatchers.Main) { st.importing = (i + 1) to uris.size }
+                    r
+                }
+            }
+        } finally { st.importing = null }
         val known = if (append) st.videos.map { it.uri }.toSet() else emptySet()
         val fresh = found.filter { it.uri !in known }
         val before = if (append) st.videos.size else 0

@@ -58,4 +58,30 @@ class ScopeMathTest {
         val p = peak(ScopeMath.vectorscope(IntArray(400) { rgb(255, 0, 0) }, n))
         assertTrue("red plots upper-left", p % n < n / 2 && p / n < n / 2)
     }
+
+    @Test fun waveformCountsMatchPixelCountAndPlacement() {
+        val w = 64; val h = 4
+        val ramp = IntArray(w * h) { i -> val v = (i % w) * 255 / (w - 1); (0xFF shl 24) or (v shl 16) or (v shl 8) or v }
+        val c = ScopeMath.waveformCounts(ramp, w, h, cols = 8, rows = 16)
+        assertEquals(w * h, c.sum())
+        // leftmost column is dark (bottom rows), rightmost bright (top rows)
+        val first = (0 until 16).maxByOrNull { c[0 * 16 + it] }!!; val last = (0 until 16).maxByOrNull { c[7 * 16 + it] }!!
+        assertTrue("dark column near bottom", first >= 13); assertTrue("bright column near top", last <= 2)
+    }
+
+    @Test fun phosphorKeepsSparseDetailVisibleAndNeverExceedsOne() {
+        val counts = IntArray(100).also { it[0] = 10_000; it[1] = 1; it[2] = 50 }
+        val p = ScopeMath.phosphor(counts)
+        assertEquals(0f, p[3], 0f)                  // empty stays empty
+        assertTrue("single sample visible", p[1] >= 0.18f)
+        assertTrue("monotonic", p[1] < p[2] && p[2] <= p[0])
+        assertTrue(p.all { it in 0f..1f })
+    }
+
+    @Test fun fineHistogramHas256BinsAndPeaksAtTheRightLevel() {
+        val px = IntArray(1000) { val v = 128; (0xFF shl 24) or (v shl 16) or (v shl 8) or v }
+        val h = ScopeMath.rgbHistogramFine(px)
+        assertEquals(4, h.size); assertEquals(256, h[3].size)
+        assertEquals(128, h[3].indices.maxByOrNull { h[3][it] })
+    }
 }

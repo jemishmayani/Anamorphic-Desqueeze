@@ -269,7 +269,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
     if (st.videos.isEmpty()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)
             .then(if (panes.wide) Modifier.widthIn(max = 720.dp) else Modifier), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            EmptyPreview(onPick)
+            if (st.importing != null) ImportProgress(st) else EmptyPreview(onPick)
             Row(verticalAlignment = Alignment.Top) {
                 Icon(AppIcons.Info, null, Modifier.size(16.dp).padding(top = 1.dp), tint = c.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
@@ -280,6 +280,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
         return
     }
     TwoPane(panes, left = {
+        ImportProgress(st)
         Section(if (st.videos.size == 1) "Your clip" else "${st.videos.size} clips", trailing = {
             TextButton(onClick = onAdd, enabled = !st.busy) { Text("Add clips") }
         }) {
@@ -428,7 +429,7 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio)
             else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, scopeLarge = st.scopeLarge,
-                onScopeLarge = { st.scopeLarge = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
+                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
         }
         ViewToggle(st.desqueezed) { st.desqueezed = it }
     }
@@ -501,6 +502,12 @@ fun ExposureSection(st: AppState) {
         }
         if (st.scope != Scope.FALSE_COLOR) {
             Segmented(listOf("Small", "Large"), if (st.scopeLarge) 1 else 0) { st.scopeLarge = it == 1 }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Drag the scope to move it anywhere on the video.", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { st.scopePos = androidx.compose.ui.geometry.Offset(1f, 0f) },
+                    enabled = st.scopePos != androidx.compose.ui.geometry.Offset(1f, 0f)) { Text("Reset position") }
+            }
             Spacer(Modifier.height(10.dp))
         }
         val s = st.scopeStats
@@ -615,11 +622,20 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     val cube by produceState<LutManager.CubeLut?>(null, st.lutId) {
         value = st.lutId?.let { id -> withContext(Dispatchers.IO) { try { luts.load(id) } catch (_: Exception) { null } } }
     }
+    val uiScope = rememberCoroutineScope()
     val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
-        if (u != null) try {
-            st.lutId = luts.import(u, displayName(ctx, u)).id; st.lutList = luts.list()
-        } catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
+        if (u != null) uiScope.launch {
+            st.lutLoading = true
+            try {
+                val name = displayName(ctx, u)
+                val entry = withContext(Dispatchers.IO) { luts.import(u, name) }   // big .cube files take a moment to parse
+                st.lutId = entry.id; st.lutList = luts.list()
+            } catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
+            finally { st.lutLoading = false }
+        }
     }
+    // Reading the selected LUT for the live preview.
+    val cubeLoading = st.lutId != null && cube == null
 
     val lutName = st.lutList.firstOrNull { it.id == st.lutId }?.name
     val tools = listOf(
@@ -633,6 +649,8 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
                 else -> lutPicker.launch(arrayOf("*/*"))
             }
         }
+        if (st.lutLoading) LoadingRow("Reading the LUT…", Modifier.padding(top = 10.dp))
+        else if (cubeLoading) LoadingRow("Preparing the LUT for the preview…", Modifier.padding(top = 10.dp))
         AnimatedVisibility(st.lutId != null) {
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Segmented(listOf("LUT off", "LUT on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
@@ -675,7 +693,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
             if (st.busy) ExportingPlaceholder(g.outRatio)
             else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
                 guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, scopeLarge = st.scopeLarge,
-                onScopeLarge = { st.scopeLarge = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
+                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
         }
     }
 }
@@ -748,7 +766,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surfaceContainer)
             .border(1.dp, c.outlineVariant, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val e = all?.get(key)
-            if (all == null || e == null) Text("Calculating…", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            if (all == null || e == null) LoadingRow("Calculating size and time…")
             else {
                 if (st.videos.size > 1) Text("This clip", style = MaterialTheme.typography.labelMedium, color = c.primary)
                 EstRow("Output", "${e.outW} × ${e.outH}")
@@ -785,12 +803,18 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
 fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry) {
     val c = MaterialTheme.colorScheme
     Section("Format") {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Icon tiles: each icon is drawn in that format's real shape.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutFormat.entries.forEach { f ->
-                FilterChip(selected = st.format == f, enabled = !st.busy,
-                    onClick = { st.format = f; settings.format = f },
-                    label = { Text(f.short, style = LocalTextStyle.current.merge(Mono)) },
-                    leadingIcon = if (st.format == f) { { Icon(AppIcons.Check, null, Modifier.size(16.dp)) } } else null)
+                val (icon, sub) = when (f) {
+                    OutFormat.ORIGINAL -> AppIcons.FormatWide to "Original"
+                    OutFormat.YOUTUBE -> AppIcons.Format169 to "YouTube"
+                    OutFormat.FEED -> AppIcons.Format45 to "Feed"
+                    OutFormat.VERTICAL -> AppIcons.Format916 to "Reels"
+                    OutFormat.SQUARE -> AppIcons.Format11 to "Square"
+                }
+                IconTile(icon, f.short, on = st.format == f, enabled = !st.busy, mono = f != OutFormat.ORIGINAL, sub = sub,
+                    modifier = Modifier.weight(1f)) { st.format = f; settings.format = f }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -799,8 +823,11 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry) {
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         } else {
             val size = formatSize(st.format, g)!!
-            Segmented(listOf("Fit (black bars)", "Fill (crop)"), if (st.formatFill) 1 else 0, enabled = !st.busy) {
-                st.formatFill = it == 1; settings.formatFill = st.formatFill
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconTile(AppIcons.FitBars, "Fit", on = !st.formatFill, enabled = !st.busy, sub = "Whole picture, black bars",
+                    modifier = Modifier.weight(1f)) { st.formatFill = false; settings.formatFill = false }
+                IconTile(AppIcons.FillCrop, "Fill", on = st.formatFill, enabled = !st.busy, sub = "Fills the frame, crops sides",
+                    modifier = Modifier.weight(1f)) { st.formatFill = true; settings.formatFill = true }
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -937,4 +964,33 @@ fun StatusIcon(s: Status, size: Int = 18) {
         Status.NO -> AppIcons.Cross to MaterialTheme.colorScheme.error
     }
     Icon(icon, s.name, Modifier.size(size.dp), tint = color)
+}
+
+/** A small spinner with a short explanation, for anything that takes a moment. */
+@Composable
+fun LoadingRow(text: String, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Determinate progress while clips are being read (thumbnails, log/HDR analysis). */
+@Composable
+fun ImportProgress(st: AppState) {
+    val imp = st.importing ?: return
+    val (done, total) = imp
+    val p by androidx.compose.animation.core.animateFloatAsState(if (total > 0) done / total.toFloat() else 0f, label = "import")
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
+        .padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(if (total > 1) "Reading clip ${minOf(done + 1, total)} of $total…" else "Reading clip…", style = MaterialTheme.typography.bodyMedium)
+        }
+        LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)))
+        Text("Checking codec, color and log/HDR, and sampling a few frames.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }

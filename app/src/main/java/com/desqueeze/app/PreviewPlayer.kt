@@ -14,6 +14,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -75,6 +77,8 @@ fun PreviewPlayer(
     /** Scope overlay size (tap the overlay to toggle) and close; readings are reported for the Exposure panel. */
     scopeLarge: Boolean = false,
     onScopeLarge: (Boolean) -> Unit = {},
+    scopePos: Offset = Offset(1f, 0f),
+    onScopePos: (Offset) -> Unit = {},
     onScopeClose: () -> Unit = {},
     onStats: (ScopeMath.Stats?) -> Unit = {},
     /** Keeps the whole preview on screen in landscape / two-pane layouts. */
@@ -127,6 +131,8 @@ fun PreviewPlayer(
     var error by remember(v.uri) { mutableStateOf<String?>(null) }
     var hint by remember(v.uri) { mutableStateOf(true) }
     var compare by remember { mutableStateOf<Pair<ImageBitmap, ImageBitmap>?>(null) }
+    // False until the first frame can play (waiting for a decoder, preparing, or rebuffering).
+    var ready by remember(player) { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
 
     DisposableEffect(player) {
@@ -166,6 +172,7 @@ fun PreviewPlayer(
             if (tr != null && (pos >= tr.second || pos < tr.first - 250)) { player.seekTo(tr.first); pos = tr.first }
             playing = player.playWhenReady; memory.positionMs = pos; memory.playing = playing
             if (player.playbackState == Player.STATE_READY && autoRetries > 0) { autoRetries = 0 }
+            ready = player.playbackState == Player.STATE_READY
             delay(120)
         }
     }
@@ -204,7 +211,8 @@ fun PreviewPlayer(
         val tv = texture ?: return@LaunchedEffect
         if (exposure == Scope.OFF) return@LaunchedEffect
         while (true) {
-            val w = if (exposure == Scope.FALSE_COLOR) 320 else 192
+            // 384 px wide (bins divide it evenly, so no striping); false color at 360 for the overlay.
+            val w = if (exposure == Scope.FALSE_COLOR) 360 else 384
             val h = maxOf(2, (w / frame).toInt())
             val bmp = try { if (tv.isAvailable) tv.getBitmap(w, h) else null } catch (_: Throwable) { null }
             if (bmp != null) {
@@ -213,10 +221,12 @@ fun PreviewPlayer(
                 val d = withContext(Dispatchers.Default) {
                     ScopeData(
                         stats = ScopeMath.stats(px),
-                        hist = if (exposure == Scope.HISTOGRAM) ScopeMath.rgbHistogram(px) else null,
-                        wave = if (exposure == Scope.WAVEFORM) ScopeMath.waveform(px, bw, bh, cols = 96, rows = 64) else null,
-                        parade = if (exposure == Scope.PARADE) ScopeMath.parade(px, bw, bh, cols = 48, rows = 64) else null,
-                        vector = if (exposure == Scope.VECTORSCOPE) ScopeMath.vectorscope(px, 96) else null,
+                        hist = if (exposure == Scope.HISTOGRAM) ScopeMath.rgbHistogramFine(px) else null,
+                        waveImg = if (exposure == Scope.WAVEFORM)
+                            ScopeRender.density(ScopeMath.waveformCounts(px, bw, bh, bw / 2, 128), bw / 2, 128, 0xFFDDE6F0.toInt()) else null,
+                        paradeImg = if (exposure == Scope.PARADE) listOf(0xFFFF6A6A.toInt(), 0xFF62E592.toInt(), 0xFF6AB4FF.toInt()).mapIndexed { ch, col ->
+                            ScopeRender.density(ScopeMath.waveformCounts(px, bw, bh, bw / 4, 128, ch), bw / 4, 128, col) } else null,
+                        vectorImg = if (exposure == Scope.VECTORSCOPE) ScopeRender.vector(ScopeMath.vectorscope(px, 192), 192) else null,
                         falseColor = if (exposure == Scope.FALSE_COLOR)
                             Bitmap.createBitmap(ScopeMath.falseColor(px), bw, bh, Bitmap.Config.ARGB_8888).asImageBitmap() else null,
                     )
@@ -270,6 +280,8 @@ fun PreviewPlayer(
             }
             if (hint && error == null) Box(Modifier.align(Alignment.Center)) { Pill("Hold to compare with the original", accent = false) }
             if (comparing) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+            else if (!ready && error == null && compare == null)
+                CircularProgressIndicator(color = Color.White.copy(alpha = 0.8f), strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
             error?.let { msg ->
                 Column(Modifier.align(Alignment.Center).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(msg, color = Color.White, style = MaterialTheme.typography.bodySmall)
@@ -290,7 +302,7 @@ fun PreviewPlayer(
                 }
             }
 
-            if (exposure != Scope.OFF) ScopeOverlay(exposure, scopeData, scopeLarge, onScopeLarge, onScopeClose)
+            if (exposure != Scope.OFF) ScopeOverlay(exposure, scopeData, scopeLarge, onScopeLarge, scopePos, onScopePos, onScopeClose)
             compare?.let { (before, after) -> CompareOverlay(before, after, ratio) { compare = null } }
         }
         FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
@@ -351,6 +363,7 @@ fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pai
         }
         if (frames.all { it != null }) FilmstripCache.put(cacheKey, frames.toList())
     }
+    val stripLoading = frames.any { it == null }
     val seek by rememberUpdatedState(onSeek)
     var drag by remember { mutableStateOf<Float?>(null) }
     val frac = (drag ?: if (dur > 0) pos.toFloat() / dur else 0f).coerceIn(0f, 1f)
@@ -371,6 +384,9 @@ fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pai
                     }
                 }
             }
+            // Thumbnails still loading: a thin indeterminate bar along the bottom of the strip.
+            if (stripLoading) LinearProgressIndicator(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp),
+                color = c.primary.copy(alpha = 0.8f), trackColor = Color.Transparent)
             Canvas(Modifier.fillMaxSize()) {
                 val x = size.width * frac
                 if (trim != null && dur > 0) {
@@ -405,11 +421,30 @@ fun Pill(text: String, accent: Boolean, warm: Boolean = false) {
 class ScopeData(
     val stats: ScopeMath.Stats,
     val hist: Array<FloatArray>? = null,
-    val wave: Array<FloatArray>? = null,
-    val parade: Array<Array<FloatArray>>? = null,
-    val vector: FloatArray? = null,
+    /** Pre-rendered, phosphor-toned scope images (drawn scaled with filtering, graticule on top). */
+    val waveImg: ImageBitmap? = null,
+    val paradeImg: List<ImageBitmap>? = null,
+    val vectorImg: ImageBitmap? = null,
     val falseColor: ImageBitmap? = null,
 )
+
+/** Turns scope densities into images: colour × phosphor brightness, alpha = brightness. */
+private object ScopeRender {
+    fun density(counts: IntArray, cols: Int, rows: Int, argb: Int, columnMajor: Boolean = true): ImageBitmap {
+        val ph = ScopeMath.phosphor(counts)
+        val r = argb shr 16 and 255; val g = argb shr 8 and 255; val b = argb and 255
+        val out = IntArray(cols * rows)
+        for (x in 0 until cols) for (y in 0 until rows) {
+            val v = ph[if (columnMajor) x * rows + y else y * cols + x]
+            if (v > 0f) out[y * cols + x] = ((v * 255).toInt() shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        return Bitmap.createBitmap(out, cols, rows, Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
+    fun vector(v: FloatArray, n: Int): ImageBitmap {
+        val out = IntArray(n * n) { i -> val a = v[i]; if (a <= 0f) 0 else (((0.2f + 0.8f * a) * 255).toInt() shl 24) or 0xBFE6C9 }
+        return Bitmap.createBitmap(out, n, n, Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
+}
 
 private val ScopeBg = Color(0xD90B0D10)
 private val Grat = Color.White.copy(alpha = 0.16f)
@@ -421,7 +456,8 @@ private val ChannelColors = listOf(Color(0xFFFF5A5A), Color(0xFF5BE08A), Color(0
  * False color covers the picture itself, so it only shows a small label with ×.
  */
 @Composable
-fun BoxScope.ScopeOverlay(scope: Scope, data: ScopeData?, large: Boolean, onLarge: (Boolean) -> Unit, onClose: () -> Unit) {
+fun BoxScope.ScopeOverlay(scope: Scope, data: ScopeData?, large: Boolean, onLarge: (Boolean) -> Unit,
+                          pos: Offset, onPos: (Offset) -> Unit, onClose: () -> Unit) {
     if (scope == Scope.FALSE_COLOR) {
         Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).clip(CircleShape).background(ScopeBg)
             .padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -435,21 +471,42 @@ fun BoxScope.ScopeOverlay(scope: Scope, data: ScopeData?, large: Boolean, onLarg
         val w = if (large) maxWidth * 0.66f else maxWidth * 0.40f
         val h = if (square) minOf(w, maxHeight) else minOf(maxHeight, if (large) maxHeight else w * 0.56f)
         val boxW = if (square) h else w
-        Box(Modifier.align(Alignment.TopEnd).size(boxW, h).clip(RoundedCornerShape(12.dp)).background(ScopeBg)
-            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+        // Movable: drag anywhere inside the video; position is stored as a fraction of the free space,
+        // so it stays put when the scope changes size or the preview changes shape.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val freeX = with(density) { (maxWidth - boxW).toPx() }.coerceAtLeast(1f)
+        val freeY = with(density) { (maxHeight - h).toPx() }.coerceAtLeast(1f)
+        val posNow by rememberUpdatedState(pos)
+        var dragging by remember { mutableStateOf(false) }
+        Box(Modifier
+            .offset { androidx.compose.ui.unit.IntOffset((pos.x.coerceIn(0f, 1f) * freeX).toInt(), (pos.y.coerceIn(0f, 1f) * freeY).toInt()) }
+            .size(boxW, h).clip(RoundedCornerShape(12.dp)).background(ScopeBg)
+            .border(if (dragging) 1.5.dp else 1.dp, Color.White.copy(alpha = if (dragging) 0.45f else 0.10f), RoundedCornerShape(12.dp))
+            .pointerInput(freeX, freeY) {
+                detectDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = { dragging = false }, onDragCancel = { dragging = false },
+                ) { change, d ->
+                    change.consume()
+                    onPos(Offset((posNow.x + d.x / freeX).coerceIn(0f, 1f), (posNow.y + d.y / freeY).coerceIn(0f, 1f)))
+                }
+            }
             .clickable { onLarge(!large) }) {
+            // Grip: a hint that the scope can be dragged.
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 4.dp).size(22.dp, 3.dp).clip(CircleShape)
+                .background(Color.White.copy(alpha = if (dragging) 0.8f else 0.35f)))
             val d = data
-            if (d == null) Text("Reading…", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.align(Alignment.Center))
+            if (d == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(20.dp), color = Color.White.copy(alpha = 0.7f), strokeWidth = 2.dp)
             else Canvas(Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 16.dp)) {
                 when (scope) {
                     Scope.HISTOGRAM -> d.hist?.let { drawRgbHistogram(it) }
-                    Scope.WAVEFORM -> d.wave?.let { drawWaveform(it, Color(0xFFDDE6F0), 0f, size.width) }
-                    Scope.PARADE -> d.parade?.let { p ->
+                    Scope.WAVEFORM -> d.waveImg?.let { drawScopeImage(it, 0f, size.width); drawIreGrid(labels = true) }
+                    Scope.PARADE -> d.paradeImg?.let { p ->
                         val third = size.width / 3f
-                        drawIreGrid()
-                        p.forEachIndexed { i, g -> drawWaveform(g, ChannelColors[i], i * third + 2f, third - 4f, grid = false) }
+                        p.forEachIndexed { i, img -> drawScopeImage(img, i * third + 2f, third - 4f) }
+                        drawIreGrid(labels = true)
                     }
-                    Scope.VECTORSCOPE -> d.vector?.let { drawVectorscope(it, 96) }
+                    Scope.VECTORSCOPE -> d.vectorImg?.let { drawVectorscope(it) }
                     else -> {}
                 }
             }
@@ -469,11 +526,25 @@ private fun CloseDot(onClose: () -> Unit) {
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIreGrid() {
+private val gratLabel = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+    color = android.graphics.Color.argb(150, 255, 255, 255); textSize = 18f; typeface = android.graphics.Typeface.MONOSPACE
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIreGrid(labels: Boolean = false) {
     for (ire in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {
         val y = size.height * (1 - ire)
         drawLine(if (ire == 0f || ire == 1f) Grat.copy(alpha = 0.3f) else Grat, Offset(0f, y), Offset(size.width, y), 1f)
+        if (labels && ire > 0f) drawContext.canvas.nativeCanvas.drawText("${(ire * 100).toInt()}", 2f, y + 16f, gratLabel)
     }
+}
+
+/** Draws a pre-rendered scope image stretched into [left, left+width] with smooth (bilinear) filtering. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawScopeImage(img: ImageBitmap, left: Float, width: Float) {
+    drawImage(img, srcOffset = androidx.compose.ui.unit.IntOffset.Zero,
+        srcSize = androidx.compose.ui.unit.IntSize(img.width, img.height),
+        dstOffset = androidx.compose.ui.unit.IntOffset(left.toInt(), 0),
+        dstSize = androidx.compose.ui.unit.IntSize(width.toInt(), size.height.toInt()),
+        blendMode = androidx.compose.ui.graphics.BlendMode.Plus, filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
 }
 
 /** RGB channels as soft translucent fills, luma as a white outline; grid at 0/25/50/75/100 IRE. */
@@ -485,36 +556,22 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRgbHistogram(h:
         for (i in 0 until n) lineTo(i * bw, size.height * (1 - v[i].coerceIn(0f, 1f)))
         lineTo(size.width, size.height); close()
     }
-    for (ch in 0..2) drawPath(path(h[ch]), ChannelColors[ch].copy(alpha = 0.35f), blendMode = androidx.compose.ui.graphics.BlendMode.Plus)
-    drawPath(path(h[3]), Color.White.copy(alpha = 0.9f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.2f))
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWaveform(
-    g: Array<FloatArray>, color: Color, left: Float, width: Float, grid: Boolean = true,
-) {
-    if (grid) drawIreGrid()
-    val cw = width / g.size; val rh = size.height / g[0].size
-    for (x in g.indices) for (y in g[x].indices) {
-        val a = g[x][y]; if (a <= 0.02f) continue
-        drawRect(color.copy(alpha = a.coerceIn(0.1f, 1f)), topLeft = Offset(left + x * cw, y * rh),
-            size = androidx.compose.ui.geometry.Size(cw + 0.5f, rh + 0.5f))
-    }
+    for (ch in 0..2) drawPath(path(h[ch]), ChannelColors[ch].copy(alpha = 0.32f), blendMode = androidx.compose.ui.graphics.BlendMode.Plus)
+    drawPath(path(h[3]), Color.White.copy(alpha = 0.92f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.6f, join = androidx.compose.ui.graphics.StrokeJoin.Round))
 }
 
 /** Cb right, Cr up; 75% colour-bar targets, the skin-tone line, and the picture's colour cloud. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVectorscope(v: FloatArray, n: Int) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVectorscope(img: ImageBitmap) {
     val r = minOf(size.width, size.height) / 2f
     val c = Offset(size.width / 2f, size.height / 2f)
+    drawImage(img, srcOffset = androidx.compose.ui.unit.IntOffset.Zero, srcSize = androidx.compose.ui.unit.IntSize(img.width, img.height),
+        dstOffset = androidx.compose.ui.unit.IntOffset((c.x - r).toInt(), (c.y - r).toInt()),
+        dstSize = androidx.compose.ui.unit.IntSize((2 * r).toInt(), (2 * r).toInt()), filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
     drawCircle(Grat, r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+    drawCircle(Grat.copy(alpha = 0.08f), r * 0.5f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
     drawLine(Grat, Offset(c.x - r, c.y), Offset(c.x + r, c.y), 1f); drawLine(Grat, Offset(c.x, c.y - r), Offset(c.x, c.y + r), 1f)
     val a = Math.toRadians(ScopeMath.SKIN_LINE_DEG.toDouble())
     drawLine(Color(0xFFF4C7A1).copy(alpha = 0.55f), c, Offset(c.x + r * Math.cos(a).toFloat(), c.y - r * Math.sin(a).toFloat()), 1.2f)
-    val cell = 2 * r / n
-    for (i in v.indices) {
-        val a2 = v[i]; if (a2 <= 0.03f) continue
-        drawRect(Color(0xFFBFE6C9).copy(alpha = a2.coerceIn(0.12f, 1f)),
-            topLeft = Offset(c.x - r + (i % n) * cell, c.y - r + (i / n) * cell), size = androidx.compose.ui.geometry.Size(cell + 0.4f, cell + 0.4f))
-    }
     ScopeMath.TARGETS.forEachIndexed { i, (_, cbcr) ->
         val p = Offset(c.x + cbcr.first * 2 * r, c.y - cbcr.second * 2 * r)
         val col = listOf(ChannelColors[0], Color(0xFFE070E0), ChannelColors[2], Color(0xFF60D8E0), ChannelColors[1], Color(0xFFF2D35B))[i]

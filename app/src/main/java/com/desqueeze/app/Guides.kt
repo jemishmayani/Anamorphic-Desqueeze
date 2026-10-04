@@ -136,7 +136,7 @@ fun GuidesPanel(g: Guides, enabled: Boolean, onChange: (Guides) -> Unit) {
         (listOf<Float?>(null) + GUIDE_RATIOS).chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { r ->
-                    GuideTile(if (r == null) AppIcons.GuideNone else lineIcons.getValue(r), if (r == null) "None" else fmtRatio(r),
+                    IconTile(if (r == null) AppIcons.GuideNone else lineIcons.getValue(r), if (r == null) "None" else fmtRatio(r),
                         on = g.ratio == r, enabled = enabled, mono = r != null, modifier = Modifier.weight(1f)) { onChange(g.copy(ratio = r)) }
                 }
             }
@@ -157,7 +157,7 @@ fun GuidesPanel(g: Guides, enabled: Boolean, onChange: (Guides) -> Unit) {
                     val (icon, label, on) = t
                     // Mask only means something with frame lines on.
                     val tileEnabled = enabled && (icon != AppIcons.GuideMask || g.ratio != null)
-                    GuideTile(icon, label, on = on && tileEnabled, enabled = tileEnabled, modifier = Modifier.weight(1f), onClick = toggle)
+                    IconTile(icon, label, on = on && tileEnabled, enabled = tileEnabled, modifier = Modifier.weight(1f), onClick = toggle)
                 }
             }
         }
@@ -167,13 +167,13 @@ fun GuidesPanel(g: Guides, enabled: Boolean, onChange: (Guides) -> Unit) {
     }
 }
 
-/** Equal-size tile: icon over a short label; highlighted when on. Same look as the Exposure tiles. */
+/** Equal-size tile: icon over a short label (and optional second line); highlighted when on. Used by Guides and Export formats. */
 @Composable
-private fun GuideTile(icon: ImageVector, label: String, on: Boolean, enabled: Boolean, modifier: Modifier = Modifier,
-                      mono: Boolean = false, onClick: () -> Unit) {
+fun IconTile(icon: ImageVector, label: String, on: Boolean, enabled: Boolean, modifier: Modifier = Modifier,
+             mono: Boolean = false, sub: String? = null, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val alpha = if (enabled) 1f else 0.38f
-    Column(modifier.height(64.dp).clip(RoundedCornerShape(14.dp))
+    Column(modifier.height(if (sub != null) 76.dp else 64.dp).clip(RoundedCornerShape(14.dp))
         .background(if (on) c.primary.copy(alpha = 0.16f) else c.surfaceContainer)
         .border(1.dp, if (on) c.primary.copy(alpha = 0.7f) else c.outlineVariant, RoundedCornerShape(14.dp))
         .clickable(enabled = enabled, onClick = onClick)
@@ -183,5 +183,7 @@ private fun GuideTile(icon: ImageVector, label: String, on: Boolean, enabled: Bo
         Spacer(Modifier.height(4.dp))
         Text(label, style = MaterialTheme.typography.labelMedium.let { if (mono) it.merge(Mono) else it },
             color = (if (on) c.onSurface else c.onSurfaceVariant).copy(alpha = alpha), maxLines = 1)
+        if (sub != null) Text(sub, style = MaterialTheme.typography.labelSmall,
+            color = (if (on) c.primary else c.onSurfaceVariant).copy(alpha = alpha * 0.9f), maxLines = 1)
     }
 }

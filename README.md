@@ -143,7 +143,8 @@ actual image detail is similar or lower.
   <img src="docs/guide-icons.png" width="520" alt="Guide icons: none, frame lines 1.85 to 2.76, action safe, title safe, thirds, center, crosshair, mask">
 - **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
 - **Trim:** a range slider plus **Start here / End here** at the playhead. Re-encode cuts exactly; Lossless starts on the nearest keyframe (usually under a second earlier) and still never re-encodes
-- **Exposure scopes** that float over the video like on a camera monitor (tap to enlarge, × to close): **RGB histogram**, **waveform** in IRE, **RGB parade**, **vectorscope** with colour-bar targets and a skin-tone line, and **false color** with a legend, plus live readings (shadows, median, highlights, % clipped and crushed). With a LUT on, they show the graded picture
+- **Exposure scopes** that float over the video like on a camera monitor (**drag to move it anywhere**, tap to enlarge, × to close): **RGB histogram**, **waveform** in IRE, **RGB parade**, **vectorscope** with colour-bar targets and a skin-tone line, and **false color** with a legend, plus live readings (shadows, median, highlights, % clipped and crushed). With a LUT on, they show the graded picture
+  Scopes are sampled at 384 px and drawn like a monitor scope: a phosphor-style brightness curve keeps both busy and faint areas readable, with a labelled IRE graticule; the histogram has 256 levels per channel.
 
 **Look**
 - **LUT library:** import, rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
@@ -151,7 +152,11 @@ actual image detail is similar or lower.
 
 **Export**
 - **Social formats** (Re-encode): **16:9** for YouTube (up to 3840 × 2160), **4:5** feed (1080 × 1350), **9:16** Reels/Shorts/TikTok (1080 × 1920), **1:1** (1080 × 1080). **Fit** with black bars or **Fill** by cropping, with a live preview. They also avoid the encoder's width limit
+
+  <img src="docs/format-icons.png" width="560" alt="Format icons: Wide, 16:9, 4:5, 9:16, 1:1, Fit and Fill">
+
 - **Background export:** keeps running when you switch apps or lock the phone, with a progress notification and Cancel
+- **Progress everywhere you wait:** reading clips ("clip 2 of 5"), the preview starting, filmstrip thumbnails, LUTs being read, scopes warming up and size/time estimates
 - **Smart recommendations** in plain language for each clip (e.g. "Lossless Desqueeze: preserves your original 10-bit D-Log footage"), with the alternative and why
 - **Per-clip export method:** a batch can mix Lossless and Re-encode; **Apply to all** or **Reset to recommended**
 - **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
@@ -275,7 +280,7 @@ Listing text, data-safety answers, the 512 px icon and the feature graphic are i
 | LUT | Media3 `SingleColorLut` (3D LUT on the GPU); strength is blended into the LUT table. The before/after still uses an equivalent CPU trilinear LUT, matching ffmpeg's `lut3d` to within 1/255 |
 | Trim | Re-encode: Media3 clipping (frame-exact). Lossless: samples copied from the nearest keyframe with `MediaExtractor`/`MediaMuxer`, then tagged; no decoding |
 | Social formats | A second `Presentation` effect fits (letterbox) or fills (crop) the de-squeezed picture into the target frame |
-| Exposure scopes | RGB histogram, IRE waveform, RGB parade, BT.709 vectorscope and false color, computed a few times per second from a small frame of the preview (with the LUT applied when it's on), drawn as an overlay |
+| Exposure scopes | RGB histogram (256 levels), IRE waveform, RGB parade, BT.709 vectorscope and false color, from a 384 px frame read a few times per second. Densities are rendered as images with a log "phosphor" curve normalised to the 99th percentile, bins divide the sample width evenly (no striping), and they are drawn with filtering under a crisp graticule |
 | Background export | A foreground service (`mediaProcessing` on Android 15+, `dataSync` before) that only shows progress; the export itself runs in an app-wide scope |
 | Audio | Passed through unchanged (no re-encode) |
 | Preview | ExoPlayer; live LUT and rotation use Media3 video effects on a ~720p proxy. Players take turns for the hardware decoder (`DecoderGate`), busy-decoder errors are retried, and filmstrip thumbnails come from one frame reader and are cached |

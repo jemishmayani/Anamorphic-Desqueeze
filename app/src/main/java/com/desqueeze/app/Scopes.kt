@@ -77,6 +77,49 @@ object ScopeMath {
         return Array(4) { ch -> FloatArray(64) { (b[ch][it] / max).coerceAtMost(1f) } }
     }
 
+    /* ---------- display-quality versions (v1.14): finer grids + a phosphor-like brightness curve ---------- */
+
+    /** Raw waveform density: counts[col * rows + row], row 0 = 100 IRE. channel -1 = luma, 0/1/2 = R/G/B. */
+    fun waveformCounts(px: IntArray, w: Int, h: Int, cols: Int, rows: Int, channel: Int = -1): IntArray {
+        val g = IntArray(cols * rows)
+        for (y in 0 until h) for (x in 0 until w) {
+            val p = px[y * w + x]
+            val v = when (channel) { 0 -> (p shr 16 and 255) / 255f; 1 -> (p shr 8 and 255) / 255f; 2 -> (p and 255) / 255f; else -> luma(p) }
+            val r = ((1f - v) * (rows - 1) + 0.5f).toInt().coerceIn(0, rows - 1)
+            g[(x * cols / w) * rows + r]++
+        }
+        return g
+    }
+
+    /**
+     * Like a scope's phosphor: brightness grows with the log of the density, normalised to the 99th
+     * percentile of occupied cells, so busy areas don't saturate and sparse detail stays visible.
+     * Returns 0..1 per cell (0 = empty).
+     */
+    fun phosphor(counts: IntArray): FloatArray {
+        val nz = counts.filter { it > 0 }.sorted()
+        if (nz.isEmpty()) return FloatArray(counts.size)
+        val ref = nz[((nz.size - 1) * 0.99).toInt()].coerceAtLeast(1)
+        val ln = Math.log(1.0 + ref)
+        return FloatArray(counts.size) { i ->
+            val c = counts[i]; if (c == 0) 0f else (0.18 + 0.82 * Math.log(1.0 + c) / ln).toFloat().coerceAtMost(1f)
+        }
+    }
+
+    /** R, G, B and luma histograms with 256 bins, lightly smoothed (1-2-1), scaled like [rgbHistogram]. */
+    fun rgbHistogramFine(px: IntArray): Array<FloatArray> {
+        val b = Array(4) { IntArray(256) }
+        for (p in px) {
+            b[0][p shr 16 and 255]++; b[1][p shr 8 and 255]++; b[2][p and 255]++
+            b[3][(luma(p) * 255.999f).toInt().coerceIn(0, 255)]++
+        }
+        val sm = Array(4) { ch -> FloatArray(256) { i ->
+            val a = b[ch][maxOf(0, i - 1)]; val c = b[ch][i]; val d = b[ch][minOf(255, i + 1)]
+            (a + 2f * c + d) / 4f } }
+        val max = sm.maxOf { ch -> (2 until 254).maxOf { ch[it] } }.coerceAtLeast(1f)
+        return Array(4) { ch -> FloatArray(256) { (sm[ch][it] / max).coerceAtMost(1f) } }
+    }
+
     /** BT.709 colour difference of an RGB colour (each 0..1): Cb, Cr in -0.5..0.5. */
     fun chroma(r: Float, g: Float, b: Float): Pair<Float, Float> {
         val y = 0.2126f * r + 0.7152f * g + 0.0722f * b

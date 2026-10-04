@@ -2,6 +2,29 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.14 — 2026-10-05
+
+### Changed
+- **Sharper, more readable scopes.**
+  - Frames are read at 384 px instead of 192.
+  - Finer grids: the waveform has 192 × 128 cells (was 96 × 64), the parade 96 × 128 per colour (was 48 × 64), the vectorscope 192 × 192 (was 96 × 96), and the histogram 256 levels per channel (was 64), lightly smoothed.
+  - Waveform, parade and vectorscope are drawn like a monitor's phosphor trace: brightness follows the log of the density, so bright, busy areas no longer wash out and sparse detail stays visible. They're rendered as images and scaled smoothly, with a crisp graticule (labelled 25/50/75/100 IRE) on top.
+  - The number of columns always divides the frame width evenly, which avoids striping. A side-by-side comparison is in `docs/waveform-v1.14.png`.
+- **Export formats have icons.** Wide, 16:9, 4:5, 9:16 and 1:1 are equal tiles, each icon drawn in that format's shape (play button for YouTube, photo for Feed, phone for Reels) with the platform underneath. **Fit** and **Fill** are icon tiles too: the picture inside bars, or overflowing the frame with crop marks.
+
+### Added
+- **Move the scope anywhere:** drag it over the video. A grip bar shows it can be moved, and the border brightens while dragging. Its position is kept when it changes size or you switch scopes. **Reset position** in the Exposure panel puts it back top-right; tap still toggles Small/Large.
+- **Progress indicators wherever you wait:**
+  - Reading clips: "Reading clip 2 of 5…" with a progress bar.
+  - The preview, while it waits for a decoder, prepares or rebuffers.
+  - The filmstrip, while thumbnails load.
+  - The scope, while it warms up.
+  - LUTs, while being read or prepared for the preview.
+  - Size and time estimates.
+
+### Fixed
+- Importing a large `.cube` LUT no longer freezes the screen for a moment: it's now read in the background, both in the Look step and in Settings.
+
 ## v1.13 — 2026-10-04
 
 ### Fixed

@@ -104,6 +104,12 @@ class AppState(settings: Settings, luts: LutManager) {
     var scope by mutableStateOf(Scope.OFF)
     /** Scope overlay drawn large (tap it to toggle), and its latest readings for the Exposure panel. */
     var scopeLarge by mutableStateOf(false)
+    /** Clip import in progress: (done, total), or null when idle. */
+    var importing by mutableStateOf<Pair<Int, Int>?>(null)
+    /** A LUT file is being read and checked. */
+    var lutLoading by mutableStateOf(false)
+    /** Where the scope overlay sits inside the video: x, y as 0..1 of the free space (1, 0 = top-right). */
+    var scopePos by mutableStateOf(androidx.compose.ui.geometry.Offset(1f, 0f))
     var scopeStats by mutableStateOf<ScopeMath.Stats?>(null)
     /** Selected tool tab in the Frame / Look steps (preview stays pinned above). */
     var frameTool by mutableIntStateOf(0)

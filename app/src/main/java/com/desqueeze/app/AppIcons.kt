@@ -252,4 +252,50 @@ object AppIcons {
         solid { moveTo(2.5f, 5.5f); lineTo(21.5f, 5.5f); lineTo(21.5f, 8.5f); lineTo(2.5f, 8.5f); close()
             moveTo(2.5f, 15.5f); lineTo(21.5f, 15.5f); lineTo(21.5f, 18.5f); lineTo(2.5f, 18.5f); close() }
     }
+
+    /* ---------------- export formats: each drawn in its real shape ---------------- */
+    private fun PathBuilder.rrect(l: Float, t: Float, r: Float, b: Float, k: Float = 1.2f) {
+        moveTo(l + k, t); lineTo(r - k, t); quadTo(r, t, r, t + k); lineTo(r, b - k); quadTo(r, b, r - k, b)
+        lineTo(l + k, b); quadTo(l, b, l, b - k); lineTo(l, t + k); quadTo(l, t, l + k, t); close()
+    }
+    private fun PathBuilder.play(cx: Float, cy: Float, s: Float) { moveTo(cx - s * 0.6f, cy - s); lineTo(cx + s, cy); lineTo(cx - s * 0.6f, cy + s); close() }
+
+    /** Original wide (2.39): the de-squeezed frame with the anamorphic oval. */
+    val FormatWide = icon("fmt_wide") {
+        line(1.6f) { rrect(1.5f, 7.8f, 22.5f, 16.2f) }
+        line(1.4f) { moveTo(12f, 10.3f); curveTo(15f, 10.3f, 16.4f, 11f, 16.4f, 12f); curveTo(16.4f, 13f, 15f, 13.7f, 12f, 13.7f)
+            curveTo(9f, 13.7f, 7.6f, 13f, 7.6f, 12f); curveTo(7.6f, 11f, 9f, 10.3f, 12f, 10.3f); close() }
+    }
+    /** 16:9 with a play button (YouTube, TV). */
+    val Format169 = icon("fmt_169") { line(1.6f) { rrect(3f, 6.9f, 21f, 17.1f) }; solid { play(12.4f, 12f, 2.6f) } }
+    /** 4:5 feed post: a photo. */
+    val Format45 = icon("fmt_45") {
+        line(1.6f) { rrect(6f, 4.5f, 18f, 19.5f) }
+        line(1.4f) { moveTo(7.5f, 17f); lineTo(11f, 12.5f); lineTo(13.5f, 15f); lineTo(15f, 13.5f); lineTo(17f, 16f) }
+        solid { circle(14.5f, 8.8f, 1.3f) }
+    }
+    /** 9:16: a phone with a play button (Reels, Shorts, TikTok). */
+    val Format916 = icon("fmt_916") {
+        line(1.6f) { rrect(7.5f, 3f, 16.5f, 21f, 1.8f) }
+        line(1.4f) { moveTo(11f, 5f); lineTo(13f, 5f) }
+        solid { play(12.3f, 12.5f, 2.2f) }
+    }
+    /** 1:1 square post. */
+    val Format11 = icon("fmt_11") { line(1.6f) { rrect(5f, 5f, 19f, 19f) }; solid { circle(12f, 12f, 2.4f) } }
+
+    /** Fit: the whole picture inside the frame, bars above and below. */
+    val FitBars = icon("fit_bars") {
+        line(1.4f) { rrect(6f, 3.5f, 18f, 20.5f) }
+        tint(0.35f) { moveTo(6f, 3.5f); lineTo(18f, 3.5f); lineTo(18f, 9f); lineTo(6f, 9f); close()
+            moveTo(6f, 15f); lineTo(18f, 15f); lineTo(18f, 20.5f); lineTo(6f, 20.5f); close() }
+        line(1.8f) { moveTo(6f, 9f); lineTo(18f, 9f); lineTo(18f, 15f); lineTo(6f, 15f); close() }
+    }
+    /** Fill: the picture overflows the frame and the sides are cropped away. */
+    val FillCrop = icon("fill_crop") {
+        tint(0.25f) { moveTo(1.5f, 3.5f); lineTo(6f, 3.5f); lineTo(6f, 20.5f); lineTo(1.5f, 20.5f); close()
+            moveTo(18f, 3.5f); lineTo(22.5f, 3.5f); lineTo(22.5f, 20.5f); lineTo(18f, 20.5f); close() }
+        line(1.8f) { rrect(6f, 3.5f, 18f, 20.5f) }
+        line(1.2f) { moveTo(1.5f, 3.5f); lineTo(6f, 3.5f); moveTo(1.5f, 20.5f); lineTo(6f, 20.5f)
+            moveTo(18f, 3.5f); lineTo(22.5f, 3.5f); moveTo(18f, 20.5f); lineTo(22.5f, 20.5f) }
+    }
 }
