@@ -72,6 +72,11 @@ fun PreviewPlayer(
     trim: Pair<Long, Long>? = null,
     /** Exposure tool shown with the video. */
     exposure: Scope = Scope.OFF,
+    /** Scope overlay size (tap the overlay to toggle) and close; readings are reported for the Exposure panel. */
+    scopeLarge: Boolean = false,
+    onScopeLarge: (Boolean) -> Unit = {},
+    onScopeClose: () -> Unit = {},
+    onStats: (ScopeMath.Stats?) -> Unit = {},
     /** Keeps the whole preview on screen in landscape / two-pane layouts. */
     maxHeight: androidx.compose.ui.unit.Dp? = null,
     onTrimChange: ((Pair<Long, Long>) -> Unit)? = null,
@@ -165,11 +170,10 @@ fun PreviewPlayer(
     // Exposure tools read small frames from a TextureView (only while a tool is on).
     val useTexture = exposure != Scope.OFF
     var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
-    var stats by remember { mutableStateOf<ScopeMath.Stats?>(null) }
-    var wave by remember { mutableStateOf<Array<FloatArray>?>(null) }
-    var falseImg by remember { mutableStateOf<ImageBitmap?>(null) }
+    var scopeData by remember { mutableStateOf<ScopeData?>(null) }
+    val statsCb by rememberUpdatedState(onStats)
     LaunchedEffect(exposure, texture, player) {
-        stats = null; wave = null; falseImg = null
+        scopeData = null; statsCb(null)
         val tv = texture ?: return@LaunchedEffect
         if (exposure == Scope.OFF) return@LaunchedEffect
         while (true) {
@@ -179,12 +183,18 @@ fun PreviewPlayer(
             if (bmp != null) {
                 val px = IntArray(bmp.width * bmp.height); bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
                 val bw = bmp.width; val bh = bmp.height; bmp.recycle()
-                withContext(Dispatchers.Default) {
-                    val s = ScopeMath.stats(px)
-                    val wf = if (exposure == Scope.WAVEFORM) ScopeMath.waveform(px, bw, bh) else null
-                    val fc = if (exposure == Scope.FALSE_COLOR) Bitmap.createBitmap(ScopeMath.falseColor(px), bw, bh, Bitmap.Config.ARGB_8888).asImageBitmap() else null
-                    Triple(s, wf, fc)
-                }.let { (s, wf, fc) -> stats = s; wave = wf; falseImg = fc }
+                val d = withContext(Dispatchers.Default) {
+                    ScopeData(
+                        stats = ScopeMath.stats(px),
+                        hist = if (exposure == Scope.HISTOGRAM) ScopeMath.rgbHistogram(px) else null,
+                        wave = if (exposure == Scope.WAVEFORM) ScopeMath.waveform(px, bw, bh, cols = 96, rows = 64) else null,
+                        parade = if (exposure == Scope.PARADE) ScopeMath.parade(px, bw, bh, cols = 48, rows = 64) else null,
+                        vector = if (exposure == Scope.VECTORSCOPE) ScopeMath.vectorscope(px, 96) else null,
+                        falseColor = if (exposure == Scope.FALSE_COLOR)
+                            Bitmap.createBitmap(ScopeMath.falseColor(px), bw, bh, Bitmap.Config.ARGB_8888).asImageBitmap() else null,
+                    )
+                }
+                scopeData = d; statsCb(d.stats)
             }
             delay(if (player.isPlaying) 250 else 600)
         }
@@ -220,7 +230,7 @@ fun PreviewPlayer(
                     } }, modifier = videoMod)
                 }
             }
-            if (exposure == Scope.FALSE_COLOR) falseImg?.let { Image(it, "False color", videoMod, contentScale = ContentScale.FillBounds) }
+            if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor?.let { Image(it, "False color", videoMod, contentScale = ContentScale.FillBounds) }
             GuideOverlay(guides, videoMod)
 
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
@@ -248,9 +258,9 @@ fun PreviewPlayer(
                 }
             }
 
+            if (exposure != Scope.OFF) ScopeOverlay(exposure, scopeData, scopeLarge, onScopeLarge, onScopeClose)
             compare?.let { (before, after) -> CompareOverlay(before, after, ratio) { compare = null } }
         }
-        if (exposure != Scope.OFF) ScopePanel(exposure, stats, wave)
         FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
     }
     }
@@ -353,64 +363,124 @@ fun Pill(text: String, accent: Boolean, warm: Boolean = false) {
     }
 }
 
-/** Histogram / waveform with clipping readouts, or the false-color legend. Readings are of the picture as shown. */
-@kotlin.OptIn(ExperimentalLayoutApi::class)
+/** Everything the scope overlay draws, computed off the main thread a few times per second. */
+class ScopeData(
+    val stats: ScopeMath.Stats,
+    val hist: Array<FloatArray>? = null,
+    val wave: Array<FloatArray>? = null,
+    val parade: Array<Array<FloatArray>>? = null,
+    val vector: FloatArray? = null,
+    val falseColor: ImageBitmap? = null,
+)
+
+private val ScopeBg = Color(0xD90B0D10)
+private val Grat = Color.White.copy(alpha = 0.16f)
+private val ChannelColors = listOf(Color(0xFFFF5A5A), Color(0xFF5BE08A), Color(0xFF5AA9FF))
+
+/**
+ * A compact scope floating over the video's corner, like on a camera monitor, so the preview never
+ * grows and the tools below stay reachable. Tap to enlarge or shrink; × turns it off.
+ * False color covers the picture itself, so it only shows a small label with ×.
+ */
 @Composable
-fun ScopePanel(scope: Scope, stats: ScopeMath.Stats?, wave: Array<FloatArray>?) {
-    val c = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF0E1218)).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        when (scope) {
-            Scope.HISTOGRAM -> Canvas(Modifier.fillMaxWidth().height(84.dp)) {
-                val h = stats?.histogram ?: return@Canvas
-                val bw = size.width / h.size
-                for (i in h.indices) {
-                    val bh = h[i] * size.height
-                    val col = when { i <= 1 -> Color(0xFF9C6ADE); i >= h.size - 2 -> Color(0xFFE57373); else -> Color(0xFFB8C4D4) }
-                    drawRect(col, topLeft = Offset(i * bw, size.height - bh), size = androidx.compose.ui.geometry.Size(bw * 0.9f, bh))
-                }
-                for (ire in listOf(0.1f, 0.5f, 0.9f)) drawLine(Color.White.copy(alpha = 0.15f), Offset(size.width * ire, 0f), Offset(size.width * ire, size.height), 1f)
-            }
-            Scope.WAVEFORM -> Canvas(Modifier.fillMaxWidth().height(110.dp)) {
-                for (ire in listOf(0f, 0.1f, 0.5f, 0.9f, 1f)) {
-                    val y = size.height * (1 - ire)
-                    drawLine(Color.White.copy(alpha = if (ire == 0f || ire == 1f) 0.3f else 0.12f), Offset(0f, y), Offset(size.width, y), 1f)
-                }
-                val g = wave ?: return@Canvas
-                val cw = size.width / g.size; val rh = size.height / g[0].size
-                for (x in g.indices) for (y in g[x].indices) {
-                    val a = g[x][y]; if (a <= 0.02f) continue
-                    drawRect(Color(0xFF7CFFB0).copy(alpha = a.coerceIn(0.08f, 1f)), topLeft = Offset(x * cw, y * rh),
-                        size = androidx.compose.ui.geometry.Size(cw + 0.5f, rh + 0.5f))
-                }
-            }
-            Scope.FALSE_COLOR -> {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ScopeMath.ZONES.filter { it.argb != 0 }.forEach { z ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(Color(z.argb)))
-                            Spacer(Modifier.width(5.dp))
-                            Text("${z.label} ${z.from.toInt()}–${minOf(100, z.to.toInt())}", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), style = Mono)
-                        }
+fun BoxScope.ScopeOverlay(scope: Scope, data: ScopeData?, large: Boolean, onLarge: (Boolean) -> Unit, onClose: () -> Unit) {
+    if (scope == Scope.FALSE_COLOR) {
+        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).clip(CircleShape).background(ScopeBg)
+            .padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("False color", fontSize = 12.sp, color = Color.White, style = Mono)
+            CloseDot(onClose)
+        }
+        return
+    }
+    BoxWithConstraints(Modifier.matchParentSize().padding(start = 10.dp, end = 10.dp, top = 46.dp, bottom = 46.dp)) {
+        val square = scope == Scope.VECTORSCOPE
+        val w = if (large) maxWidth * 0.66f else maxWidth * 0.40f
+        val h = if (square) minOf(w, maxHeight) else minOf(maxHeight, if (large) maxHeight else w * 0.56f)
+        val boxW = if (square) h else w
+        Box(Modifier.align(Alignment.TopEnd).size(boxW, h).clip(RoundedCornerShape(12.dp)).background(ScopeBg)
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+            .clickable { onLarge(!large) }) {
+            val d = data
+            if (d == null) Text("Reading…", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.align(Alignment.Center))
+            else Canvas(Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 16.dp)) {
+                when (scope) {
+                    Scope.HISTOGRAM -> d.hist?.let { drawRgbHistogram(it) }
+                    Scope.WAVEFORM -> d.wave?.let { drawWaveform(it, Color(0xFFDDE6F0), 0f, size.width) }
+                    Scope.PARADE -> d.parade?.let { p ->
+                        val third = size.width / 3f
+                        drawIreGrid()
+                        p.forEachIndexed { i, g -> drawWaveform(g, ChannelColors[i], i * third + 2f, third - 4f, grid = false) }
                     }
+                    Scope.VECTORSCOPE -> d.vector?.let { drawVectorscope(it, 96) }
+                    else -> {}
                 }
             }
-            Scope.OFF -> {}
+            if (d != null && scope != Scope.VECTORSCOPE) Text(
+                "${scope.short}   clip ${"%.1f".format(d.stats.clippedPct)}%   ${d.stats.p50.toInt()} IRE",
+                fontSize = 9.sp, style = Mono, color = Color.White.copy(alpha = 0.75f), maxLines = 1,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 2.dp))
+            Box(Modifier.align(Alignment.TopEnd)) { CloseDot(onClose) }
         }
-        val s = stats
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (s == null) Text("Reading the picture…", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-            else {
-                Text("Clipped ${"%.1f".format(s.clippedPct)}%", fontSize = 12.sp, style = Mono,
-                    color = if (s.clippedPct > 1f) Color(0xFFE57373) else Color.White.copy(alpha = 0.8f))
-                Spacer(Modifier.width(12.dp))
-                Text("Crushed ${"%.1f".format(s.crushedPct)}%", fontSize = 12.sp, style = Mono,
-                    color = if (s.crushedPct > 1f) Color(0xFF9C6ADE) else Color.White.copy(alpha = 0.8f))
-                Spacer(Modifier.weight(1f))
-                Text("Median ${s.p50.toInt()} IRE", fontSize = 12.sp, style = Mono, color = Color.White.copy(alpha = 0.8f))
-            }
-        }
-        Text("Readings are of the picture as shown: log stays flat, so its highlights clip later than they look. Turn the LUT on to judge the final look.",
-            fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+    }
+}
+
+@Composable
+private fun CloseDot(onClose: () -> Unit) {
+    Box(Modifier.size(28.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+        Icon(AppIcons.Cross, "Turn off scope", Modifier.size(12.dp), tint = Color.White.copy(alpha = 0.85f))
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawIreGrid() {
+    for (ire in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {
+        val y = size.height * (1 - ire)
+        drawLine(if (ire == 0f || ire == 1f) Grat.copy(alpha = 0.3f) else Grat, Offset(0f, y), Offset(size.width, y), 1f)
+    }
+}
+
+/** RGB channels as soft translucent fills, luma as a white outline; grid at 0/25/50/75/100 IRE. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRgbHistogram(h: Array<FloatArray>) {
+    for (ire in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) drawLine(Grat, Offset(size.width * ire, 0f), Offset(size.width * ire, size.height), 1f)
+    val n = h[0].size; val bw = size.width / (n - 1)
+    fun path(v: FloatArray) = androidx.compose.ui.graphics.Path().apply {
+        moveTo(0f, size.height)
+        for (i in 0 until n) lineTo(i * bw, size.height * (1 - v[i].coerceIn(0f, 1f)))
+        lineTo(size.width, size.height); close()
+    }
+    for (ch in 0..2) drawPath(path(h[ch]), ChannelColors[ch].copy(alpha = 0.35f), blendMode = androidx.compose.ui.graphics.BlendMode.Plus)
+    drawPath(path(h[3]), Color.White.copy(alpha = 0.9f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.2f))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWaveform(
+    g: Array<FloatArray>, color: Color, left: Float, width: Float, grid: Boolean = true,
+) {
+    if (grid) drawIreGrid()
+    val cw = width / g.size; val rh = size.height / g[0].size
+    for (x in g.indices) for (y in g[x].indices) {
+        val a = g[x][y]; if (a <= 0.02f) continue
+        drawRect(color.copy(alpha = a.coerceIn(0.1f, 1f)), topLeft = Offset(left + x * cw, y * rh),
+            size = androidx.compose.ui.geometry.Size(cw + 0.5f, rh + 0.5f))
+    }
+}
+
+/** Cb right, Cr up; 75% colour-bar targets, the skin-tone line, and the picture's colour cloud. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVectorscope(v: FloatArray, n: Int) {
+    val r = minOf(size.width, size.height) / 2f
+    val c = Offset(size.width / 2f, size.height / 2f)
+    drawCircle(Grat, r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+    drawLine(Grat, Offset(c.x - r, c.y), Offset(c.x + r, c.y), 1f); drawLine(Grat, Offset(c.x, c.y - r), Offset(c.x, c.y + r), 1f)
+    val a = Math.toRadians(ScopeMath.SKIN_LINE_DEG.toDouble())
+    drawLine(Color(0xFFF4C7A1).copy(alpha = 0.55f), c, Offset(c.x + r * Math.cos(a).toFloat(), c.y - r * Math.sin(a).toFloat()), 1.2f)
+    val cell = 2 * r / n
+    for (i in v.indices) {
+        val a2 = v[i]; if (a2 <= 0.03f) continue
+        drawRect(Color(0xFFBFE6C9).copy(alpha = a2.coerceIn(0.12f, 1f)),
+            topLeft = Offset(c.x - r + (i % n) * cell, c.y - r + (i / n) * cell), size = androidx.compose.ui.geometry.Size(cell + 0.4f, cell + 0.4f))
+    }
+    ScopeMath.TARGETS.forEachIndexed { i, (_, cbcr) ->
+        val p = Offset(c.x + cbcr.first * 2 * r, c.y - cbcr.second * 2 * r)
+        val col = listOf(ChannelColors[0], Color(0xFFE070E0), ChannelColors[2], Color(0xFF60D8E0), ChannelColors[1], Color(0xFFF2D35B))[i]
+        drawRect(col, topLeft = Offset(p.x - 3f, p.y - 3f), size = androidx.compose.ui.geometry.Size(6f, 6f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(1.2f))
     }
 }

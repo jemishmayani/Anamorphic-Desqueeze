@@ -9,37 +9,57 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Anamorphic-flare blue on graphite. One accent, used sparingly. */
+/** Anamorphic-flare blue: the brand accent and default. */
 val Flare = Color(0xFF5AA9FF)
 
-val DarkScheme = darkColorScheme(
-    primary = Flare, onPrimary = Color(0xFF03203D),
-    primaryContainer = Color(0xFF1C3552), onPrimaryContainer = Color(0xFFD3E6FF),
-    secondaryContainer = Color(0xFF1C3552), onSecondaryContainer = Color(0xFFD3E6FF),
-    background = Color(0xFF141A22), onBackground = Color(0xFFE6EBF1),
-    surface = Color(0xFF141A22), onSurface = Color(0xFFE6EBF1),
-    surfaceVariant = Color(0xFF1D2530), onSurfaceVariant = Color(0xFF8E99A8),
-    surfaceContainerLow = Color(0xFF18202A), surfaceContainer = Color(0xFF1B232E),
-    surfaceContainerHigh = Color(0xFF222B37), surfaceContainerHighest = Color(0xFF29333F),
-    outline = Color(0xFF3A4554), outlineVariant = Color(0xFF2A3340),
+/**
+ * Accent colours. Backgrounds stay neutral graphite (no colour cast that competes with the footage),
+ * and every accent shade is derived from one colour. Amber is reserved for log/HDR badges.
+ */
+enum class Accent(val label: String, val argb: Long) {
+    FLARE("Flare blue", 0xFF5AA9FF), CYAN("Cyan", 0xFF3DD6E0), MINT("Mint", 0xFF4FD8A4),
+    VIOLET("Violet", 0xFFA98BFF), ROSE("Rose", 0xFFFF7FA3), MONO("Mono", 0xFFE4E6EA),
+    DYNAMIC("Wallpaper", 0),
+}
+
+private fun onColor(c: Color) = if (c.luminance() > 0.45f) Color(0xFF0B0D10) else Color.White
+
+fun darkScheme(accent: Color) = darkColorScheme(
+    primary = accent, onPrimary = onColor(accent),
+    primaryContainer = lerp(Color(0xFF16191F), accent, 0.24f), onPrimaryContainer = lerp(accent, Color.White, 0.6f),
+    secondary = lerp(accent, Color(0xFF9AA1AB), 0.5f), onSecondary = Color(0xFF0B0D10),
+    secondaryContainer = lerp(Color(0xFF16191F), accent, 0.24f), onSecondaryContainer = lerp(accent, Color.White, 0.6f),
+    background = Color(0xFF0E1013), onBackground = Color(0xFFE8EAED),
+    surface = Color(0xFF0E1013), onSurface = Color(0xFFE8EAED),
+    surfaceVariant = Color(0xFF1D2026), onSurfaceVariant = Color(0xFF9CA2AC),
+    surfaceContainerLowest = Color(0xFF0A0B0E), surfaceContainerLow = Color(0xFF131519),
+    surfaceContainer = Color(0xFF17191E), surfaceContainerHigh = Color(0xFF1E2127), surfaceContainerHighest = Color(0xFF252931),
+    outline = Color(0xFF3A3F48), outlineVariant = Color(0xFF292D34),
     error = Color(0xFFFF8A80), errorContainer = Color(0xFF3B1F24), onErrorContainer = Color(0xFFFFD9D6),
 )
-val LightScheme = lightColorScheme(
-    primary = Color(0xFF1C6FD6), onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCEBFF), onPrimaryContainer = Color(0xFF0A2E57),
-    secondaryContainer = Color(0xFFDCEBFF), onSecondaryContainer = Color(0xFF0A2E57),
-    background = Color(0xFFF3F5F8), onBackground = Color(0xFF151B23),
-    surface = Color(0xFFF3F5F8), onSurface = Color(0xFF151B23),
-    surfaceVariant = Color(0xFFE6EAF0), onSurfaceVariant = Color(0xFF5B6675),
-    surfaceContainerLow = Color(0xFFFFFFFF), surfaceContainer = Color(0xFFFFFFFF),
-    surfaceContainerHigh = Color(0xFFECEFF4), surfaceContainerHighest = Color(0xFFE3E8EE),
-    outline = Color(0xFFC3CBD6), outlineVariant = Color(0xFFDCE2EA),
-)
+
+fun lightScheme(accent: Color): ColorScheme {
+    // Darken light accents so text and icons on white keep their contrast.
+    val p = if (accent.luminance() > 0.3f) lerp(accent, Color.Black, 0.35f) else accent
+    return lightColorScheme(
+        primary = p, onPrimary = onColor(p),
+        primaryContainer = lerp(Color.White, accent, 0.18f), onPrimaryContainer = lerp(p, Color.Black, 0.45f),
+        secondaryContainer = lerp(Color.White, accent, 0.18f), onSecondaryContainer = lerp(p, Color.Black, 0.45f),
+        background = Color(0xFFF5F6F8), onBackground = Color(0xFF14161A),
+        surface = Color(0xFFF5F6F8), onSurface = Color(0xFF14161A),
+        surfaceVariant = Color(0xFFE7E9ED), onSurfaceVariant = Color(0xFF5A606A),
+        surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFFFFFFF),
+        surfaceContainer = Color(0xFFFFFFFF), surfaceContainerHigh = Color(0xFFEDEFF2), surfaceContainerHighest = Color(0xFFE4E7EB),
+        outline = Color(0xFFC4C8CF), outlineVariant = Color(0xFFDDE0E5),
+    )
+}
 
 val AppType = Typography().let { t ->
     t.copy(
@@ -50,8 +70,16 @@ val AppType = Typography().let { t ->
 }
 
 @Composable
-fun AppTheme(dark: Boolean, content: @Composable () -> Unit) =
-    MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, typography = AppType, content = content)
+fun AppTheme(dark: Boolean, accent: Accent = Accent.FLARE, content: @Composable () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scheme = if (accent == Accent.DYNAMIC && android.os.Build.VERSION.SDK_INT >= 31) {
+        if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+    } else {
+        val a = Color(if (accent == Accent.DYNAMIC) Accent.FLARE.argb else accent.argb)
+        if (dark) darkScheme(a) else lightScheme(a)
+    }
+    MaterialTheme(colorScheme = scheme, typography = AppType, content = content)
+}
 
 /** The signature element: a thin horizontal anamorphic lens flare. */
 @Composable

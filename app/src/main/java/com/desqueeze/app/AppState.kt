@@ -77,6 +77,7 @@ class AppState(settings: Settings, luts: LutManager) {
     var progress by mutableFloatStateOf(0f)
     var job: Job? = null
     var theme by mutableStateOf(settings.theme)
+    var accent by mutableStateOf(settings.accent)
     var mode by mutableStateOf(settings.mode)
     var step by mutableStateOf(Step.Clips)
     var orientation by mutableStateOf(Orientation.AUTO)
@@ -101,6 +102,9 @@ class AppState(settings: Settings, luts: LutManager) {
     var formatFill by mutableStateOf(settings.formatFill)
     /** Exposure tool shown with the preview. */
     var scope by mutableStateOf(Scope.OFF)
+    /** Scope overlay drawn large (tap it to toggle), and its latest readings for the Exposure panel. */
+    var scopeLarge by mutableStateOf(false)
+    var scopeStats by mutableStateOf<ScopeMath.Stats?>(null)
     /** Selected tool tab in the Frame / Look steps (preview stays pinned above). */
     var frameTool by mutableIntStateOf(0)
     var lookTool by mutableIntStateOf(0)

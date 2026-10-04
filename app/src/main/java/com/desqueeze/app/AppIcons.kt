@@ -178,4 +178,27 @@ object AppIcons {
         line { moveTo(3f, 20f); lineTo(21f, 20f) }
         line(2.4f) { moveTo(6f, 20f); lineTo(6f, 15f); moveTo(10f, 20f); lineTo(10f, 9f); moveTo(14f, 20f); lineTo(14f, 5f); moveTo(18f, 20f); lineTo(18f, 12f) }
     }
+
+    /** Waveform: a trace across a frame. */
+    val Waveform = icon("waveform") {
+        line { moveTo(3.5f, 5f); lineTo(3.5f, 19f); lineTo(20.5f, 19f) }
+        line(2f) { moveTo(5f, 14f); lineTo(8f, 9f); lineTo(11f, 12f); lineTo(14f, 6.5f); lineTo(17f, 11f); lineTo(20f, 8f) }
+    }
+    /** RGB parade: three bars of traces. */
+    val Parade = icon("parade") {
+        line { moveTo(3.5f, 19f); lineTo(20.5f, 19f) }
+        line(2.2f) { moveTo(6f, 16f); lineTo(6f, 8f); moveTo(12f, 16f); lineTo(12f, 5.5f); moveTo(18f, 16f); lineTo(18f, 10f) }
+    }
+    /** Vectorscope: circle with targets. */
+    val Vectorscope = icon("vectorscope") {
+        line { circle(12f, 12f, 8.5f) }
+        line(1.4f) { moveTo(12f, 3.5f); lineTo(12f, 20.5f); moveTo(3.5f, 12f); lineTo(20.5f, 12f) }
+        solid { circle(9f, 8.5f, 1.4f); circle(15.5f, 14.5f, 1.4f) }
+    }
+    /** False color: a frame split into bands. */
+    val FalseColor = icon("false_color") {
+        line { moveTo(4f, 5f); lineTo(20f, 5f); lineTo(20f, 19f); lineTo(4f, 19f); close() }
+        solid { moveTo(4f, 5f); lineTo(9.5f, 5f); lineTo(9.5f, 19f); lineTo(4f, 19f); close() }
+        line(1.4f) { moveTo(14.5f, 5f); lineTo(14.5f, 19f) }
+    }
 }

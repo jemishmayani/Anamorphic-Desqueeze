@@ -1,5 +1,9 @@
 package com.desqueeze.app
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -190,8 +194,9 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                 SettingRow(AppIcons.Folder, "Save to", "Exports go to your Movies folder", "Movies/${s.folder}", onClick = { folderDialog = true })
                 SettingRow(AppIcons.Palette, "LUT library", "Import, rename and delete .cube LUTs",
                     "${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}", tint = Warm, onClick = { st.screen = Screen.Luts })
-                SettingChoiceRow(AppIcons.Moon, "Theme", null, s.theme.label, ThemeMode.entries.map { it.label }, divider = false) {
+                SettingChoiceRow(AppIcons.Moon, "Theme", null, s.theme.label, ThemeMode.entries.map { it.label }) {
                     s.theme = ThemeMode.entries[it]; st.theme = s.theme; refresh() }
+                AccentPicker(st.accent) { s.accent = it; st.accent = it }
             }
 
             SettingsGroup("This phone") {
@@ -311,3 +316,33 @@ This app is built with open-source software:
 
 Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
 """.trimIndent()
+
+/** Accent colour swatches; "Wallpaper" follows the system's Material You colours (Android 12+). */
+@Composable
+fun AccentPicker(current: Accent, onPick: (Accent) -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val options = Accent.entries.filter { it != Accent.DYNAMIC || android.os.Build.VERSION.SDK_INT >= 31 }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Text("Accent colour", style = MaterialTheme.typography.bodyLarge)
+        Text(if (current == Accent.DYNAMIC) "Matches your wallpaper" else current.label,
+            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            options.forEach { a ->
+                val on = a == current
+                Box(Modifier.size(38.dp).clip(CircleShape)
+                    .border(2.dp, if (on) c.onSurface else Color.Transparent, CircleShape)
+                    .padding(4.dp).clip(CircleShape)
+                    .background(if (a == Accent.DYNAMIC) androidx.compose.ui.graphics.Brush.sweepGradient(
+                        listOf(Color(0xFF5AA9FF), Color(0xFF4FD8A4), Color(0xFFFFB454), Color(0xFFFF7FA3), Color(0xFF5AA9FF)))
+                        else androidx.compose.ui.graphics.SolidColor(Color(a.argb)))
+                    .clickable { onPick(a) }
+                    .semantics { contentDescription = a.label + if (on) ", selected" else "" },
+                    contentAlignment = Alignment.Center) {
+                    if (on) Icon(AppIcons.Check, null, Modifier.size(16.dp),
+                        tint = if (a == Accent.DYNAMIC || Color(a.argb).luminance() > 0.45f) Color(0xFF0B0D10) else Color.White)
+                }
+            }
+        }
+    }
+}

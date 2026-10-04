@@ -23,6 +23,8 @@ class Settings(ctx: Context) {
     var mode: ExportMode get() = ExportMode.valueOf(p.getString("mode", ExportMode.LOSSLESS.name)!!); set(v) = p.edit().putString("mode", v.name).apply()
     /** New clips use their own recommendation unless the user picks a fixed default method. */
     var followRecommendation: Boolean get() = p.getBoolean("followRec", true); set(v) = p.edit().putBoolean("followRec", v).apply()
+    var accent: Accent get() = runCatching { Accent.valueOf(p.getString("accent", Accent.FLARE.name)!!) }.getOrDefault(Accent.FLARE)
+        set(v) = p.edit().putString("accent", v.name).apply()
     var theme: ThemeMode get() = ThemeMode.valueOf(p.getString("theme", ThemeMode.SYSTEM.name)!!); set(v) = p.edit().putString("theme", v.name).apply()
     var format: OutFormat get() = runCatching { OutFormat.valueOf(p.getString("format", "ORIGINAL")!!) }.getOrDefault(OutFormat.ORIGINAL)
         set(v) = p.edit().putString("format", v.name).apply()

@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val dark = when (state.theme) { ThemeMode.DARK -> true; ThemeMode.LIGHT -> false; else -> isSystemInDarkTheme() }
-            AppTheme(dark) {
+            AppTheme(dark, state.accent) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     state.crashLog?.let { log -> CrashDialog(log) { state.crashLog = null } }
                     BackHandler(state.screen != Screen.Main) {

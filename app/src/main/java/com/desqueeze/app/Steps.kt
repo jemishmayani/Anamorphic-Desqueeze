@@ -18,6 +18,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -116,7 +119,8 @@ fun TwoPane(panes: Panes, left: @Composable ColumnScope.() -> Unit, right: @Comp
 }
 
 /** One tool tab: an icon, a label, its current value (shown on the tab), and its controls. */
-class Tool(val label: String, val icon: ImageVector, val value: String?, val content: @Composable ColumnScope.() -> Unit)
+class Tool(val label: String, val icon: ImageVector, val value: String?, val active: Boolean = false,
+           val content: @Composable ColumnScope.() -> Unit)
 
 /**
  * Preview pinned in place with the tools as tabs. Changing a setting never scrolls the preview
@@ -147,22 +151,33 @@ fun PreviewWithTools(panes: Panes, tools: List<Tool>, selected: Int, onSelect: (
     }
 }
 
+/**
+ * Icon-only tool bar: equal square buttons spread across the width. A dot marks a tool that's changed
+ * from its default; long-press shows the name. The panel below carries the full title and value.
+ */
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolTabs(tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit) {
     val c = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         tools.forEachIndexed { i, t ->
             val on = i == selected
-            Row(Modifier.clip(RoundedCornerShape(14.dp))
-                .background(if (on) c.primary.copy(alpha = 0.16f) else c.surfaceContainer)
-                .border(1.dp, if (on) c.primary.copy(alpha = 0.7f) else c.outlineVariant, RoundedCornerShape(14.dp))
-                .clickable { onSelect(i) }.padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Icon(t.icon, null, Modifier.size(18.dp), tint = if (on) c.primary else c.onSurfaceVariant)
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(t.label, style = MaterialTheme.typography.labelLarge, color = if (on) c.onSurface else c.onSurfaceVariant, maxLines = 1)
-                    t.value?.let { Text(it, style = MaterialTheme.typography.labelSmall.merge(Mono), color = if (on) c.primary else c.onSurfaceVariant, maxLines = 1) }
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text(t.label + (t.value?.let { ": $it" } ?: "")) } },
+                state = rememberTooltipState(),
+            ) {
+                Box(
+                    Modifier.size(52.dp).clip(RoundedCornerShape(16.dp))
+                        .background(if (on) c.primary.copy(alpha = 0.18f) else c.surfaceContainer)
+                        .border(1.dp, if (on) c.primary.copy(alpha = 0.75f) else c.outlineVariant, RoundedCornerShape(16.dp))
+                        .clickable(onClickLabel = t.label) { onSelect(i) }
+                        .semantics { contentDescription = t.label + (t.value?.let { ", $it" } ?: ""); this.selected = on },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(t.icon, null, Modifier.size(24.dp), tint = if (on) c.primary else c.onSurfaceVariant)
+                    if (t.active) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(7.dp).clip(CircleShape)
+                        .background(if (on) c.primary else c.primary.copy(alpha = 0.8f)))
                 }
             }
         }
@@ -383,12 +398,13 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
             }
             existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
         },
-        Tool("Trim", AppIcons.Scissors, trim?.let { (a, b) -> fmtDuration(b - a) } ?: "Full") { TrimSection(st, v, memory) },
+        Tool("Trim", AppIcons.Scissors, trim?.let { (a, b) -> fmtDuration(b - a) } ?: "Full", active = trim != null) { TrimSection(st, v, memory) },
         Tool("Guides", AppIcons.FrameLines, null) {
             Section("Guides") { GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it } }
         },
         Tool("Orientation", AppIcons.Rotate, if (st.orientation == Orientation.AUTO && st.direction == Direction.AUTO) "Auto"
-                else "${st.orientation.label} · ${if (g.vertical) "↕" else "↔"}") {
+                else "${st.orientation.label} · ${if (g.vertical) "↕" else "↔"}",
+            active = st.orientation != Orientation.AUTO || st.direction != Direction.AUTO) {
             if (st.videos.size > 1) Text("Orientation and direction apply to all ${st.videos.size} clips.",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             Section("Orientation") {
@@ -405,13 +421,14 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
                 }
             }
         },
-        Tool("Exposure", AppIcons.Histogram, st.scope.label) { ExposureSection(st) },
+        Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
     PreviewWithTools(panes, tools, st.frameTool, { st.frameTool = it }) {
         ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + (if (st.trimFor(clip) != null) "  · trimmed" else "") + if (existingTag(clip) != null) "  · tagged" else "" }
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio)
-            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, maxHeight = previewMax)
+            else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, scopeLarge = st.scopeLarge,
+                onScopeLarge = { st.scopeLarge = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
         }
         ViewToggle(st.desqueezed) { st.desqueezed = it }
     }
@@ -456,11 +473,82 @@ fun TrimSection(st: AppState, v: VideoInfo, memory: PlayheadMemory) {
 /** Exposure tools for judging log footage on the phone. */
 @Composable
 fun ExposureSection(st: AppState) {
+    val c = MaterialTheme.colorScheme
+    val icons = mapOf(Scope.OFF to AppIcons.Cross, Scope.HISTOGRAM to AppIcons.Histogram, Scope.WAVEFORM to AppIcons.Waveform,
+        Scope.PARADE to AppIcons.Parade, Scope.VECTORSCOPE to AppIcons.Vectorscope, Scope.FALSE_COLOR to AppIcons.FalseColor)
     Section("Exposure") {
-        Segmented(Scope.entries.map { it.label }, st.scope.ordinal) { st.scope = Scope.entries[it] }
-        if (st.scope == Scope.OFF) Text("Histogram, waveform and false color help judge exposure, especially for flat log footage.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        // 3 × 2 grid of equal tiles: every scope one tap away, nothing squeezed.
+        Scope.entries.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { sc ->
+                    val on = st.scope == sc
+                    Column(Modifier.weight(1f).height(64.dp).clip(RoundedCornerShape(14.dp))
+                        .background(if (on) c.primary.copy(alpha = 0.16f) else c.surfaceContainer)
+                        .border(1.dp, if (on) c.primary.copy(alpha = 0.7f) else c.outlineVariant, RoundedCornerShape(14.dp))
+                        .clickable { st.scope = sc }, horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center) {
+                        Icon(icons.getValue(sc), null, Modifier.size(20.dp), tint = if (on) c.primary else c.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text(sc.short, style = MaterialTheme.typography.labelMedium, color = if (on) c.onSurface else c.onSurfaceVariant, maxLines = 1)
+                    }
+                }
+            }
+        }
+        if (st.scope == Scope.OFF) {
+            Text("Scopes appear in the corner of the video, so the picture stays in view while you adjust. Tap a scope to enlarge it; × turns it off.",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            return@Section
+        }
+        if (st.scope != Scope.FALSE_COLOR) {
+            Segmented(listOf("Small", "Large"), if (st.scopeLarge) 1 else 0) { st.scopeLarge = it == 1 }
+            Spacer(Modifier.height(10.dp))
+        }
+        val s = st.scopeStats
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
+            .border(1.dp, c.outlineVariant, RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (s == null) Text("Reading the picture…", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            else {
+                Reading("Shadows (5%)", "${s.p5.toInt()} IRE")
+                Reading("Median", "${s.p50.toInt()} IRE")
+                Reading("Highlights (95%)", "${s.p95.toInt()} IRE")
+                Reading("Clipped (≥ 98 IRE)", "%.1f%%".format(s.clippedPct), warn = s.clippedPct > 1f)
+                Reading("Crushed (≤ 2 IRE)", "%.1f%%".format(s.crushedPct), warn = s.crushedPct > 1f)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        if (st.scope == Scope.FALSE_COLOR) {
+            ScopeMath.ZONES.filter { it.argb != 0 }.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                    pair.forEach { z ->
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(Color(z.argb)))
+                            Spacer(Modifier.width(8.dp))
+                            Text("${z.label}  ${z.from.toInt()}–${minOf(100, z.to.toInt())} IRE", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+        Text(when (st.scope) {
+            Scope.HISTOGRAM -> "How much of the picture sits at each brightness, black on the left, white on the right. Red, green and blue are drawn separately; the white outline is overall brightness."
+            Scope.WAVEFORM -> "Brightness across the frame, left to right as in the picture: 0 IRE at the bottom, 100 at the top. Lines at 25, 50 and 75."
+            Scope.PARADE -> "The waveform of red, green and blue side by side. Matching levels in a white or grey area mean a neutral white balance."
+            Scope.VECTORSCOPE -> "Colour: angle is hue, distance from the centre is saturation. Squares mark 75% colour bars; skin tones fall near the beige line."
+            Scope.FALSE_COLOR -> "Brightness shown as colours. Aim for mid grey (green) on a grey card and keep important highlights out of red."
+            else -> ""
+        }, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+        st.videos.getOrNull(st.selected)?.let { v ->
+            if (v.footage.gamma.isLog && st.lutId == null) Text(
+                "This clip is ${v.footage.gamma.title.lowercase()}: readings are of the flat picture as shown, so highlights clip later than they look. In Look, turn a LUT on to judge the final image.",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
     }
+}
+
+@Composable
+private fun Reading(label: String, value: String, warn: Boolean = false) = Row(verticalAlignment = Alignment.CenterVertically) {
+    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(value, style = MaterialTheme.typography.bodyMedium.merge(Mono), color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
 }
 
 /** Double Desqueeze Protection: the clip already says it's anamorphic. */
@@ -535,7 +623,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
 
     val lutName = st.lutList.firstOrNull { it.id == st.lutId }?.name
     val tools = listOf(
-        Tool("LUT", AppIcons.Gamut, lutName?.let { if (st.lutPreview) "${(st.strength * 100).toInt()}%" else "Off" } ?: "None") {
+        Tool("LUT", AppIcons.Gamut, lutName?.let { if (st.lutPreview) "${(st.strength * 100).toInt()}%" else "Off" } ?: "None", active = st.lutId != null) {
     Section("LUT") {
         PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
             listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
@@ -579,14 +667,15 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
         },
-        Tool("Exposure", AppIcons.Histogram, st.scope.label) { ExposureSection(st) },
+        Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
     PreviewWithTools(panes, tools, st.lookTool, { st.lookTool = it }) {
         ClipSwitcher(st)
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio)
             else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
-                guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, maxHeight = previewMax)
+                guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, scopeLarge = st.scopeLarge,
+                onScopeLarge = { st.scopeLarge = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
         }
     }
 }
