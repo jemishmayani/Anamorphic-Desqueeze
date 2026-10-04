@@ -2,6 +2,27 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.10 — 2026-10-04
+
+### Fixed
+- **False "Looks like log" on normal videos.** The app judged log from a single frame near the start (in practice usually the very first frame), so a normal video opening on a flat grey intro, a black screen or a title card could be labelled log. Log is now decided from metadata first; pixels are only a hint, taken from several frames through the clip.
+- **"V-Log" detected in YouTube videos titled "vlog".** Free text such as a title or comment no longer counts as camera data; compact spellings like `vlog` / `dlog` are only accepted in structured camera fields.
+
+### Changed
+- **Gamma classification with confidence and reasons.** Each clip is now one of **Log, SDR / Rec.709, HLG, PQ / HDR10** or **Unknown**, with a confidence of **Confirmed, Likely, Possible** or **Unknown**, decided in this order:
+  1. **HDR from the video track:** a Dolby Vision box, or transfer metadata PQ (ST 2084) / HLG (ARIB STD-B67). Confirmed.
+  2. **Log named by the camera in a structured field** (for example a gamma metadata key or the camera's XML). Confirmed, with the profile, e.g. D-Log, D-Log M, S-Log3.
+  3. **Picture analysis:** five frames spread through the clip, skipping the first max(3 s, 10%) and the last 5%. Black, near-uniform (grey/black cards, fades) and flat-graphic frames (title cards, animation, screen recordings) are excluded. At least three usable frames are needed, and 70% must look flat. The result is only ever **Possible** log, or **Likely** when backed by a hint (10-bit footage from a log-capable camera brand, or log mentioned in the file's text). Never Confirmed.
+  4. Otherwise **SDR** (Likely when tagged BT.709/sRGB) or **Unknown**.
+- **Why it was classified:** the clip's details show a "Why" list, e.g. *"Confirmed by transfer metadata: ARIB STD-B67 (HLG)."* or *"Heuristic pixel analysis; no log metadata found. Picture: 5 of 5 usable frames look flat like log (intro and ending excluded)."*
+- **Badges:** confirmed log shows its profile in a solid badge; Likely/Possible log uses a dashed badge ("Likely log", "Possible log"), so a guess never looks like a fact. Uncertain SDR shows "SDR?"; no information shows "Gamma unknown".
+- **LUT advice only for confirmed log.** The suggestion to import your camera's official log-to-Rec.709 LUT, and the "stays flat unless you add a LUT" note, appear only when log is confirmed by metadata. A LUT is never applied automatically.
+- **Recommendations** treat 10-bit footage as worth keeping in Lossless whatever its gamma, but mention a log profile only when it's confirmed.
+- **Frame and Look steps: pinned preview with tool tabs.** The preview stays fixed at the top, and the tools sit in a tab row underneath (Frame: Squeeze, Trim, Guides, Orientation, Exposure; Look: LUT, Exposure). Each tab shows its current value, and only the selected tool's panel scrolls, so you can change a setting and see the result without scrolling up and down. On tablets and in landscape, the preview stays on the left and the tabs sit on the right.
+
+### Added
+- **Automated tests** for gamma classification (19 cases), run on every build: normal Rec.709; Rec.709 with a grey intro; black and title-card intros; DJI D-Log and D-Log M named in metadata; a DJI 10-bit file without a profile name (Likely, never Confirmed); HLG; PQ / HDR10; Dolby Vision; a YouTube-style download titled "vlog"; a graded upload whose title mentions S-Log3; animation and screen recordings; a dark night scene; and that LUT advice appears only for confirmed log. The D-Log / D-Log M fixtures are synthetic; real DJI files checked so far don't record the profile name.
+
 ## v1.9 — 2026-10-04
 
 ### Added

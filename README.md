@@ -64,7 +64,7 @@ badges, with full details one tap away:
 
 | Detected | How |
 |---|---|
-| **Log profile:** D-Log / D-Log M, S-Log2/3, V-Log, Canon Log 2/3, F-Log/F-Log2, N-Log, Apple Log, L-Log, I-Log, Samsung Log, GoPro Log, Z-Log2, Blackmagic Film, ARRI LogC, RED Log3G10 | From the file's metadata when the camera records it. If it doesn't, a frame is checked for the flat look of log (lifted blacks, compressed range, low saturation) and shown as **"Looks like log"**, clearly marked as an estimate |
+| **Log profile:** D-Log / D-Log M, S-Log2/3, V-Log, Canon Log 2/3, F-Log/F-Log2, N-Log, Apple Log, L-Log, I-Log, Samsung Log, GoPro Log, Z-Log2, Blackmagic Film, ARRI LogC, RED Log3G10 | **Confirmed** only when the camera names it in a structured metadata field. Otherwise, five frames spread through the clip (skipping intros, endings, black/grey cards, title cards and graphics) are checked for the flat log look, giving at most **Possible** or **Likely** log (dashed badge), never Confirmed. See [How log is detected](#how-log-is-detected) |
 | **HDR:** HLG, HDR10 (PQ), Dolby Vision; mastering metadata | Color tags and Dolby Vision boxes in the video track |
 | **SDR** | Standard transfer tags and no log detected |
 | **Bit depth & chroma:** 8/10/12-bit, 4:2:0, 4:2:2, 4:4:4 | Read from the codec configuration (`hvcC`, `avcC`, `av1C`, `vpcC`, ProRes type) |
@@ -74,7 +74,24 @@ badges, with full details one tap away:
 | **Existing pixel-aspect tag** | `pasp` box (shown as "Tagged 1.33×") |
 | **Frame rate, audio format, duration, size, average bitrate** | Android's media extractor |
 
-Only the header is read, so analysis is instant even for multi-GB files.
+Only the header is read for metadata, so analysis is fast even for multi-GB files.
+
+### How log is detected
+
+Every clip gets a **gamma** (Log, SDR / Rec.709, HLG, PQ / HDR10 or Unknown) and a **confidence**
+(Confirmed, Likely, Possible or Unknown), decided in this order. The clip's **All details** shows *why*.
+
+| Order | Evidence | Result |
+|---|---|---|
+| 1 | Dolby Vision box, or transfer metadata PQ (SMPTE ST 2084) / HLG (ARIB STD-B67) | HDR10 / Dolby Vision / HLG, **Confirmed** |
+| 2 | The camera names a log profile in a structured field (a gamma metadata key, camera XML) | That profile (e.g. D-Log M), **Confirmed** |
+| 3 | Picture analysis of 5 frames through the clip, intro/ending/black/grey/title/graphic frames excluded; ≥ 3 usable frames, ≥ 70% flat | Log, **Possible**; **Likely** with a supporting hint (10-bit from a log-capable brand, or log mentioned in the title/comment) |
+| 4 | Tagged BT.709 / sRGB and no log evidence | SDR, **Likely** (some log cameras use this tag too) |
+| 5 | Nothing to go on | **Unknown** |
+
+Text in titles and comments is never treated as camera data, so a YouTube video called "my vlog" isn't
+mistaken for V-Log. The suggestion to use a log-to-Rec.709 LUT appears only for **confirmed** log, and
+LUTs are never applied automatically.
 
 ## Vertical anamorphic
 
@@ -120,6 +137,7 @@ actual image detail is similar or lower.
 - **Squeeze presets** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus any custom factor (1.00–3.00×, slider or typed). A **default squeeze** (preset or custom) is set in Settings
 - **Per-clip squeeze:** every clip keeps its own factor, so one batch can mix adapters; **Apply to all** copies one factor to every clip
 - **Double Desqueeze Protection:** a clip that's already tagged (e.g. 1.33×) triggers a warning with **Keep existing**, **Replace tag** or **Force anyway** (multiplies the factors)
+- **Pinned preview with tool tabs** (Frame and Look steps): the preview stays put while you switch between Squeeze, Trim, Guides, Orientation, Exposure and LUT, and each tab shows its current value, so there's no scrolling back and forth
 - **Framing guides:** 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76 : 1 frame lines with an optional mask; action safe (93%) and title safe (90%) per SMPTE ST 2046-1; rule of thirds; center marker; crosshair. Guides never crop the export
 - **Cinema-style preview:** the frame springs between squeezed and de-squeezed shapes; press and hold to see the original; play/pause, mute, live aspect-ratio readout; a **filmstrip timeline** to tap or drag
 - **Trim:** a range slider plus **Start here / End here** at the playhead. Re-encode cuts exactly; Lossless starts on the nearest keyframe (usually under a second earlier) and still never re-encodes
@@ -191,8 +209,10 @@ No. Android re-encodes log/standard video in 8-bit (see [Known limitations](#kno
 Use **Lossless** to keep 10-bit; the app recommends it automatically for 10-bit, log and HDR clips.
 
 **My camera's log profile isn't detected.**
-Some cameras (many phones and action cams) don't record the profile name, and files re-saved by
-companion apps (such as DJI Mimo) may lose it. The app then estimates from the picture and shows **"Looks like log"**. A short
+Some cameras (many phones and action cams, including the DJI files checked so far) don't record the
+profile name, and files re-saved by companion apps (such as DJI Mimo) may lose it. The app then judges
+from the picture and shows a dashed **"Likely log"** or **"Possible log"** badge. Open **All details** to
+see why. Without the profile name it can't tell D-Log from D-Log M, so pick your camera's LUT yourself. A short
 sample clip in an [issue](https://github.com/jemishmayani/Anamorphic-Desqueeze/issues/new/choose) helps add detection.
 
 **My vertical clip is stretched the wrong way.**
@@ -244,7 +264,7 @@ Listing text, data-safety answers, the 512 px icon and the feature graphic are i
 | Stage | Technology |
 |---|---|
 | Lossless | Pure Kotlin MP4/MOV box editor that rewrites only the `moov` header: inserts or updates a `pasp` box in the video sample entry (HEVC, H.264, Dolby Vision, AV1, VP9, ProRes, MPEG-4, Motion JPEG), updates the track header's display size and, if orientation is overridden, its rotation matrix, and shifts `stco`/`co64` chunk offsets when the header precedes the media data. Media is streamed in 4 MB chunks, so RAM use stays flat for multi-GB files. Tested against ffmpeg: media bit-identical |
-| Analysis | Header-only parsing of codec configuration (`hvcC`/`avcC`/`av1C`/`vpcC`), `colr`, `pasp`, Dolby Vision and metadata boxes; a downscaled frame for thumbnails and the log-look estimate |
+| Analysis | Header-only parsing of codec configuration (`hvcC`/`avcC`/`av1C`/`vpcC`), `colr`, `pasp`, Dolby Vision and metadata boxes (structured camera fields kept separate from free text); a downscaled thumbnail; five small frames through the clip for the log-look hint |
 | Decode / encode | Android MediaCodec (hardware) via [AndroidX Media3 Transformer](https://developer.android.com/media/media3/transformer), with encoder-size fitting checked against the codec's own capabilities |
 | De-squeeze (Re-encode) | OpenGL ES effects: rotation (for orientation overrides) and `Presentation` stretch-to-fit |
 | LUT | Media3 `SingleColorLut` (3D LUT on the GPU); strength is blended into the LUT table. The before/after still uses an equivalent CPU trilinear LUT, matching ffmpeg's `lut3d` to within 1/255 |
@@ -269,7 +289,8 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `Geometry.kt` | Orientation + desqueeze direction resolved into rotation, output size and pixel aspect |
 | `PaspWriter.kt` | Lossless pixel-aspect tagging |
 | `Exporter.kt` | Re-encode pipeline, encoder-size fitting, retries, saving to the gallery |
-| `VideoProbe.kt`, `FootageAnalyzer.kt` | Clip analysis: log, HDR, bit depth, chroma, color, camera |
+| `VideoProbe.kt`, `FootageAnalyzer.kt` | Clip analysis: HDR, bit depth, chroma, color, camera, log hints |
+| `Gamma.kt` | Gamma classification with confidence and reasons; frame sampling and filtering |
 | `FootageCard.kt`, `AppIcons.kt` | Footage badges, details and the custom icon set |
 | `PreviewPlayer.kt`, `Frames.kt`, `Guides.kt` | Preview, live LUT, before/after still, filmstrip; still frames; framing guides |
 | `Formats.kt` | Social formats: target sizes, fit/fill, how much is kept |
@@ -287,7 +308,7 @@ Build variants: `app/src/github/` adds the internet permission used only by *Che
 
 ## Building it yourself
 
-Every push to `main` and every pull request is built by GitHub Actions
+Every push to `main` and every pull request is built **and unit-tested** by GitHub Actions
 (`.github/workflows/build.yml`); documentation-only changes are skipped. Pushes to `main` publish the APK and
 Play bundle as run **Artifacts**, and the APK on the `apk` branch. Pull requests are only built, never published.
 
@@ -306,6 +327,9 @@ git push origin vX.Y
 
 The workflow builds both files, creates the GitHub Release, and uses that version's CHANGELOG section,
 plus install instructions, as the release notes.
+
+Unit tests live in `app/src/test` (gamma classification, with tiny fixture files in `app/src/test/resources/gamma`);
+run them with `gradle :app:testGithubDebugUnitTest`.
 
 To build locally, open the project in Android Studio (JDK 17, Android SDK 36), choose the `githubRelease` or
 `playRelease` variant, and build; or run `gradle :app:assembleGithubRelease :app:bundlePlayRelease`.

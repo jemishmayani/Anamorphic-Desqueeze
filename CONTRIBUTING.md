@@ -16,7 +16,7 @@ clip (a few seconds is enough) shared via a link in an issue helps a lot.
 - Or from the command line: `gradle :app:assembleGithubRelease :app:bundlePlayRelease`.
 - Without the signing password, builds are signed with a temporary debug key, which is fine for testing.
 
-Every pull request is built automatically by GitHub Actions (nothing is published from pull requests).
+Every pull request is built and unit-tested automatically by GitHub Actions (nothing is published from pull requests). Run the tests locally with `gradle :app:testGithubDebugUnitTest`; changes to log/HDR detection should come with a test case in `GammaClassifierTest`.
 
 ## Code
 - Kotlin + Jetpack Compose (Material 3); video through AndroidX Media3.
