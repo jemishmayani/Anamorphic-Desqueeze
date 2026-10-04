@@ -1,9 +1,18 @@
 package com.desqueeze.app
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -109,26 +118,70 @@ fun GuideOverlay(g: Guides, modifier: Modifier = Modifier) {
 private fun DrawScope.safeRect(r: Rect, c: Color, w: Float, dash: PathEffect) =
     drawRect(c, r.topLeft, r.size, style = Stroke(w, pathEffect = dash))
 
-/** Controls for the guides, shown under the preview. */
-@kotlin.OptIn(ExperimentalLayoutApi::class)
+/** Short summary for the toolbar tooltip, e.g. "2.39 + thirds"; null when no guide is on. */
+fun guidesSummary(g: Guides): String? {
+    val parts = listOfNotNull(g.ratio?.let { fmtRatio(it) }, if (g.actionSafe) "action" else null, if (g.titleSafe) "title" else null,
+        if (g.thirds) "thirds" else null, if (g.centerMarker) "center" else null, if (g.crosshair) "crosshair" else null)
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" + ")
+}
+
+/** Controls for the guides: equal icon tiles, so every option is one tap away without scrolling. */
 @Composable
 fun GuidesPanel(g: Guides, enabled: Boolean, onChange: (Guides) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { FilterChip(g.ratio == null, { onChange(g.copy(ratio = null)) }, { Text("No frame lines") }, enabled = enabled) }
-            items(GUIDE_RATIOS) { r ->
-                FilterChip(g.ratio == r, { onChange(g.copy(ratio = r)) }, { Text(fmtRatio(r), style = LocalTextStyle.current.merge(Mono)) }, enabled = enabled)
+    val c = MaterialTheme.colorScheme
+    val lineIcons = remember { GUIDE_RATIOS.associateWith { AppIcons.frameLines(it) } }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Frame lines", style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant)
+        // None + 7 ratios = two rows of four equal tiles; each icon shows that ratio's bars to scale.
+        (listOf<Float?>(null) + GUIDE_RATIOS).chunked(4).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { r ->
+                    GuideTile(if (r == null) AppIcons.GuideNone else lineIcons.getValue(r), if (r == null) "None" else fmtRatio(r),
+                        on = g.ratio == r, enabled = enabled, mono = r != null, modifier = Modifier.weight(1f)) { onChange(g.copy(ratio = r)) }
+                }
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (g.ratio != null) FilterChip(g.mask, { onChange(g.copy(mask = !g.mask)) }, { Text("Mask outside") }, enabled = enabled)
-            FilterChip(g.actionSafe, { onChange(g.copy(actionSafe = !g.actionSafe)) }, { Text("Action safe 93%") }, enabled = enabled)
-            FilterChip(g.titleSafe, { onChange(g.copy(titleSafe = !g.titleSafe)) }, { Text("Title safe 90%") }, enabled = enabled)
-            FilterChip(g.thirds, { onChange(g.copy(thirds = !g.thirds)) }, { Text("Thirds") }, enabled = enabled)
-            FilterChip(g.centerMarker, { onChange(g.copy(centerMarker = !g.centerMarker)) }, { Text("Center marker") }, enabled = enabled)
-            FilterChip(g.crosshair, { onChange(g.copy(crosshair = !g.crosshair)) }, { Text("Crosshair") }, enabled = enabled)
+        Spacer(Modifier.height(6.dp))
+        Text("Overlays", style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant)
+        val overlays = listOf(
+            Triple(AppIcons.GuideAction, "Action 93%", g.actionSafe) to { onChange(g.copy(actionSafe = !g.actionSafe)) },
+            Triple(AppIcons.GuideTitle, "Title 90%", g.titleSafe) to { onChange(g.copy(titleSafe = !g.titleSafe)) },
+            Triple(AppIcons.GuideThirds, "Thirds", g.thirds) to { onChange(g.copy(thirds = !g.thirds)) },
+            Triple(AppIcons.GuideCenter, "Center", g.centerMarker) to { onChange(g.copy(centerMarker = !g.centerMarker)) },
+            Triple(AppIcons.GuideCrosshair, "Crosshair", g.crosshair) to { onChange(g.copy(crosshair = !g.crosshair)) },
+            Triple(AppIcons.GuideMask, "Mask", g.mask) to { onChange(g.copy(mask = !g.mask)) },
+        )
+        overlays.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { (t, toggle) ->
+                    val (icon, label, on) = t
+                    // Mask only means something with frame lines on.
+                    val tileEnabled = enabled && (icon != AppIcons.GuideMask || g.ratio != null)
+                    GuideTile(icon, label, on = on && tileEnabled, enabled = tileEnabled, modifier = Modifier.weight(1f), onClick = toggle)
+                }
+            }
         }
-        Text("Guides are for framing only and never crop your export. Safe areas sit inside the frame lines when they're on.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Overlays switch on and off independently. Mask darkens outside the frame lines (pick a ratio first). " +
+            "Guides are for framing only and never crop your export.",
+            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+    }
+}
+
+/** Equal-size tile: icon over a short label; highlighted when on. Same look as the Exposure tiles. */
+@Composable
+private fun GuideTile(icon: ImageVector, label: String, on: Boolean, enabled: Boolean, modifier: Modifier = Modifier,
+                      mono: Boolean = false, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val alpha = if (enabled) 1f else 0.38f
+    Column(modifier.height(64.dp).clip(RoundedCornerShape(14.dp))
+        .background(if (on) c.primary.copy(alpha = 0.16f) else c.surfaceContainer)
+        .border(1.dp, if (on) c.primary.copy(alpha = 0.7f) else c.outlineVariant, RoundedCornerShape(14.dp))
+        .clickable(enabled = enabled, onClick = onClick)
+        .semantics { contentDescription = label; selected = on },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(icon, null, Modifier.size(24.dp), tint = (if (on) c.primary else c.onSurfaceVariant).copy(alpha = alpha))
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium.let { if (mono) it.merge(Mono) else it },
+            color = (if (on) c.onSurface else c.onSurfaceVariant).copy(alpha = alpha), maxLines = 1)
     }
 }

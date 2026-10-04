@@ -2,6 +2,14 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.12 — 2026-10-04
+
+### Changed
+- **Guides have icons.** The Guides tool is now a grid of equal icon tiles instead of a scrolling row of text chips, so every option is visible and one tap away:
+  - **Frame lines:** None, 1.85, 2.00, 2.20, 2.35, 2.39, 2.40 and 2.76, as two rows of four. Each icon draws that ratio's letterbox bars to scale.
+  - **Overlays:** Action 93%, Title 90%, Thirds, Center, Crosshair and Mask, as two rows of three. Each icon shows what it draws. They switch on and off independently; Mask is greyed out until a frame-line ratio is picked.
+- The **Guides** toolbar button gets the same small dot as the other tools when any guide is on, and long-pressing it shows which ones (e.g. "2.39 + thirds").
+
 ## v1.11 — 2026-10-04
 
 ### Fixed

@@ -399,7 +399,7 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
             existingTag(v)?.let { tag -> TagProtectionCard(st, v, tag) }
         },
         Tool("Trim", AppIcons.Scissors, trim?.let { (a, b) -> fmtDuration(b - a) } ?: "Full", active = trim != null) { TrimSection(st, v, memory) },
-        Tool("Guides", AppIcons.FrameLines, null) {
+        Tool("Guides", AppIcons.FrameLines, guidesSummary(st.guides), active = guidesSummary(st.guides) != null) {
             Section("Guides") { GuidesPanel(st.guides, enabled = !st.busy) { st.guides = it; settings.guides = it } }
         },
         Tool("Orientation", AppIcons.Rotate, if (st.orientation == Orientation.AUTO && st.direction == Direction.AUTO) "Auto"

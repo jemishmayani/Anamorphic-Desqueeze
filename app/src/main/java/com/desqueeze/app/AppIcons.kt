@@ -201,4 +201,55 @@ object AppIcons {
         solid { moveTo(4f, 5f); lineTo(9.5f, 5f); lineTo(9.5f, 19f); lineTo(4f, 19f); close() }
         line(1.4f) { moveTo(14.5f, 5f); lineTo(14.5f, 19f) }
     }
+
+    /* ---------------- framing guides ----------------
+     * A screen (2.5..21.5 × 5.5..18.5) with the guide drawn inside, so each icon shows what it adds. */
+    private fun ImageVector.Builder.screen() = line(1.4f) { moveTo(2.5f, 5.5f); lineTo(21.5f, 5.5f); lineTo(21.5f, 18.5f); lineTo(2.5f, 18.5f); close() }
+    private fun ImageVector.Builder.tint(a: Float, p: PathBuilder.() -> Unit) = path(fill = SolidColor(Color.Black), fillAlpha = a, pathBuilder = p)
+
+    val GuideNone = icon("guide_none") { screen(); line(1.6f) { moveTo(6f, 16f); lineTo(18f, 8f) } }
+
+    /** Frame lines drawn to scale: the shaded bars grow as the ratio gets wider. */
+    fun frameLines(ratio: Float): ImageVector = icon("frame_${ratio}") {
+        screen()
+        val h = (19f / ratio).coerceAtMost(13f); val top = 12f - h / 2; val bot = 12f + h / 2
+        tint(0.35f) { moveTo(2.5f, 5.5f); lineTo(21.5f, 5.5f); lineTo(21.5f, top); lineTo(2.5f, top); close()
+            moveTo(2.5f, bot); lineTo(21.5f, bot); lineTo(21.5f, 18.5f); lineTo(2.5f, 18.5f); close() }
+        line(1.8f) { moveTo(2.5f, top); lineTo(21.5f, top); moveTo(2.5f, bot); lineTo(21.5f, bot) }
+    }
+
+    /** Action safe: corner brackets just inside the edge. */
+    val GuideAction = icon("guide_action") {
+        screen()
+        line(1.6f) {
+            moveTo(5f, 10f); lineTo(5f, 8f); lineTo(7.5f, 8f); moveTo(16.5f, 8f); lineTo(19f, 8f); lineTo(19f, 10f)
+            moveTo(19f, 14f); lineTo(19f, 16f); lineTo(16.5f, 16f); moveTo(7.5f, 16f); lineTo(5f, 16f); lineTo(5f, 14f)
+        }
+    }
+    /** Title safe: an inner box with a line of "text". */
+    val GuideTitle = icon("guide_title") {
+        screen()
+        line(1.4f) { moveTo(6.5f, 8.5f); lineTo(17.5f, 8.5f); lineTo(17.5f, 15.5f); lineTo(6.5f, 15.5f); close() }
+        line(1.8f) { moveTo(9f, 12f); lineTo(15f, 12f) }
+    }
+    val GuideThirds = icon("guide_thirds") {
+        screen()
+        line(1.2f) { moveTo(8.83f, 5.5f); lineTo(8.83f, 18.5f); moveTo(15.17f, 5.5f); lineTo(15.17f, 18.5f)
+            moveTo(2.5f, 9.83f); lineTo(21.5f, 9.83f); moveTo(2.5f, 14.17f); lineTo(21.5f, 14.17f) }
+    }
+    val GuideCenter = icon("guide_center") {
+        screen()
+        line(1.8f) { moveTo(12f, 9.5f); lineTo(12f, 14.5f); moveTo(9.5f, 12f); lineTo(14.5f, 12f) }
+    }
+    val GuideCrosshair = icon("guide_crosshair") {
+        screen()
+        line(1.2f) { moveTo(12f, 5.5f); lineTo(12f, 18.5f); moveTo(2.5f, 12f); lineTo(21.5f, 12f) }
+        line(1.4f) { circle(12f, 12f, 2.6f) }
+    }
+    /** Mask outside the frame lines: solid bars. */
+    val GuideMask = icon("guide_mask") {
+        screen()
+        solid { moveTo(2.5f, 5.5f); lineTo(21.5f, 5.5f); lineTo(21.5f, 8.5f); lineTo(2.5f, 8.5f); close()
+            moveTo(2.5f, 15.5f); lineTo(21.5f, 15.5f); lineTo(21.5f, 18.5f); lineTo(2.5f, 18.5f); close() }
+    }
 }
