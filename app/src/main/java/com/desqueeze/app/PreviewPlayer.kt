@@ -60,7 +60,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Shared playback position so the Frame and Look steps continue where you left off. */
-class PlayheadMemory { var positionMs = 0L; var playing = true }
+/** Playhead shared by Frame and Look; it belongs to one clip, so switching clips starts the new one from its beginning. */
+class PlayheadMemory { var positionMs = 0L; var playing = true; var clip: android.net.Uri? = null }
 
 /**
  * Cinema-style preview: the frame springs between squeezed and de-squeezed shapes, hold to see
@@ -87,10 +88,16 @@ fun PreviewPlayer(
     /** Keeps the whole preview on screen in landscape / two-pane layouts. */
     maxHeight: androidx.compose.ui.unit.Dp? = null,
     onTrimChange: ((Pair<Long, Long>) -> Unit)? = null,
+    /** Reports press-and-hold, so the Squeezed / De-squeezed toggle can show what's on screen. */
+    onHold: (Boolean) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    // A different clip than the remembered playhead belongs to: start it from its beginning (or its trim start).
+    if (memory.clip != v.uri) { memory.clip = v.uri; memory.positionMs = trim?.first ?: 0L }
     var holding by remember { mutableStateOf(false) }
+    val holdCb by rememberUpdatedState(onHold)
+    LaunchedEffect(holding) { holdCb(holding) }
     val showWide = desqueezed && !holding
     val target = if (showWide) g.outRatio else g.inRatio
     val ratio by animateFloatAsState(target, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow), label = "ratio")
@@ -287,7 +294,8 @@ fun PreviewPlayer(
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))).padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Pill(if (showWide) "De-squeezed ${fmtSqueeze(stretchFactor(g))} ${if (g.vertical) "↕" else "↔"}" else "Original", accent = showWide)
+                Pill(if (showWide) "De-squeezed ${fmtSqueeze(stretchFactor(g))} ${if (g.vertical) "↕" else "↔"}"
+                     else if (holding) "Squeezed (holding)" else "Squeezed", accent = showWide)
                 if (useLut) { Spacer(Modifier.width(6.dp)); Pill("LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)

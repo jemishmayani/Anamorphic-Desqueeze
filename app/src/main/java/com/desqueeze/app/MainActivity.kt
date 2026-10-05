@@ -194,11 +194,13 @@ fun EmptyPreview(onPick: () -> Unit) {
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ViewToggle(desqueezed: Boolean, onChange: (Boolean) -> Unit) {
+fun ViewToggle(desqueezed: Boolean, held: Boolean = false, onChange: (Boolean) -> Unit) {
+    // While the preview is held, it shows the squeezed original, so the toggle shows that too.
+    val shown = desqueezed && !held
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         listOf(false to "Squeezed", true to "De-squeezed").forEachIndexed { i, (d, label) ->
-            SegmentedButton(selected = desqueezed == d, onClick = { onChange(d) },
-                shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+            SegmentedButton(selected = shown == d, onClick = { onChange(d) },
+                shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(if (held && !d && desqueezed) "Squeezed (holding)" else label) }
         }
     }
 }

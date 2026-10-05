@@ -2,6 +2,12 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.19 — 2026-10-05
+
+### Fixed
+- **Switching clips in a batch kept the previous clip's playhead.** If clip 1 was playing at 0:10, choosing clip 2 started it at 0:10 too, because the remembered playhead didn't record which clip it belonged to. A newly selected clip now starts from its beginning, or from its trim start if it's trimmed. Moving between the Frame and Look steps on the same clip still continues where you were.
+- **Press-and-hold showed the original, but the controls still said "De-squeezed".** While you hold the preview, the Squeezed / De-squeezed toggle now switches to **Squeezed (holding)** and the badge on the video reads **Squeezed (holding)**; both return when you let go. The badge also says **Squeezed** instead of "Original" when the toggle is set to Squeezed, so the labels always match.
+
 ## v1.18 — 2026-10-05
 
 ### Fixed

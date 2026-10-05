@@ -439,14 +439,17 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
         },
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
+    // True while the preview is pressed and held (showing the squeezed original).
+    var held by remember(v.uri) { mutableStateOf(false) }
     PreviewWithTools(panes, tools, st.frameTool, { st.frameTool = it }) {
         ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + (if (st.trimFor(clip) != null) "  · trimmed" else "") + if (existingTag(clip) != null) "  · tagged" else "" }
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio)
             else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, scopeLarge = st.scopeLarge,
-                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
+                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax,
+                onHold = { held = it })
         }
-        ViewToggle(st.desqueezed) { st.desqueezed = it }
+        ViewToggle(st.desqueezed, held = held) { st.desqueezed = it }
     }
 }
 
