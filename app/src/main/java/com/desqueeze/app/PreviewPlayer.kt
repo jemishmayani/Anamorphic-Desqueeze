@@ -118,8 +118,11 @@ fun PreviewPlayer(
             if (useRotate) fx += ScaleAndRotateTransformation.Builder().setRotationDegrees((360 - g.extraRotation).toFloat()).build()
             if (useLut) {
                 // Proxy: render the LUT at ~720p so 4K 10-bit stays smooth on phones.
+                // Keep the decoded frame's own shape (the view below has that shape, so nothing is letterboxed).
                 val short = minOf(g.dispW, g.dispH); val s = minOf(1f, 720f / short)
-                fx += Presentation.createForWidthAndHeight(((g.dispW * s).toInt() / 2) * 2, ((g.dispH * s).toInt() / 2) * 2, Presentation.LAYOUT_SCALE_TO_FIT)
+                val fileLandscape = (g.dispW >= g.dispH) == (g.extraRotation % 180 == 0)
+                val h = if (fileLandscape) short * s else maxOf(g.dispW, g.dispH) * s
+                fx += Presentation.createForHeight((h.toInt() / 2) * 2)
                 fx += SingleColorLut.createFromCube(lut!!.toArgbCube(appliedStrength))
             }
             if (fx.isNotEmpty()) setVideoEffects(fx) // must be set before prepare()
@@ -283,7 +286,10 @@ fun PreviewPlayer(
                         attached[0]?.let { p -> runCatching { p.clearVideoTextureView(tv) } }
                         attached[0] = null; texture = null
                     },
-                    modifier = Modifier.fillMaxSize().rotatedContent(g.extraRotation),
+                    // Laid out at the squeezed shape and stretched on screen. With a live LUT, Media3 fits each
+                    // frame into the view keeping its shape, so a view already stretched would show black bars
+                    // and lose the de-squeeze.
+                    modifier = Modifier.fillMaxSize().squeezedThenStretched(g.inRatio, ratio).rotatedContent(g.extraRotation),
                 )
             }
             if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor?.let {
@@ -614,6 +620,23 @@ object FilmstripCache {
 /** How much the picture is stretched along its stretch axis (e.g. 1.20), whichever way it goes. */
 fun stretchFactor(g: Geometry): Float =
     if (g.vertical) g.outH.toFloat() / g.dispH.coerceAtLeast(1) else g.outW.toFloat() / g.dispW.coerceAtLeast(1)
+
+/**
+ * Lays the child out at [squeezed] aspect (centered in this box, whose aspect is [shown]) and scales it up
+ * on screen to fill the box, so the child's own size always has the picture's squeezed shape.
+ */
+fun Modifier.squeezedThenStretched(squeezed: Float, shown: Float): Modifier {
+    if (squeezed <= 0f || shown <= 0f) return this
+    val sx = if (shown > squeezed) shown / squeezed else 1f
+    val sy = if (shown < squeezed) squeezed / shown else 1f
+    if (sx == 1f && sy == 1f) return this
+    return this.graphicsLayer { scaleX = sx; scaleY = sy }.layout { m, c ->
+        val w = c.maxWidth; val h = c.maxHeight
+        val cw = (w / sx).toInt().coerceAtLeast(1); val ch = (h / sy).toInt().coerceAtLeast(1)
+        val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(cw, ch))
+        layout(w, h) { p.place((w - cw) / 2, (h - ch) / 2) }
+    }
+}
 
 /**
  * Lays the child out with width and height swapped for 90°/270° and rotates it, so a view showing the

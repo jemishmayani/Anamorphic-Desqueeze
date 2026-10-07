@@ -2,6 +2,12 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.21 — 2026-10-07
+
+### Fixed
+- **With a LUT on, the preview lost its de-squeeze.** The picture went back to its squeezed shape with black bars at the sides, while the badge still said "De-squeezed" and the dashed outline showed the wider frame. With live effects, Media3 fits each processed frame into the video view keeping the frame's own shape, and the view was already the stretched shape. The video view is now laid out at the squeezed shape and stretched on screen, so the LUT preview is de-squeezed like the normal one, including press-and-hold and the Squeezed / De-squeezed toggle. The LUT preview also keeps the clip's own proportions (it used to be forced to the displayed shape).
+- **Another crash when applying a LUT.** The crash happens inside Jetpack Compose's layout code (the same `LayoutNode.insertAt` error). Compose is updated from 1.7.0 to 1.7.6, which includes fixes in that area.
+
 ## v1.20 — 2026-10-07
 
 ### Fixed

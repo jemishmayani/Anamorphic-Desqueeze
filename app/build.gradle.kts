@@ -17,8 +17,8 @@ android {
         applicationId = "com.desqueeze.app"
         minSdk = 29          // Android 10+: needed for reliable 10-bit HEVC
         targetSdk = 36       // Google Play requirement from 31 Aug 2026
-        versionCode = 21
-        versionName = "1.20"
+        versionCode = 22
+        versionName = "1.21"
     }
     signingConfigs {
         if (hasReleaseKey) create("release") {
@@ -64,7 +64,7 @@ dependencies {
     implementation("androidx.media3:media3-common:$media3")
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-ui:$media3")
-    implementation(platform("androidx.compose:compose-bom:2024.09.00"))
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
