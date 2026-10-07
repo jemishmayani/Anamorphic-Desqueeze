@@ -56,8 +56,15 @@ jobs:
           awk -v tag="$GITHUB_REF_NAME" '/^## /{p=($2==tag); next} p' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "See [CHANGELOG.md](https://github.com/jemishmayani/Anamorphic-Desqueeze/blob/main/CHANGELOG.md)." > notes.md; fi
           cat .github/release-footer.md >> notes.md
-          gh release create "$GITHUB_REF_NAME" "AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" "AnamorphicDesqueeze-${GITHUB_REF_NAME}-play.aab" \
-            --title "Anamorphic De-Squeeze ${GITHUB_REF_NAME}" --notes-file notes.md
+          files=("AnamorphicDesqueeze-${GITHUB_REF_NAME}.apk" "AnamorphicDesqueeze-${GITHUB_REF_NAME}-play.aab")
+          title="Anamorphic De-Squeeze ${GITHUB_REF_NAME}"
+          # A release made on github.com (which also creates the tag) is filled in rather than duplicated.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "$title" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" --title "$title" --notes-file notes.md
+          fi
       - name: Save log on failure
         if: failure() && github.event_name != 'pull_request'
         run: |
