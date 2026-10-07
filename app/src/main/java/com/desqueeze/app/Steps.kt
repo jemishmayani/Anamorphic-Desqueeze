@@ -30,6 +30,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -128,11 +134,12 @@ class Tool(val label: String, val icon: ImageVector, val value: String?, val act
  * screens the preview sits on the left and the tools on the right.
  */
 @Composable
-fun PreviewWithTools(panes: Panes, tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit, preview: @Composable ColumnScope.() -> Unit) {
+fun PreviewWithTools(st: AppState, panes: Panes, tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit,
+                     preview: @Composable ColumnScope.(videoModifier: Modifier) -> Unit) {
     val sel = selected.coerceIn(0, tools.size - 1)
     if (panes.wide) Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         Column(Modifier.weight(1.15f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp), content = preview)
+            verticalArrangement = Arrangement.spacedBy(14.dp)) { preview(Modifier) }
         Column(Modifier.weight(1f).fillMaxHeight().padding(top = 16.dp)) {
             ToolTabs(tools, sel, onSelect)
             key(sel) {
@@ -140,20 +147,44 @@ fun PreviewWithTools(panes: Panes, tools: List<Tool>, selected: Int, onSelect: (
                     verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
             }
         }
-    } else BoxWithConstraints(Modifier.fillMaxSize()) {
-        // The preview area may take at most 60% of the height, so the tool bar and its panel always stay
-        // reachable (a tall preview used to push them off screen). If the preview area needs more, it scrolls itself.
-        val topMax = maxHeight * 0.6f
-        Column(Modifier.fillMaxSize()) {
-            Column(Modifier.heightIn(max = topMax).verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = preview)
-            Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
-            key(sel) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+    } else {
+        // Phones: preview on top, tools below, split by a handle you can drag (double-tap resets).
+        // The preview scales to whatever height the top part has. Weights, not BoxWithConstraints, size the parts.
+        var totalPx by remember { mutableIntStateOf(0) }
+        val split = st.editorSplit
+        Column(Modifier.fillMaxSize().onSizeChanged { totalPx = it.height }) {
+            Column(Modifier.weight(split).fillMaxWidth().clipToBounds().padding(horizontal = 20.dp).padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) { preview(Modifier.weight(1f)) }
+            SplitHandle(
+                onDrag = { dy -> if (totalPx > 0) st.editorSplit = (st.editorSplit + dy / totalPx).coerceIn(EDITOR_SPLIT_MIN, EDITOR_SPLIT_MAX) },
+                onStop = { st.saveEditorSplit() },
+                onReset = { st.editorSplit = EDITOR_SPLIT_DEFAULT; st.saveEditorSplit() },
+            )
+            Column(Modifier.weight(1f - split).fillMaxWidth()) {
+                Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
+                key(sel) {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+                }
             }
         }
+    }
+}
+
+/** Grip between the preview and the tools: drag to give either more room; double-tap for the default split. */
+@Composable
+private fun SplitHandle(onDrag: (Float) -> Unit, onStop: () -> Unit, onReset: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    var active by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth().height(24.dp)
+        .draggable(rememberDraggableState { onDrag(it) }, androidx.compose.foundation.gestures.Orientation.Vertical,
+            onDragStarted = { active = true }, onDragStopped = { active = false; onStop() })
+        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onReset() }) }
+        .semantics { contentDescription = "Resize the preview. Drag up or down; double-tap to reset." },
+        contentAlignment = Alignment.Center) {
+        Box(Modifier.width(if (active) 56.dp else 40.dp).height(5.dp).clip(CircleShape)
+            .background(if (active) c.primary else c.onSurfaceVariant.copy(alpha = 0.45f)))
     }
 }
 
@@ -441,13 +472,13 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
     )
     // True while the preview is pressed and held (showing the squeezed original).
     var held by remember(v.uri) { mutableStateOf(false) }
-    PreviewWithTools(panes, tools, st.frameTool, { st.frameTool = it }) {
+    PreviewWithTools(st, panes, tools, st.frameTool, { st.frameTool = it }) { videoMod ->
         ClipSwitcher(st) { clip -> fmtSqueeze(st.squeezeFor(clip)) + (if (st.trimFor(clip) != null) "  · trimmed" else "") + if (existingTag(clip) != null) "  · tagged" else "" }
         key(v.uri) {
-            if (st.busy) ExportingPlaceholder(g.outRatio)
+            if (st.busy) ExportingPlaceholder(g.outRatio, videoMod)
             else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, scopeLarge = st.scopeLarge,
-                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax,
-                onHold = { held = it })
+                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = if (panes.wide) previewMax else null,
+                onHold = { held = it }, modifier = videoMod)
         }
         ViewToggle(st.desqueezed, held = held) { st.desqueezed = it }
     }
@@ -703,13 +734,13 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
         },
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
-    PreviewWithTools(panes, tools, st.lookTool, { st.lookTool = it }) {
+    PreviewWithTools(st, panes, tools, st.lookTool, { st.lookTool = it }) { videoMod ->
         ClipSwitcher(st)
         key(v.uri) {
-            if (st.busy) ExportingPlaceholder(g.outRatio)
+            if (st.busy) ExportingPlaceholder(g.outRatio, videoMod)
             else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
                 guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, scopeLarge = st.scopeLarge,
-                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = previewMax)
+                onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = if (panes.wide) previewMax else null, modifier = videoMod)
         }
     }
 }

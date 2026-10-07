@@ -2,6 +2,14 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.24 — 2026-10-07
+
+### Added
+- **Resizable editor.** In the Frame and Look steps on phones, a handle sits between the preview and the tools. Drag it down for a bigger preview, or up for more room for the controls; the preview, filmstrip and toggle scale to fit. Double-tap the handle to go back to an even split. Your split is remembered.
+
+### Fixed
+- **The app still closed on "Before / After at full quality"** (and could when a LUT finished loading). v1.21 and v1.23 changed things inside the preview, but the crash kept coming from the layouts wrapped around it: the editor and the preview each used a layout that composes its content while measuring (`BoxWithConstraints`), nested two deep around the video view, and that is where Compose's `LayoutNode.insertAt` error was thrown. Both are now plain layouts that just measure and place, so the video view is no longer inside a nested measure-time composition.
+
 ## v1.23 — 2026-10-07
 
 ### Fixed

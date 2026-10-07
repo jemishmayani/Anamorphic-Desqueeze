@@ -28,6 +28,10 @@ enum class Step(val label: String) { Clips("Clips"), Frame("Frame"), Look("Look"
 
 /** Lives above the screens so navigating never loses clips or settings. */
 class AppState(settings: Settings, luts: LutManager) {
+    private val prefs = settings
+    /** Preview / tool panel split in the Frame and Look steps on phones (dragged by the handle between them). */
+    var editorSplit by mutableFloatStateOf(settings.editorSplit.coerceIn(EDITOR_SPLIT_MIN, EDITOR_SPLIT_MAX))
+    fun saveEditorSplit() { prefs.editorSplit = editorSplit }
     var screen by mutableStateOf(Screen.Main)
     var videos by mutableStateOf(listOf<VideoInfo>())
     var selected by mutableIntStateOf(0)

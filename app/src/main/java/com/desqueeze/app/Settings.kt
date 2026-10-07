@@ -30,6 +30,12 @@ class Settings(ctx: Context) {
         set(v) = p.edit().putString("format", v.name).apply()
     var formatFill: Boolean get() = p.getBoolean("formatFill", false); set(v) = p.edit().putBoolean("formatFill", v).apply()
     var notifAsked: Boolean get() = p.getBoolean("notifAsked", false); set(v) = p.edit().putBoolean("notifAsked", v).apply()
+    /** Share of the editor's height given to the preview on phones (the rest is the tool panel). */
+    var editorSplit: Float get() = p.getFloat("editorSplit", EDITOR_SPLIT_DEFAULT); set(v) = p.edit().putFloat("editorSplit", v).apply()
 }
+
+const val EDITOR_SPLIT_DEFAULT = 0.5f
+const val EDITOR_SPLIT_MIN = 0.28f
+const val EDITOR_SPLIT_MAX = 0.78f
 
 fun fmtSqueeze(f: Float): String = (if (f * 100 % 10 == 0f) "%.1f" else "%.2f").format(f) + "×"

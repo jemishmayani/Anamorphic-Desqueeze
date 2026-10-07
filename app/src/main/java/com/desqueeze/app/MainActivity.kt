@@ -157,8 +157,8 @@ fun BrandMark(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ExportingPlaceholder(ratio: Float) {
-    Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(20.dp))
+fun ExportingPlaceholder(ratio: Float, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(20.dp))
         .background(MaterialTheme.colorScheme.surfaceContainer), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             FlareLine(Modifier.width(160.dp))
@@ -166,7 +166,7 @@ fun ExportingPlaceholder(ratio: Float) {
             Text("Preview paused while exporting", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-    }
+    } }
 }
 
 @Composable

@@ -38,7 +38,10 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -87,6 +90,7 @@ fun PreviewPlayer(
     onTrimChange: ((Pair<Long, Long>) -> Unit)? = null,
     /** Reports press-and-hold, so the Squeezed / De-squeezed toggle can show what's on screen. */
     onHold: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -249,14 +253,16 @@ fun PreviewPlayer(
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-    // In landscape / two-pane layouts the preview shrinks to stay fully visible.
-    // Tall pictures may use more of the screen height so the stretch is actually visible.
-    val mh = maxHeight?.let { if (frame < 1f) it * 1.3f else it }
-    val boxWidth = if (mh != null) minOf(this.maxWidth, mh * frame) else this.maxWidth
-    Column(Modifier.width(boxWidth).align(Alignment.TopCenter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // Video above the filmstrip, both scaled to fit the height this preview is given (the editor's
+    // adjustable top area on phones; [maxHeight] in two-pane layouts, where tall pictures get a bit more).
+    // A plain Layout, not BoxWithConstraints: nested measure-time compositions around the video view were
+    // where the "LayoutNode.insertAt" crashes kept happening.
+    val density = LocalDensity.current
+    val capPx = maxHeight?.let { with(density) { (if (frame < 1f) it * 1.3f else it).roundToPx() } }
+    val gapPx = with(density) { 10.dp.roundToPx() }
+    Layout(modifier = modifier.fillMaxWidth(), content = {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(frame).clip(RoundedCornerShape(24.dp)).background(Color.Black)
+            Modifier.clip(RoundedCornerShape(24.dp)).background(Color.Black)
                 .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
                 .pointerInput(player) {
                     detectTapGestures(
@@ -346,7 +352,22 @@ fun PreviewPlayer(
             }
         }
         FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
-    }
+    }) { m, c ->
+        val maxW = c.maxWidth
+        val stripH = m[1].minIntrinsicHeight(maxW)
+        val limit = minOf(if (c.hasBoundedHeight) c.maxHeight else Int.MAX_VALUE, capPx ?: Int.MAX_VALUE)
+        var vw = maxW
+        if (limit != Int.MAX_VALUE) vw = minOf(vw, ((limit - stripH - gapPx).coerceAtLeast(1) * frame).toInt())
+        vw = vw.coerceAtLeast(1)
+        val vh = (vw / frame).toInt().coerceAtLeast(1)
+        val video = m[0].measure(androidx.compose.ui.unit.Constraints.fixed(vw, vh))
+        val strip = m[1].measure(androidx.compose.ui.unit.Constraints(minWidth = vw, maxWidth = vw))
+        val total = vh + gapPx + strip.height
+        val h = c.constrainHeight(total)
+        layout(maxW, h) {
+            val x = (maxW - vw) / 2; val y = ((h - total) / 2).coerceAtLeast(0)
+            video.place(x, y); strip.place(x, y + vh + gapPx)
+        }
     }
 }
 
