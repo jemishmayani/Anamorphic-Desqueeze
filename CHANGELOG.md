@@ -2,6 +2,11 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.23 — 2026-10-07
+
+### Fixed
+- **The app could crash on "Before / After at full quality".** Pressing it shows a spinner, hides it and slides in the comparison view, all in the same preview box, which is the same pattern that crashed when a LUT finished loading. The preview is now built from a fixed set of layers (video, false color, outline, guides, labels, hint, spinner, error, controls, scopes, compare) that are always there; only what's inside each layer comes and goes.
+
 ## v1.22 — 2026-10-07
 
 ### Fixed

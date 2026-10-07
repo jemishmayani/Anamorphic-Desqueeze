@@ -292,8 +292,11 @@ fun PreviewPlayer(
                     modifier = Modifier.fillMaxSize().squeezedThenStretched(g.inRatio, ratio).rotatedContent(g.extraRotation),
                 )
             }
-            if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor?.let {
-                Box(videoMod) { Image(it, "False color", Modifier.fillMaxSize().rotatedContent(g.extraRotation), contentScale = ContentScale.FillBounds) }
+            // Every layer below is always present; only what's inside each one comes and goes. Several layers
+            // appearing and disappearing in this box in the same frame (LUT ready, Before / After) crashed Compose.
+            Box(videoMod) {
+                val fc = if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor else null
+                if (fc != null) Image(fc, "False color", Modifier.fillMaxSize().rotatedContent(g.extraRotation), contentScale = ContentScale.FillBounds)
             }
             // Shows how much the picture was stretched: the original frame's shape as a dashed outline.
             StretchOutline(g, showWide, videoMod)
@@ -308,12 +311,14 @@ fun PreviewPlayer(
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }
-            if (hint && error == null) Box(Modifier.align(Alignment.Center)) { Pill("Hold to compare with the original", accent = false) }
-            if (comparing) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
-            else if (!ready && error == null && compare == null)
-                CircularProgressIndicator(color = Color.White.copy(alpha = 0.8f), strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-            error?.let { msg ->
-                Column(Modifier.align(Alignment.Center).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.align(Alignment.Center)) { if (hint && error == null && !comparing) Pill("Hold to compare with the original", accent = false) }
+            Box(Modifier.align(Alignment.Center)) {
+                val spinning = comparing || (!ready && error == null && compare == null)
+                if (spinning) CircularProgressIndicator(color = Color.White.copy(alpha = 0.85f), strokeWidth = 2.dp, modifier = Modifier.size(30.dp))
+            }
+            Box(Modifier.align(Alignment.Center)) {
+                val msg = error
+                if (msg != null) Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(msg, color = Color.White, style = MaterialTheme.typography.bodySmall)
                     if (canRetry) TextButton(onClick = { error = null; canRetry = false; autoRetries = 0; attempt++ }) { Text("Retry", color = Color.White) }
                 }
@@ -332,8 +337,13 @@ fun PreviewPlayer(
                 }
             }
 
-            if (exposure != Scope.OFF) ScopeOverlay(exposure, scopeData, scopeLarge, onScopeLarge, scopePos, onScopePos, onScopeClose)
-            compare?.let { (before, after) -> CompareOverlay(before, after, ratio) { compare = null } }
+            Box(Modifier.matchParentSize()) {
+                if (exposure != Scope.OFF) ScopeOverlay(exposure, scopeData, scopeLarge, onScopeLarge, scopePos, onScopePos, onScopeClose)
+            }
+            Box(Modifier.matchParentSize()) {
+                val pair = compare
+                if (pair != null) CompareOverlay(pair.first, pair.second, ratio) { compare = null }
+            }
         }
         FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
     }
