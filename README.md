@@ -333,15 +333,11 @@ secret `KEYSTORE_PASSWORD`. Without the password the file is useless. Without th
 forks), builds fall back to a temporary debug key.
 
 To publish a release, add a section for the new version to [`CHANGELOG.md`](CHANGELOG.md), bump
-`versionCode`/`versionName` in `app/build.gradle.kts`, then push a tag:
-
-```sh
-git tag vX.Y
-git push origin vX.Y
-```
-
-The workflow builds both files, creates the GitHub Release, and uses that version's CHANGELOG section,
-plus install instructions, as the release notes.
+`versionCode`/`versionName` in `app/build.gradle.kts`, and push to `main`. When the build finds a
+`versionName` that has no `v…` tag yet, it creates the tag and the GitHub Release itself, attaches the APK
+and Play bundle, and uses that version's CHANGELOG section, plus install instructions, as the release notes.
+Pushes that don't change the version just build. Pushing a `vX.Y` tag, or publishing a release on
+github.com, also works; an existing release is filled in rather than duplicated.
 
 Unit tests live in `app/src/test` (gamma classification, with tiny fixture files in `app/src/test/resources/gamma`, and the scope math);
 run them with `gradle :app:testGithubDebugUnitTest`.
