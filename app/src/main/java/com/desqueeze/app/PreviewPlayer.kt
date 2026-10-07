@@ -1,7 +1,6 @@
 package com.desqueeze.app
 
 import android.graphics.Bitmap
-import android.graphics.Color as AColor
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -52,8 +51,6 @@ import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.SingleColorLut
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -213,9 +210,9 @@ fun PreviewPlayer(
     val frame = ratio.coerceIn(0.56f, 4f)
     val videoMod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
 
-    // Exposure tools read small frames from a TextureView (only while a tool is on).
-    val useTexture = exposure != Scope.OFF || g.extraRotation != 0
+    // The video view (a TextureView; exposure tools read small frames from it) and the player attached to it.
     var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
+    val attached = remember { arrayOfNulls<ExoPlayer>(1) }
     var scopeData by remember { mutableStateOf<ScopeData?>(null) }
     val statsCb by rememberUpdatedState(onStats)
     LaunchedEffect(exposure, texture, player) {
@@ -269,20 +266,25 @@ fun PreviewPlayer(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            key(player, useTexture) {
-                if (useTexture) {
-                    // TextureView stretches the picture to its bounds, like the normal view, and lets us read frames.
-                    Box(videoMod) {
-                        AndroidView(factory = { android.view.TextureView(it).also { tv -> player.setVideoTextureView(tv); texture = tv } },
-                            onRelease = { tv -> player.clearVideoTextureView(tv); texture = null },
-                            modifier = Modifier.fillMaxSize().rotatedContent(g.extraRotation))
-                    }
-                } else {
-                    AndroidView(factory = { PlayerView(it).apply {
-                        this.player = player; useController = false; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
-                        setShutterBackgroundColor(AColor.BLACK); setKeepContentOnPlayerReset(true)
-                    } }, modifier = videoMod)
-                }
+            // One video view for the whole life of this preview. When the player is rebuilt (LUT, strength, retry)
+            // only the player attached to the view changes, so the layout never removes and inserts a view in
+            // the same frame as other changes (that combination crashed Compose when a LUT finished loading).
+            // A TextureView stretches the picture to its bounds and lets the exposure tools read frames.
+            Box(videoMod) {
+                AndroidView(
+                    factory = { c -> android.view.TextureView(c).also { tv -> texture = tv } },
+                    update = { tv ->
+                        if (attached[0] !== player) {
+                            attached[0]?.let { old -> runCatching { old.clearVideoTextureView(tv) } }
+                            player.setVideoTextureView(tv); attached[0] = player
+                        }
+                    },
+                    onRelease = { tv ->
+                        attached[0]?.let { p -> runCatching { p.clearVideoTextureView(tv) } }
+                        attached[0] = null; texture = null
+                    },
+                    modifier = Modifier.fillMaxSize().rotatedContent(g.extraRotation),
+                )
             }
             if (exposure == Scope.FALSE_COLOR) scopeData?.falseColor?.let {
                 Box(videoMod) { Image(it, "False color", Modifier.fillMaxSize().rotatedContent(g.extraRotation), contentScale = ContentScale.FillBounds) }
@@ -486,9 +488,7 @@ fun BoxScope.ScopeOverlay(scope: Scope, data: ScopeData?, large: Boolean, onLarg
             Text("False color", fontSize = 12.sp, color = Color.White, style = Mono)
             CloseDot(onClose)
         }
-        return
-    }
-    BoxWithConstraints(Modifier.matchParentSize().padding(start = 10.dp, end = 10.dp, top = 46.dp, bottom = 46.dp)) {
+    } else BoxWithConstraints(Modifier.matchParentSize().padding(start = 10.dp, end = 10.dp, top = 46.dp, bottom = 46.dp)) {
         val square = scope == Scope.VECTORSCOPE
         val w = if (large) maxWidth * 0.66f else maxWidth * 0.40f
         val h = if (square) minOf(w, maxHeight) else minOf(maxHeight, if (large) maxHeight else w * 0.56f)
@@ -635,8 +635,9 @@ fun Modifier.rotatedContent(deg: Int): Modifier {
 fun StretchOutline(g: Geometry, show: Boolean, modifier: Modifier) {
     val f = stretchFactor(g)
     val a by animateFloatAsState(if (show && f > 1.005f) 1f else 0f, tween(300), label = "outline")
-    if (a <= 0f) return
+    // Always one Canvas (drawing nothing when hidden), so the preview's layout never gains or loses a child here.
     Canvas(modifier) {
+        if (a <= 0f) return@Canvas
         val w = size.width; val h = size.height
         val iw = if (g.vertical) w else w / f; val ih = if (g.vertical) h / f else h
         val l = (w - iw) / 2; val t = (h - ih) / 2

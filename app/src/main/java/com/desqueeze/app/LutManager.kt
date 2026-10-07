@@ -19,11 +19,51 @@ class LutManager(private val ctx: Context) {
         val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
             ?: throw IllegalArgumentException("Could not read file")
         val cube = parse(text) // validates
-        val id = "lut_" + System.currentTimeMillis()
+        val id = newId()
         File(dir, "$id.cube").writeText(text)
         val nice = displayName.substringBeforeLast('.')
         names.edit().putString(id, nice).apply()
         return LutEntry(id, nice, cube.size)
+    }
+
+    /** Result of importing several files: LUTs added, names already in the library, and files that failed (name to reason). */
+    data class ImportReport(val added: List<LutEntry>, val duplicates: List<String>, val failed: List<Pair<String, String>>) {
+        val summary: String get() = lutImportSummary(added.size, duplicates, failed)
+    }
+
+    /**
+     * Imports several .cube files (call off the main thread). Each is validated; files whose LUT data is already in
+     * the library are skipped, so importing a folder twice doesn't create copies.
+     */
+    fun importAll(files: List<Pair<Uri, String>>): ImportReport {
+        val known = HashSet<String>()
+        (dir.listFiles() ?: emptyArray()).filter { it.extension == "cube" }.forEach { f -> runCatching { known += lutHash(f.readText()) } }
+        val added = mutableListOf<LutEntry>(); val dup = mutableListOf<String>(); val failed = mutableListOf<Pair<String, String>>()
+        for ((uri, display) in files) {
+            val nice = display.substringBeforeLast('.')
+            try {
+                val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalArgumentException("couldn't read the file")
+                val cube = parse(text)
+                if (!known.add(lutHash(text))) { dup += nice; continue }
+                val id = newId()
+                File(dir, "$id.cube").writeText(text)
+                names.edit().putString(id, nice).apply()
+                added += LutEntry(id, nice, cube.size)
+            } catch (e: Exception) { failed += nice to (e.message ?: e.javaClass.simpleName) }
+        }
+        return ImportReport(added, dup, failed)
+    }
+
+    /** A new id that no stored LUT uses (several files imported in the same millisecond used to collide). */
+    private fun newId(): String {
+        val t = System.currentTimeMillis()
+        var n = 0
+        while (true) {
+            val id = if (n == 0) "lut_$t" else "lut_${t}_$n"
+            if (!File(dir, "$id.cube").exists()) return id
+            n++
+        }
     }
     fun rename(id: String, newName: String) = names.edit().putString(id, newName.trim()).apply()
     fun delete(id: String) { File(dir, "$id.cube").delete(); names.edit().remove(id).apply() }
@@ -96,4 +136,27 @@ class LutManager(private val ctx: Context) {
             return CubeLut(size, vals.toFloatArray(), min, max)
         }
     }
+}
+
+/** Fingerprint of a LUT's data, ignoring comments, the title, blank lines and spacing, to spot duplicates. */
+fun lutHash(text: String): String {
+    val ws = Regex("\\s+")
+    val norm = text.lineSequence().map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("TITLE") }
+        .joinToString("\n") { it.split(ws).joinToString(" ") }
+    return java.security.MessageDigest.getInstance("SHA-256").digest(norm.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+}
+
+/** One-line summary of a batch import, e.g. "Imported 3 LUTs. Skipped 1 already in your library." */
+fun lutImportSummary(added: Int, duplicates: List<String>, failed: List<Pair<String, String>>): String {
+    val parts = mutableListOf<String>()
+    if (added > 0) parts += "Imported $added LUT${if (added == 1) "" else "s"}."
+    if (duplicates.isNotEmpty()) parts += if (duplicates.size == 1) "Skipped “${duplicates[0]}”: already in your library."
+        else "Skipped ${duplicates.size} already in your library."
+    if (failed.isNotEmpty()) {
+        val shown = failed.take(3).joinToString("; ") { (n, why) -> "“$n” ($why)" }
+        parts += "Couldn't import ${failed.size}: $shown" + (if (failed.size > 3) "; and ${failed.size - 3} more." else ".")
+    }
+    return if (parts.isEmpty()) "No LUTs imported." else parts.joinToString(" ")
 }

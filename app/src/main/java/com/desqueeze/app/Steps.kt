@@ -224,9 +224,11 @@ fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
                 Text(st.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 3)
                 Spacer(Modifier.height(8.dp))
             }
-            if (st.busy) { ExportProgressPanel(st); return@Column }
-            st.exportDone?.let { done -> ExportDonePanel(st, done); return@Column }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val done = st.exportDone
+            // One branch per state (no early returns out of the inline Column, which can confuse Compose's bookkeeping).
+            if (st.busy) ExportProgressPanel(st)
+            else if (done != null) ExportDonePanel(st, done)
+            else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (st.step != Step.Clips) OutlinedButton(onClick = { st.step = Step.entries[st.step.ordinal - 1] },
                     Modifier.height(56.dp), shape = RoundedCornerShape(16.dp)) { Text("Back") }
                 val last = st.step == Step.Export
@@ -269,9 +271,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             }
         }
-        return
-    }
-    TwoPane(panes, left = {
+    } else TwoPane(panes, left = {
         ImportProgress(st)
         Section(if (st.videos.size == 1) "Your clip" else "${st.videos.size} clips", trailing = {
             TextButton(onClick = onAdd, enabled = !st.busy) { Text("Add clips") }
@@ -634,23 +634,15 @@ fun Segmented(options: List<String>, selected: Int, enabled: Boolean = true, onS
 
 @Composable
 fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Panes, previewMax: androidx.compose.ui.unit.Dp?) {
-    val ctx = LocalContext.current
     val v = st.videos.getOrNull(st.selected) ?: return
     val g = st.geoOf(v)
     val cube by produceState<LutManager.CubeLut?>(null, st.lutId) {
         value = st.lutId?.let { id -> withContext(Dispatchers.IO) { try { luts.load(id) } catch (_: Exception) { null } } }
     }
-    val uiScope = rememberCoroutineScope()
-    val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
-        if (u != null) uiScope.launch {
-            st.lutLoading = true
-            try {
-                val name = displayName(ctx, u)
-                val entry = withContext(Dispatchers.IO) { luts.import(u, name) }   // big .cube files take a moment to parse
-                st.lutId = entry.id; st.lutList = luts.list()
-            } catch (e: Exception) { st.status = "This LUT couldn't be loaded: ${e.message}" }
-            finally { st.lutLoading = false }
-        }
+    var importMsg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }   // text, isError
+    val importLuts = rememberLutImporter(st, luts) { r ->
+        if (r.added.size == 1) st.lutId = r.added[0].id
+        importMsg = r.summary to (r.added.isEmpty() && r.failed.isNotEmpty())
     }
     // Reading the selected LUT for the live preview.
     val cubeLoading = st.lutId != null && cube == null
@@ -659,16 +651,22 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     val tools = listOf(
         Tool("LUT", AppIcons.Gamut, lutName?.let { if (st.lutPreview) "${(st.strength * 100).toInt()}%" else "Off" } ?: "None", active = st.lutId != null) {
     Section("LUT") {
-        PickerRow(null, st.lutList.firstOrNull { it.id == st.lutId }?.name ?: "No LUT",
-            listOf("No LUT") + st.lutList.map { it.name } + "Import a .cube file…", enabled = !st.busy) { i ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+            Text(lutName ?: "No LUT", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (st.lutList.isNotEmpty()) Text("Manage", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { st.lutsBack = Screen.Main; st.screen = Screen.Luts }.padding(horizontal = 8.dp, vertical = 4.dp))
+        }
+        LutPicker(st, luts, v, enabled = !st.busy) { importMsg = null; importLuts() }
+        // One status line under the picker, always present, so the layout doesn't jump as states change.
+        Box(Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 20.dp)) {
+            val msg = importMsg
             when {
-                i == 0 -> st.lutId = null
-                i <= st.lutList.size -> st.lutId = st.lutList[i - 1].id
-                else -> lutPicker.launch(arrayOf("*/*"))
+                st.lutLoading -> LoadingRow("Importing LUTs…")
+                cubeLoading -> LoadingRow("Preparing the LUT for the preview…")
+                msg != null -> Text(msg.first, style = MaterialTheme.typography.bodySmall,
+                    color = if (msg.second) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (st.lutLoading) LoadingRow("Reading the LUT…", Modifier.padding(top = 10.dp))
-        else if (cubeLoading) LoadingRow("Preparing the LUT for the preview…", Modifier.padding(top = 10.dp))
         AnimatedVisibility(st.lutId != null) {
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Segmented(listOf("LUT off", "LUT on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }

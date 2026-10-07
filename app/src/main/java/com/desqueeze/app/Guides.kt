@@ -62,10 +62,11 @@ fun fmtRatio(r: Float) = "%.2f".format(r)
 /** Draws the guides over the video area (same size and position as the picture). */
 @Composable
 fun GuideOverlay(g: Guides, modifier: Modifier = Modifier) {
-    if (!g.any) return
     val measurer = rememberTextMeasurer()
     val label = TextStyle(color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, fontFeatureSettings = "tnum")
+    // Always one Canvas (drawing nothing when no guide is on), so the preview's layout stays structurally stable.
     Canvas(modifier) {
+        if (!g.any) return@Canvas
         val full = Rect(Offset.Zero, size)
         // Frame-line rectangle for the chosen delivery ratio (letterbox or pillarbox inside the picture).
         val frame = g.ratio?.let { r ->

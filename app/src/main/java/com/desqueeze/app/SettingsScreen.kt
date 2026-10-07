@@ -193,7 +193,7 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
             SettingsGroup("Output & looks") {
                 SettingRow(AppIcons.Folder, "Save to", "Exports go to your Movies folder", "Movies/${s.folder}", onClick = { folderDialog = true })
                 SettingRow(AppIcons.Palette, "LUT library", "Import, rename and delete .cube LUTs",
-                    "${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}", tint = Warm, onClick = { st.screen = Screen.Luts })
+                    "${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}", tint = Warm, onClick = { st.lutsBack = Screen.Settings; st.screen = Screen.Luts })
                 SettingChoiceRow(AppIcons.Moon, "Theme", null, s.theme.label, ThemeMode.entries.map { it.label }) {
                     s.theme = ThemeMode.entries[it]; st.theme = s.theme; refresh() }
                 AccentPicker(st.accent) { s.accent = it; st.accent = it }
@@ -259,38 +259,30 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
 
 @Composable
 fun LutLibraryScreen(st: AppState, luts: LutManager, onBack: () -> Unit) {
-    val ctx = LocalContext.current
     val c = MaterialTheme.colorScheme
     var renaming by remember { mutableStateOf<LutEntry?>(null) }
-    var msg by remember { mutableStateOf("") }
-    val uiScope = rememberCoroutineScope()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
-        if (u != null) uiScope.launch {
-            st.lutLoading = true
-            try {
-                val name = displayName(ctx, u)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { luts.import(u, name) }
-                st.lutList = luts.list(); msg = ""
-            } catch (e: Exception) { msg = "This LUT couldn't be loaded: ${e.message}" }
-            finally { st.lutLoading = false }
-        }
-    }
+    var msg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }   // text, isError
+    val importLuts = rememberLutImporter(st, luts) { r -> msg = r.summary to (r.added.isEmpty() && r.failed.isNotEmpty()) }
     Column(Modifier.fillMaxSize()) {
         TopBar("LUT library", onBack)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("3D .cube LUTs you import are stored privately in the app. None are bundled; for log footage, import your camera maker's official log-to-Rec.709 LUT.",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-            Button(onClick = { picker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Import .cube LUT") }
-            if (st.lutLoading) LoadingRow("Reading the LUT…")
-            if (msg.isNotEmpty()) Text(msg, color = c.error, style = MaterialTheme.typography.bodySmall)
+            Button(onClick = { msg = null; importLuts() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp),
+                enabled = !st.lutLoading) { Text("Import .cube LUTs") }
+            Text("You can pick several files at once. Duplicates already in your library are skipped.",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            val m = msg
+            if (st.lutLoading) LoadingRow("Importing LUTs…")
+            else if (m != null) Text(m.first, color = if (m.second) c.error else c.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             if (st.lutList.isEmpty()) Text("No LUTs yet.", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
             else SettingsGroup("${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}") {
                 st.lutList.forEachIndexed { i, l ->
                     SettingRow(AppIcons.Palette, l.name, if (st.lutId == l.id) "In use" else null, tint = Warm, divider = i < st.lutList.size - 1,
                         trailing = { Row {
                             TextButton(onClick = { renaming = l }) { Text("Rename") }
-                            TextButton(onClick = { luts.delete(l.id); if (st.lutId == l.id) st.lutId = null; st.lutList = luts.list() }) { Text("Delete", color = c.error) }
+                            TextButton(onClick = { luts.delete(l.id); LutThumbs.forget(l.id); if (st.lutId == l.id) st.lutId = null; st.lutList = luts.list() }) { Text("Delete", color = c.error) }
                         } })
                 }
             }

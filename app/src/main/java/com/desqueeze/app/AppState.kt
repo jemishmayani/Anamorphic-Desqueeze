@@ -128,6 +128,8 @@ class AppState(settings: Settings, luts: LutManager) {
     var importing by mutableStateOf<Pair<Int, Int>?>(null)
     /** A LUT file is being read and checked. */
     var lutLoading by mutableStateOf(false)
+    /** Screen the LUT library returns to (Settings, or Main when opened from the Look step). */
+    var lutsBack by mutableStateOf(Screen.Settings)
     /** Where the scope overlay sits inside the video: x, y as 0..1 of the free space (1, 0 = top-right). */
     var scopePos by mutableStateOf(androidx.compose.ui.geometry.Offset(1f, 0f))
     var scopeStats by mutableStateOf<ScopeMath.Stats?>(null)

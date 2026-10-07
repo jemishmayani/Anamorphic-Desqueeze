@@ -51,7 +51,7 @@ never modified.
 |---|---|
 | **1. Clips** | Pick videos, or **share** them to De-Squeeze from your gallery. Each shows a thumbnail, duration, resolution, bit depth and detected log/HDR |
 | **2. Frame** | Choose each clip's squeeze factor, orientation and desqueeze direction; trim; check exposure; frame with guides in the live preview |
-| **3. Look** | Optional: add a LUT, preview it live, set its strength, compare before/after, check exposure of the graded image |
+| **3. Look** | Optional: pick a LUT from thumbnails of your clip, preview it live, set its strength, compare before/after, check exposure of the graded image |
 | **4. Export** | Follow the recommendation (or pick the alternative), choose a social format if you like, check compatibility, size and time, then export, even in the background |
 
 Exports are saved to `Movies/AnamorphicDesqueeze/` as `ORIGINALNAME_DESQUEEZED_1.33X.mp4`
@@ -147,7 +147,8 @@ actual image detail is similar or lower.
   Scopes are sampled at 384 px and drawn like a monitor scope: a phosphor-style brightness curve keeps both busy and faint areas readable, with a labelled IRE graticule; the histogram has 256 levels per channel.
 
 **Look**
-- **LUT library:** import, rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
+- **LUT picker with previews:** every LUT is a small tile showing your current clip through it, so you can compare looks at a glance
+- **LUT library:** import (several files at once, with duplicates skipped), rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
 - **LUT preview:** off / on while the video plays (a lighter ~720p proxy keeps 4K 10-bit smooth), strength with 0% / 50% / 100% marks, and a full-quality **before / after** still with a draggable divider
 
 **Export**
@@ -312,7 +313,8 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `ExportService.kt` | Background export: foreground service and notifications |
 | `Compat.kt`, `Recommend.kt`, `Estimates.kt` | Compatibility check, recommendations, size/time estimates |
 | `DeviceCaps.kt`, `LimitsScreen.kt` | Hardware codec capabilities and Device diagnostics |
-| `LutManager.kt` | `.cube` parsing and the LUT library |
+| `LutManager.kt` | `.cube` parsing, batch import with duplicate detection, and the LUT library |
+| `LutPicker.kt` | LUT tiles with clip previews, and the multi-file import launcher |
 | `Settings.kt`, `SettingsScreen.kt` | Preferences; Settings, LUT library, About & support, update check |
 | `Diag.kt` | Crash, freeze and low-memory reports |
 | `Theme.kt` | Neutral palette, accent colours, Material You, typography |

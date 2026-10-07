@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     state.crashLog?.let { log -> CrashDialog(log) { state.crashLog = null } }
                     BackHandler(state.screen != Screen.Main) {
-                        state.screen = if (state.screen == Screen.Limits || state.screen == Screen.Luts) Screen.Settings else Screen.Main
+                        state.screen = when (state.screen) { Screen.Limits -> Screen.Settings; Screen.Luts -> state.lutsBack; else -> Screen.Main }
                     }
                     AnimatedContent(state.screen, label = "nav", transitionSpec = {
                         val fwd = targetState.ordinal > initialState.ordinal
@@ -97,7 +97,7 @@ class MainActivity : ComponentActivity() {
                                 when (s) {
                                     Screen.Settings -> SettingsScreen(state, settings, luts)
                                     Screen.Limits -> LimitsScreen { state.screen = Screen.Settings }
-                                    Screen.Luts -> LutLibraryScreen(state, luts) { state.screen = Screen.Settings }
+                                    Screen.Luts -> LutLibraryScreen(state, luts) { state.screen = state.lutsBack }
                                     else -> {}
                                 }
                             }

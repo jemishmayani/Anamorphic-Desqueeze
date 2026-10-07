@@ -2,6 +2,19 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.20 — 2026-10-07
+
+### Fixed
+- **The app could crash right after a LUT finished loading** (`ArrayIndexOutOfBoundsException` in `LayoutNode.insertAt`). When the LUT was ready, the preview rebuilt its video player, swapped its video view and added the "LUT 100%" badge, while the loading message disappeared, all in the same frame. Several preview overlays also added or removed themselves depending on their state. That combination could leave the screen's layout tree inconsistent. Now the preview keeps one video view for its whole life and just moves the player onto it. The guides, stretch outline and scope overlays always stay in place (drawing nothing when off), and the step bar and clip list no longer return early part-way through.
+- **Importing several LUTs in quick succession could overwrite one with another,** because two imports in the same millisecond got the same internal id. Ids are now always unique.
+
+### Added
+- **LUT previews in the Look step.** The LUT list is now a strip of small tiles, each showing your current clip through that LUT, so you can see what a LUT does before picking it. **No LUT** shows the original frame, the selected tile has a check mark, and the strip scrolls to the LUT you just picked or imported. Previews are made in the background and cached. **Manage** opens the LUT library, and Back returns you to Look.
+- **Batch LUT import.** Select several `.cube` files at once, from the **Import .cube files** tile in Look or from the LUT library. Every file is checked; LUTs already in your library (same data, even under a different name or title) are skipped. A one-line summary says what happened, e.g. "Imported 3 LUTs. Skipped “Rec709”: already in your library." If you import exactly one new LUT, it's selected straight away.
+
+### Changed
+- The LUT status line under the picker (importing, preparing the preview, import result) now uses one fixed spot, so the controls below it no longer jump.
+
 ## v1.19 — 2026-10-05
 
 ### Fixed

@@ -122,6 +122,7 @@ object AppIcons {
     val Info = icon("info") { line { circle(12f, 12f, 9f) }; line(2.2f) { moveTo(12f, 11f); lineTo(12f, 16.5f) }; solid { circle(12f, 7.6f, 1.2f) } }
 
     val Check = icon("check") { line(2.4f) { moveTo(5f, 12.5f); lineTo(10f, 17.5f); lineTo(19f, 7f) } }
+    val Plus = icon("plus") { line(2.2f) { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) } }
     val Cross = icon("cross") { line(2.4f) { moveTo(6.5f, 6.5f); lineTo(17.5f, 17.5f); moveTo(17.5f, 6.5f); lineTo(6.5f, 17.5f) } }
     val Warn = icon("warn") {
         line { moveTo(12f, 3.5f); lineTo(21f, 19.5f); lineTo(3f, 19.5f); close() }
