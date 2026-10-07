@@ -2,6 +2,11 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.22 — 2026-10-07
+
+### Fixed
+- **LUT previews of vertical clips were horizontal.** The tiles in the Look step were always 16:9, so a vertical clip was cropped to a landscape strip, and the tiles didn't show the de-squeeze. Tiles now take the clip's shape as it will be exported: tall for vertical clips, wide for landscape ones, de-squeezed, and turned if you changed the clip's orientation. Very wide or very tall shapes are kept between 9:16 and 16:9 so the tiles stay a usable size.
+
 ## v1.21 — 2026-10-07
 
 ### Fixed

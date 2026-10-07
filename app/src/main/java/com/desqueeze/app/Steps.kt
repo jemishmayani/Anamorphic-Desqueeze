@@ -656,7 +656,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
             if (st.lutList.isNotEmpty()) Text("Manage", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { st.lutsBack = Screen.Main; st.screen = Screen.Luts }.padding(horizontal = 8.dp, vertical = 4.dp))
         }
-        LutPicker(st, luts, v, enabled = !st.busy) { importMsg = null; importLuts() }
+        LutPicker(st, luts, v, g, enabled = !st.busy) { importMsg = null; importLuts() }
         // One status line under the picker, always present, so the layout doesn't jump as states change.
         Box(Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 20.dp)) {
             val msg = importMsg
