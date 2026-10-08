@@ -159,7 +159,7 @@ actual image detail is similar or lower.
 - **Background export:** keeps running when you switch apps or lock the phone, with a progress notification and Cancel. The panel shows overall and per-clip progress, then an **Exported** summary (with **Play**) that stays until you tap Done
 - **Progress everywhere you wait:** reading clips ("clip 2 of 5"), the preview starting, filmstrip thumbnails, LUTs being read, scopes warming up and size/time estimates
 - **Smart recommendations** in plain language for each clip (e.g. "Lossless Desqueeze: preserves your original 10-bit D-Log footage"), with the alternative and why
-- **Per-clip settings:** squeeze, orientation, desqueeze direction, trim, export method, format and resolution are all per clip, each with an **Apply to all** option.
+- **Per-clip settings:** squeeze, orientation, desqueeze direction, trim, LUT and its strength, export method, format and resolution are all per clip, each with an **Apply to all** option.
 - **Per-clip export method and format:** a batch can mix Lossless and Re-encode, and each clip has its own format; **Apply to all** or **Reset to recommended**. Picking a format on a Lossless clip switches it to Re-encode (amber notice with Undo); Lossless with a format set is flagged as a conflict in red
 - **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
 - **Estimates** of output size and processing time, which learn your phone's real speed

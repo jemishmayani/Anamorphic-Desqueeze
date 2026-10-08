@@ -681,7 +681,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     val lutName = st.lutList.firstOrNull { it.id == st.lutId }?.name
     val tools = listOf(
         Tool("LUT", AppIcons.Gamut, lutName?.let { if (st.lutPreview) "${(st.strength * 100).toInt()}%" else "Off" } ?: "None", active = st.lutId != null) {
-    Section("LUT") {
+    Section(if (st.videos.size > 1) "LUT for clip ${st.selected + 1}" else "LUT") {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
             Text(lutName ?: "No LUT", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (st.lutList.isNotEmpty()) Text("Manage", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
@@ -696,6 +696,20 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
                 cubeLoading -> LoadingRow("Preparing the LUT for the preview…")
                 msg != null -> Text(msg.first, style = MaterialTheme.typography.bodySmall,
                     color = if (msg.second) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (st.videos.size > 1) {
+            // Each clip keeps its own LUT and strength; this copies the current clip's to the rest of the batch.
+            val allSame = st.videos.all { o -> st.lutFor(o) == st.lutId && (st.lutId == null || kotlin.math.abs(st.strengthFor(o) - st.strength) < 0.005f) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Text(when {
+                        !allSame -> "Each clip has its own LUT. Switch clips above to change another one."
+                        st.lutId == null -> "No clip has a LUT."
+                        else -> "All ${st.videos.size} clips use this LUT at ${(st.strength * 100).toInt()}%."
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                if (!allSame) TextButton(onClick = { st.applyLutToAll() }, enabled = !st.busy) {
+                    Text(if (st.lutId == null) "Remove from all" else "Apply to all")
+                }
             }
         }
         AnimatedVisibility(st.lutId != null) {
@@ -735,7 +749,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
     PreviewWithTools(st, panes, tools, st.lookTool, { st.lookTool = it }) { videoMod ->
-        ClipSwitcher(st)
+        ClipSwitcher(st) { clip -> st.lutFor(clip)?.let { id -> st.lutList.firstOrNull { it.id == id }?.name } ?: "No LUT" }
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio, videoMod)
             else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
@@ -753,7 +767,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     val c = MaterialTheme.colorScheme
     val v = st.videos.getOrNull(st.selected) ?: return
     val key = v.uri.toString()
-    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.clipRes.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.clipOrientation.toMap(), st.clipDirection.toMap(), st.lutId, st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.formatFill, st.clipTrim.toMap())
+    val deps = arrayOf<Any?>(st.clipFormat.toMap(), st.clipFill.toMap(), st.clipRes.toMap(), st.videos, st.clipSqueeze.toMap(), st.tagPolicy.toMap(), st.clipOrientation.toMap(), st.clipDirection.toMap(), st.clipLut.toMap(), st.codec, st.quality, st.followRecommendation, st.mode, st.clipModes.toMap(), st.formatFill, st.clipTrim.toMap())
     val recs by produceState<Map<String, Recommendation>>(emptyMap(), *deps) {
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
@@ -793,8 +807,8 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
         Spacer(Modifier.height(8.dp))
         Text(if (mode == ExportMode.LOSSLESS)
             "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag." +
-                if (st.lutId != null) " Your LUT won't be applied in Lossless." else ""
-        else "Renders new pixels so every app shows it de-squeezed${if (st.lutId != null) ", with your LUT baked in" else ""}. Slower and re-compressed.",
+                if (st.lutFor(v) != null) " Your LUT won't be applied in Lossless." else ""
+        else "Renders new pixels so every app shows it de-squeezed${if (st.lutFor(v) != null) ", with your LUT baked in" else ""}. Slower and re-compressed.",
             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         if (st.videos.size > 1) Row(Modifier.padding(top = 4.dp)) {
             TextButton(onClick = { st.videos.forEach { st.clipModes[it.uri.toString()] = mode } }, enabled = !st.busy) {

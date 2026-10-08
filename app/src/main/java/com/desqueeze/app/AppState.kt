@@ -74,8 +74,26 @@ class AppState(settings: Settings, luts: LutManager) {
     var customSqueeze by mutableStateOf(false)
     var desqueezed by mutableStateOf(true)
     var lutList by mutableStateOf(luts.list())
-    var lutId by mutableStateOf<String?>(null)
-    var strength by mutableFloatStateOf(1f)
+    /** Each clip's own LUT and strength, keyed by uri: one clip can be graded differently from the next. Missing = no LUT, 100%. */
+    val clipLut = mutableStateMapOf<String, String>()
+    val clipStrength = mutableStateMapOf<String, Float>()
+    fun lutFor(v: VideoInfo): String? = clipLut[keyOf(v)]
+    fun strengthFor(v: VideoInfo): Float = clipStrength[keyOf(v)] ?: 1f
+    /** LUT of the selected clip. Setting it changes only that clip. */
+    var lutId: String?
+        get() = videos.getOrNull(selected)?.let { lutFor(it) }
+        set(value) { videos.getOrNull(selected)?.let { v -> if (value == null) clipLut.remove(keyOf(v)) else clipLut[keyOf(v)] = value } }
+    /** LUT strength of the selected clip. */
+    var strength: Float
+        get() = videos.getOrNull(selected)?.let { strengthFor(it) } ?: 1f
+        set(value) { videos.getOrNull(selected)?.let { clipStrength[keyOf(it)] = value } }
+    /** Gives every clip the selected clip's LUT and strength. */
+    fun applyLutToAll() {
+        val id = lutId; val s = strength
+        videos.forEach { v -> val k = keyOf(v); if (id == null) clipLut.remove(k) else clipLut[k] = id; clipStrength[k] = s }
+    }
+    /** A LUT was deleted from the library: clips that used it go back to no LUT. */
+    fun forgetLut(id: String) { clipLut.entries.filter { it.value == id }.map { it.key }.forEach { clipLut.remove(it) } }
     var status by mutableStateOf("")
     var results by mutableStateOf(listOf<String>())
     var busy by mutableStateOf(false)
@@ -141,7 +159,7 @@ class AppState(settings: Settings, luts: LutManager) {
     var frameTool by mutableIntStateOf(0)
     var lookTool by mutableIntStateOf(0)
 
-    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutId, strength, orientationOf(v), directionOf(v),
+    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutFor(v), strengthFor(v), orientationOf(v), directionOf(v),
         trim = trimFor(v), format = formatOf(v), fill = fillOf(v), res = resOf(v))
 }
 

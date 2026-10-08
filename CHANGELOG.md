@@ -2,6 +2,11 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.25 — 2026-10-08
+
+### Changed
+- **Each clip in a batch has its own LUT.** Picking a LUT, or changing its strength, used to change it for every clip. Now it applies only to the clip shown in the preview, the same way squeeze and trim work. Switch clips with the strip above the preview to grade another one; under each clip you can see which LUT it uses. **Apply to all** copies the current clip's LUT and strength to the whole batch. The export, the Re-encode recommendation and the Lossless warnings follow each clip's own LUT. Newly added clips start without a LUT, and deleting a LUT from the library removes it from the clips that used it.
+
 ## v1.24 — 2026-10-07
 
 ### Added

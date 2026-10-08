@@ -53,7 +53,7 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
         if (f != OutFormat.ORIGINAL)
             issues += Status.NO to "${f.short} can't be made in Lossless: this clip would export in its original wide frame. Switch it to Re-encode, or pick Wide."
         rows += "Encoder" to "Not used (Lossless)"
-        if (st.lutId != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode to bake it in."
+        if (st.lutFor(v) != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode to bake it in."
     } else {
         val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
         val (w, h, _) = exporter.targetSize(g, v.fps, mime, st.formatOf(v), st.resOf(v))

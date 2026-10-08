@@ -279,10 +279,10 @@ fun LutLibraryScreen(st: AppState, luts: LutManager, onBack: () -> Unit) {
             if (st.lutList.isEmpty()) Text("No LUTs yet.", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
             else SettingsGroup("${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}") {
                 st.lutList.forEachIndexed { i, l ->
-                    SettingRow(AppIcons.Palette, l.name, if (st.lutId == l.id) "In use" else null, tint = Warm, divider = i < st.lutList.size - 1,
+                    SettingRow(AppIcons.Palette, l.name, st.videos.count { st.lutFor(it) == l.id }.let { n -> if (n == 0) null else if (st.videos.size == 1) "In use" else "Used by $n clip${if (n == 1) "" else "s"}" }, tint = Warm, divider = i < st.lutList.size - 1,
                         trailing = { Row {
                             TextButton(onClick = { renaming = l }) { Text("Rename") }
-                            TextButton(onClick = { luts.delete(l.id); LutThumbs.forget(l.id); if (st.lutId == l.id) st.lutId = null; st.lutList = luts.list() }) { Text("Delete", color = c.error) }
+                            TextButton(onClick = { luts.delete(l.id); LutThumbs.forget(l.id); st.forgetLut(l.id); st.lutList = luts.list() }) { Text("Delete", color = c.error) }
                         } })
                 }
             }
