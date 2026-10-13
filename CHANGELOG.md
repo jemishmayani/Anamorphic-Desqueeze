@@ -2,6 +2,16 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.26 — 2026-10-13
+
+### Added
+- **10-bit Re-encode for log footage.** 10-bit clips tagged as standard video (D-Log, D-Log M and most other log profiles) used to come out of Re-encode in 8-bit, because Android's video pipeline (Media3) only keeps 10-bit for clips tagged HDR. Re-encode now sends these clips through the app's own 10-bit pipeline:
+  - the hardware decoder's 10-bit picture is read as raw YUV (so the graphics driver can't round it to 8-bit) and converted at 16-bit precision;
+  - the de-squeeze stretch, rotation, format framing (fit or fill) and your LUT are applied on the GPU;
+  - frames go to the phone's HEVC encoder in the **Main 10** profile; audio is copied untouched.
+
+  It's used for HEVC exports on phones with a 10-bit HEVC encoder, and can be turned off with **10-bit for log clips** in Settings. If the phone refuses any step, that clip is exported in 8-bit as before, and the result says why. The export result says "10-bit HEVC (Main 10)" when it worked. Export checks, the Settings screen and Device limits explain which path a clip will take.
+
 ## v1.25 — 2026-10-08
 
 ### Changed

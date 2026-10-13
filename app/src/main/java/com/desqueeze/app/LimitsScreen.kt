@@ -127,7 +127,7 @@ private fun capabilityChecks(all: List<CodecCap>): List<Check> {
         Check("HEVC encode", st(hevcEnc.isNotEmpty(), any(true, hevc).isNotEmpty()), null,
             if (hevcEnc.isEmpty()) "Re-encode will use H.264, which needs a higher bitrate for the same quality." else null),
         Check("10-bit encode", if (hevcEnc.any { it.tenBit }) Status.OK else Status.NO, null,
-            if (hevcEnc.any { it.tenBit }) "Used for HLG/HDR10 clips. Log clips are tagged as standard video, so Android re-encodes them in 8-bit; use Lossless to keep 10-bit."
+            if (hevcEnc.any { it.tenBit }) "Used for HLG/HDR10 clips, and for 10-bit log clips through the app's own 10-bit pipeline (\"10-bit for log clips\" in Settings)."
             else "Re-encoded files are always 8-bit on this phone. Use Lossless to keep 10-bit."),
         Check("H.264 encode", st(avcEnc.isNotEmpty(), any(true, avc).isNotEmpty()), null, null),
         Check("Max frame width", if ((maxW2160 ?: 0) >= 3840) Status.OK else Status.WARN, maxW2160?.let { "$it px" } ?: "—",
@@ -218,7 +218,7 @@ private fun summaryChecks(ctx: android.content.Context, all: List<CodecCap>, exp
         Check("Preview 10-bit log / HDR", if (tenDec) Status.OK else Status.NO, null,
             if (!tenDec) "10-bit clips may not play in the preview. Lossless export still works." else null),
         Check("Keep HDR when re-encoding", if (tenEnc) Status.OK else Status.NO, null,
-            if (tenEnc) "HLG/HDR10 clips stay 10-bit. Log clips are re-encoded in 8-bit; Lossless keeps them 10-bit."
+            if (tenEnc) "HLG/HDR10 clips stay 10-bit, and 10-bit log clips too (HEVC, \"10-bit for log clips\" on)."
             else "Re-encoded files are 8-bit on this phone."),
         Check("Live LUT preview", if (gles >= 0x30000) Status.OK else Status.WARN, null,
             if (gles >= 0x30000) "Uses the GPU (OpenGL ES ${gles shr 16}.${gles and 0xFFFF}). If it fails on a clip, Compare still works."

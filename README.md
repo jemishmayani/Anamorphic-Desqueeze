@@ -214,8 +214,11 @@ frame is scaled down evenly (about 4096 × 1732) instead of being cropped. The E
 before this happens. **Lossless** keeps full resolution at any squeeze.
 
 **Does Re-encode keep my 10-bit log footage?**
-No. Android re-encodes log/standard video in 8-bit (see [Known limitations](#known-limitations)).
-Use **Lossless** to keep 10-bit; the app recommends it automatically for 10-bit, log and HDR clips.
+Yes, in HEVC, on phones with a 10-bit HEVC encoder (from v1.26, **10-bit for log clips** in Settings, on by
+default). Log clips are tagged as standard video, which Android's usual video pipeline (Media3) processes in
+8-bit, so the app uses its own 10-bit pipeline for them: the decoded 10-bit picture is converted, stretched, framed
+and graded on the GPU at 16-bit precision and sent to the encoder's Main 10 profile. If the phone refuses any
+step, that clip is saved in 8-bit and the result says why. **Lossless** still keeps the original pixels untouched.
 
 **My camera's log profile isn't detected.**
 Some cameras (many phones and action cams, including the DJI files checked so far) don't record the
@@ -233,9 +236,10 @@ No. Google re-signs Play installs, so the two can't update each other. Pick one 
 
 ## Known limitations
 
-- **Re-encode is 8-bit for log footage.** Log clips are almost always tagged as standard (SDR) video, and
-  Android's GPU video pipeline processes SDR at 8-bit. Use Lossless to keep true 10-bit. Clips tagged
-  HLG/PQ HDR stay 10-bit in Re-encode when *Keep HDR* is on.
+- **10-bit Re-encode of log footage needs HEVC and a 10-bit HEVC encoder.** With H.264, or on phones
+  without one, log clips are re-encoded in 8-bit; Lossless keeps true 10-bit. The 10-bit pipeline is new
+  (v1.26) and phone makers implement 10-bit encoding differently, so it falls back to 8-bit automatically
+  if a phone refuses. Clips tagged HLG/PQ HDR stay 10-bit through Media3 when *Keep HDR* is on.
 - **Log detection depends on the camera** (see the FAQ).
 - **Previews share the phone's video decoders.** Phones have only a few that handle 4K 10-bit, so the
   preview briefly waits for a free one when you change steps, clips or effects, and retries automatically

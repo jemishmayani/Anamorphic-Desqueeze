@@ -70,8 +70,14 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
                 "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + if (st.formatOf(v) == OutFormat.ORIGINAL) " Lossless keeps full resolution." else ""
         if (st.formatOf(v) != OutFormat.ORIGINAL && st.fillOf(v) && fillKeepsPercent(g, st.formatOf(v)) < 60)
             issues += Status.WARN to "Filling ${st.formatOf(v).short} crops away ${100 - fillKeepsPercent(g, st.formatOf(v))}% of the wide picture. Fit keeps it all with black bars."
-        if (v.bitDepth >= 10 && v.footage.hdr == null)
-            issues += Status.WARN to "10-bit becomes 8-bit: Android re-encodes standard/log video in 8-bit. Lossless keeps 10-bit."
+        if (v.bitDepth >= 10 && v.footage.hdr == null) {
+            if (st.tenBitReencode(v)) rows += "Bit depth" to "10-bit HEVC (Main 10); falls back to 8-bit if this phone refuses"
+            else issues += Status.WARN to "10-bit becomes 8-bit: " + when {
+                !TenBitPipeline.main10Available -> "this phone has no 10-bit HEVC encoder."
+                st.codec != Codec.HEVC -> "10-bit needs HEVC (Codec in Settings)."
+                else -> "\"10-bit for log clips\" is off in Settings."
+            } + " Lossless keeps 10-bit."
+        }
         if (v.footage.hdr != null && !st.keepHdrSetting)
             issues += Status.WARN to "HDR will be converted to SDR (Keep HDR is off in Settings)."
     }

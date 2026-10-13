@@ -18,6 +18,8 @@ class Settings(ctx: Context) {
     var quality: Quality get() = Quality.valueOf(p.getString("quality", Quality.HIGH.name)!!); set(v) = p.edit().putString("quality", v.name).apply()
     var codec: Codec get() = Codec.valueOf(p.getString("codec", Codec.HEVC.name)!!); set(v) = p.edit().putString("codec", v.name).apply()
     var keepHdr: Boolean get() = p.getBoolean("hdr", true); set(v) = p.edit().putBoolean("hdr", v).apply()
+    /** Re-encode 10-bit standard/log clips with the app's own 10-bit pipeline (falls back to 8-bit if the phone refuses). */
+    var tenBit: Boolean get() = p.getBoolean("tenBit", true); set(v) = p.edit().putBoolean("tenBit", v).apply()
     var preserveMeta: Boolean get() = p.getBoolean("meta", true); set(v) = p.edit().putBoolean("meta", v).apply()
     var folder: String get() = p.getString("folder", "AnamorphicDesqueeze")!!; set(v) = p.edit().putString("folder", v).apply()
     var mode: ExportMode get() = ExportMode.valueOf(p.getString("mode", ExportMode.LOSSLESS.name)!!); set(v) = p.edit().putString("mode", v.name).apply()

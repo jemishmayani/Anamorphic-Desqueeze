@@ -19,6 +19,7 @@ import androidx.media3.effect.SingleColorLut
 import androidx.media3.transformer.*
 import androidx.media3.transformer.ExportResult as ExportResult_
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -98,13 +99,36 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
 
         var lastError: ExportFailure? = null
         Diag.step("Re-encode plan: " + attempts.joinToString { "${it.mime.removePrefix("video/")} ${it.w}x${it.h}" })
+
+        // 10-bit SDR clips (log footage): our own 10-bit pipeline first, at the best HEVC size.
+        // Anything it can't do falls through to the regular export below, which is 8-bit for these clips.
+        var tenBitNote: String? = null
+        if (TenBitPipeline.appliesTo(job.video, settings)) {
+            val a = attempts.firstOrNull { it.mime == MimeTypes.VIDEO_H265 }
+            if (a != null) try {
+                Diag.step("10-bit: start ${a.w}x${a.h}")
+                val rep = runTenBit(job, a, onProgress)
+                Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.lengthMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
+                val main10 = rep.profile == null || rep.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10
+                return ExportResult(outName(job), a.w, a.h, listOfNotNull(
+                    if (main10) "10-bit HEVC (Main 10)." else "Encoded with the 10-bit pipeline, but the encoder reported profile ${rep.profile}.",
+                    if (!rep.yuvSampling) "This phone's graphics driver converted the colours itself, which may limit precision to 8-bit." else null,
+                    a.note).joinToString(" "))
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Throwable) {
+                val why = (e.message ?: e.javaClass.simpleName).replace("\n", " ").take(160)
+                Diag.step("10-bit failed: $why")
+                tenBitNote = "10-bit export didn't work on this phone ($why), so this clip was saved in 8-bit. You can turn 10-bit off in Settings."
+                onProgress(0)
+            }
+        }
         for ((i, a) in attempts.withIndex()) {
             try {
                 Diag.step("Attempt ${i + 1}: ${a.mime} ${a.w}x${a.h}")
                 runOnce(job, a, onProgress)
                 Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.lengthMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
                 return ExportResult(outName(job), a.w, a.h,
-                    listOfNotNull(a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
+                    listOfNotNull(tenBitNote, a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
                         .joinToString(" ").ifEmpty { null })
             } catch (e: ExportFailure) {
                 Diag.step("Attempt ${i + 1} failed: ${e.message?.replace("\n", " ")}")
@@ -218,6 +242,26 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         Diag.step("Encoded; saving to gallery")
         withContext(Dispatchers.IO) { saveToGallery(tmp, outName(job)) }
         Diag.step("Saved")
+    }
+
+    /** 10-bit pipeline (see [TenBitPipeline]) into a temp file, then into the gallery like the regular export. */
+    private suspend fun runTenBit(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit): TenBitPipeline.Report {
+        val tmp = File(ctx.cacheDir, "export10_${System.nanoTime()}.mp4")
+        try {
+            val lut = job.lutId?.takeIf { job.lutStrength > 0f }?.let { withContext(Dispatchers.IO) { luts.load(it) } }
+            val spec = TenBitPipeline.Spec(job.video, job.geo, a.w, a.h, job.format, job.fill, job.trim, lut, job.lutStrength,
+                bitrateFor(a.w, a.h, job.video.fps, MimeTypes.VIDEO_H265))
+            val rep = withContext(Dispatchers.IO) {
+                val scope = this
+                val pipe = TenBitPipeline(ctx).apply { isCancelled = { !scope.isActive } }
+                var last = -1
+                pipe.run(spec, tmp) { p -> if (p != last) { last = p; onProgress(p) } }
+            }
+            Diag.step("10-bit: encoded with ${rep.encoder}, YUV sampling=${rep.yuvSampling}, profile=${rep.profile}, ${spec.bitrate / 1_000_000} Mbps; saving")
+            withContext(Dispatchers.IO) { saveToGallery(tmp, outName(job)) }
+            Diag.step("Saved")
+            return rep
+        } finally { tmp.delete() }
     }
 
     /** Carries the real cause so the user (and we) can see exactly what the phone rejected. */

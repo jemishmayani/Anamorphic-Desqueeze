@@ -32,6 +32,10 @@ class AppState(settings: Settings, luts: LutManager) {
     /** Preview / tool panel split in the Frame and Look steps on phones (dragged by the handle between them). */
     var editorSplit by mutableFloatStateOf(settings.editorSplit.coerceIn(EDITOR_SPLIT_MIN, EDITOR_SPLIT_MAX))
     fun saveEditorSplit() { prefs.editorSplit = editorSplit }
+    /** Re-encode will try the 10-bit pipeline for this clip (10-bit standard/log, HEVC, setting on, encoder present). */
+    fun tenBitReencode(v: VideoInfo) = TenBitPipeline.appliesTo(v, prefs)
+    /** 10-bit Re-encode is possible at all with the current settings. */
+    val tenBitOn get() = prefs.tenBit && codec == Codec.HEVC && TenBitPipeline.main10Available
     var screen by mutableStateOf(Screen.Main)
     var videos by mutableStateOf(listOf<VideoInfo>())
     var selected by mutableIntStateOf(0)

@@ -186,6 +186,11 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; st.codec = s.codec; refresh() }
                 SettingRow(AppIcons.Hdr, "Keep HDR", "10-bit output for HLG / HDR10 clips", tint = Warm, onClick = { s.keepHdr = !s.keepHdr; st.keepHdrSetting = s.keepHdr; refresh() },
                     trailing = { Switch(s.keepHdr, { s.keepHdr = it; st.keepHdrSetting = it; refresh() }) })
+                SettingRow(AppIcons.Hdr, "10-bit for log clips",
+                    if (TenBitPipeline.main10Available) "Keeps 10-bit standard/log footage (e.g. D-Log) 10-bit in HEVC. Falls back to 8-bit if the phone refuses."
+                    else "This phone has no 10-bit HEVC encoder, so these clips are re-encoded in 8-bit.", tint = Warm,
+                    onClick = { s.tenBit = !s.tenBit; refresh() }, trailing = { Switch(s.tenBit && TenBitPipeline.main10Available, { s.tenBit = it; refresh() },
+                        enabled = TenBitPipeline.main10Available) })
                 SettingRow(AppIcons.Info, "Preserve metadata", "Rotation, frame rate and original audio", divider = false,
                     onClick = { s.preserveMeta = !s.preserveMeta; refresh() }, trailing = { Switch(s.preserveMeta, { s.preserveMeta = it; refresh() }) })
             }

@@ -946,7 +946,7 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
                 color = Warm, icon = AppIcons.Warn,
                 title = if (sw.previous.size == 1) "Switched to Re-encode" else "Switched ${sw.previous.size} clips to Re-encode",
                 text = "Only Re-encode can reframe into ${sw.format.short}; Lossless always keeps the original wide frame. " +
-                    "Re-encode makes new pixels, so 10-bit log becomes 8-bit.",
+                    "Re-encode makes new pixels" + if (st.tenBitOn) "; 10-bit log stays 10-bit (HEVC)." else ", so 10-bit log becomes 8-bit.",
                 action = "Undo",
             ) {
                 sw.previous.forEach { (k, prev) ->
