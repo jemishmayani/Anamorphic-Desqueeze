@@ -772,7 +772,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
         value = withContext(Dispatchers.Default) { st.videos.associate { it.uri.toString() to recommendFor(st, exporter, it) } }
     }
     val modes = st.videos.associate { clip ->
-        clip.uri.toString() to (st.clipModes[clip.uri.toString()] ?: if (st.followRecommendation) recs[clip.uri.toString()]?.mode ?: st.mode else st.mode)
+        clip.uri.toString() to st.resolveMode(clip, st.clipModes[clip.uri.toString()] ?: if (st.followRecommendation) recs[clip.uri.toString()]?.mode ?: st.mode else st.mode)
     }
     val mode = modes[key] ?: st.mode
     val est by produceState<Map<String, Estimate>?>(null, *deps) {
@@ -804,18 +804,19 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
 
 
     Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
-        MethodToggle(mode, enabled = !st.busy) { setMode(it) }
+        MethodToggle(mode, st.hasLut(v), enabled = !st.busy) { setMode(it) }
         Spacer(Modifier.height(8.dp))
         Text(when (mode) {
             ExportMode.LOSSLESS ->
-                "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag." +
-                    if (st.lutFor(v) != null) " Your LUT won't be applied in Lossless." else ""
+                "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag. " +
+                    "Pick a LUT in Look and this becomes Tagged + LUT, which bakes it in at full resolution."
             ExportMode.REENCODE ->
                 "Renders new pixels so every app shows it de-squeezed${if (st.lutFor(v) != null) ", with your LUT baked in" else ""}. Slower and re-compressed."
             ExportMode.TAGGED ->
-                "Re-encodes in the clip's own pixel grid${if (st.lutFor(v) != null) " with your LUT baked in" else ""}, then tags the pixel aspect like Lossless, " +
-                    "so nothing is lost to this phone's encoder size limit. For editing: Resolve, Premiere, Final Cut and VLC show it wide. " +
-                    "Phone galleries and social apps may show it squeezed, so use Re-encode for sharing. Original frame only (no formats)."
+                "Lossless can't change colours, so with a LUT this clip is re-encoded in its own pixel grid with the LUT baked in, then tagged like Lossless. " +
+                    "Nothing is lost to this phone's encoder size limit. For editing: Resolve, Premiere, Final Cut and VLC show it wide; " +
+                    "phone galleries and social apps may show it squeezed, so use Re-encode for sharing. Original frame only (no formats). " +
+                    "Remove the LUT for an untouched Lossless copy."
         },
             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         if (st.videos.size > 1) Row(Modifier.padding(top = 4.dp)) {
@@ -856,7 +857,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
                         Text(when {
                                 full && mode == ExportMode.TAGGED -> "Every pixel kept; shown ${st.geoOf(v).ratioLabel()} through the tag."
                                 full -> "This phone's encoder handles the full size."
-                                mode == ExportMode.REENCODE && st.formatOf(v) == OutFormat.ORIGINAL -> e.scaledNote + " Tagged or Lossless keep full resolution."
+                                mode == ExportMode.REENCODE && st.formatOf(v) == OutFormat.ORIGINAL -> e.scaledNote + if (st.hasLut(v)) " Tagged + LUT keeps full resolution." else " Lossless keeps full resolution."
                                 else -> e.scaledNote + " Lossless keeps full resolution."
                             },
                             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
@@ -958,7 +959,7 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             if (sw.previous.isNotEmpty()) Notice(
                 color = Warm, icon = AppIcons.Warn,
                 title = if (sw.previous.size == 1) "Switched to Re-encode" else "Switched ${sw.previous.size} clips to Re-encode",
-                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless and Tagged always keep the original wide frame. " +
+                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless and Tagged + LUT always keep the original wide frame. " +
                     "Re-encode makes new pixels" + if (st.tenBitOn) "; 10-bit log stays 10-bit (HEVC)." else ", so 10-bit log becomes 8-bit.",
                 action = "Undo",
             ) {
@@ -970,11 +971,11 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             }
         }
 
-        // Red conflict: Lossless or Tagged is selected AND a format is set (e.g. after "Use Lossless for all").
+        // Red conflict: Lossless or Tagged + LUT is selected AND a format is set (e.g. after "Use Lossless for all").
         if (mode != ExportMode.REENCODE && format != OutFormat.ORIGINAL) Notice(
             color = c.error, icon = AppIcons.Cross,
             title = "${format.short} can't be made in ${mode.label}",
-            text = (if (mode == ExportMode.LOSSLESS) "Lossless copies the original pixels" else "Tagged keeps the clip's own frame and only tags it wide") +
+            text = (if (mode == ExportMode.LOSSLESS) "Lossless copies the original pixels" else "Tagged + LUT keeps the clip's own frame and only tags it wide") +
                 ", so this clip would export in its original wide frame, not ${format.short}.",
             action = "Switch to Re-encode", secondary = "Use Wide",
             onSecondary = { st.clipFormat.remove(key); st.formatSwitch = null },

@@ -186,7 +186,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val g = job.geo
         val (p, q) = PaspWriter.ratio(job.squeeze)
         val (hs, vs) = if (g.vertical) q to p else p to q
-        return "Tagged: ${a.w}×${a.h} pixels with a $hs:$vs pixel aspect tag, shown ${g.ratioLabel()} in editors and VLC. " +
+        return "Tagged + LUT: ${a.w}×${a.h} pixels with a $hs:$vs pixel aspect tag, shown ${g.ratioLabel()} in editors and VLC. " +
             "Some phone galleries and social apps ignore the tag and show it squeezed; use Re-encode for those."
     }
 

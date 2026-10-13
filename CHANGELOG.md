@@ -2,6 +2,16 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.28 — 2026-10-13
+
+### Changed
+- **Lossless and Tagged are one method again, named for what it does.** v1.27 added Tagged as a third choice, but Tagged and Lossless make the same kind of file (original pixel grid plus a pixel-aspect tag, shown wide by editors and VLC); the only difference is whether a LUT has to be baked in. Picking Lossless with a LUT also silently dropped the LUT. Now the Export method toggle has two choices:
+  - **Lossless** when the clip has no LUT: the file is copied untouched and tagged, as before.
+  - **Tagged + LUT** when the clip has a LUT: re-encoded in its own pixel grid with the LUT baked in (10-bit where possible), then tagged.
+  - **Re-encode**: de-squeezed pixels that every app shows wide.
+
+  The name, description, checks and estimates follow each clip's LUT, so with per-clip LUTs one batch can mix Lossless and Tagged + LUT clips under the same choice. A LUT at 0% strength counts as no LUT. To get an untouched original from a clip with a LUT, remove the LUT. The "LUT isn't applied in Lossless" warning is gone, because that can no longer happen.
+
 ## v1.27 — 2026-10-13
 
 ### Added

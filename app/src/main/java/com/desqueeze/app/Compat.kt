@@ -14,7 +14,8 @@ data class CompatReport(
 }
 
 /** Builds the check from the same data export uses (geometry, encoder fit, decoder support). */
-fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode): CompatReport {
+fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode0: ExportMode): CompatReport {
+    val mode = st.resolveMode(v, mode0)
     val g = st.geoOf(v)
     val f = v.footage
     val look = lookLabel(f.gamma)
@@ -53,7 +54,6 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
         if (f != OutFormat.ORIGINAL)
             issues += Status.NO to "${f.short} can't be made in Lossless: this clip would export in its original wide frame. Switch it to Re-encode, or pick Wide."
         rows += "Encoder" to "Not used (Lossless)"
-        if (st.lutFor(v) != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode or Tagged to bake it in."
     } else {
         val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
         val tagged = mode == ExportMode.TAGGED
@@ -69,16 +69,16 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
         if (!DeviceCaps.canDecode(v.codec, v.bitDepth))
             issues += Status.NO to "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode will fail. Use Lossless."
         if (tagged && fmt != OutFormat.ORIGINAL)
-            issues += Status.NO to "${fmt.short} can't be made in Tagged: it keeps the clip's own frame and only tags it wide. Switch to Re-encode for ${fmt.short}, or pick Wide."
+            issues += Status.NO to "${fmt.short} can't be made in Tagged + LUT: it keeps the clip's own frame and only tags it wide. Switch to Re-encode for ${fmt.short}, or pick Wide."
         if (w < tw || h < th)
             issues += (if (w.toFloat() / tw >= 0.75f) Status.WARN else Status.NO) to
                 "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + when {
                     tagged -> " Lossless keeps full resolution."
-                    fmt == OutFormat.ORIGINAL -> " Tagged keeps all ${g.dispW} × ${g.dispH} pixels and still applies a LUT; Lossless keeps the original file."
+                    fmt == OutFormat.ORIGINAL -> if (st.hasLut(v)) " Tagged + LUT keeps all ${g.dispW} × ${g.dispH} pixels with your LUT." else " Lossless keeps full resolution."
                     else -> ""
                 }
         if (tagged)
-            issues += Status.WARN to "Tagged files rely on a pixel-aspect tag: editors (Resolve, Premiere, Final Cut) and VLC show them ${g.ratioLabel()}, " +
+            issues += Status.WARN to "Tagged + LUT files rely on a pixel-aspect tag: editors (Resolve, Premiere, Final Cut) and VLC show them ${g.ratioLabel()}, " +
                 "but phone galleries, WhatsApp, Instagram, YouTube and other social apps may ignore the tag and show the picture squeezed. Use Re-encode for files you'll share."
         if (!tagged && fmt != OutFormat.ORIGINAL && st.fillOf(v) && fillKeepsPercent(g, fmt) < 60)
             issues += Status.WARN to "Filling ${st.formatOf(v).short} crops away ${100 - fillKeepsPercent(g, st.formatOf(v))}% of the wide picture. Fit keeps it all with black bars."

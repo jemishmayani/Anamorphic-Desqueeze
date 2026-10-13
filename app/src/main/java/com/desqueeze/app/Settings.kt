@@ -7,11 +7,11 @@ enum class Quality(val label: String, val bitsPerPixel: Float) {
 }
 enum class Codec(val label: String) { HEVC("HEVC / H.265 (preferred)"), H264("H.264 (compatibility)") }
 /**
- * LOSSLESS copies the file and adds a pixel-aspect tag. REENCODE renders de-squeezed pixels every app shows wide.
- * TAGGED re-encodes in the clip's own pixel grid (LUT, rotation, trim baked in) and adds the tag like Lossless:
- * full detail even where the stretched size would exceed the encoder, but shown squeezed by apps that ignore the tag.
+ * Two choices for the user: the tag method, or REENCODE (de-squeezed pixels every app shows wide).
+ * The tag method resolves per clip (see AppState.resolveMode): without a LUT it is LOSSLESS (the file is copied and
+ * tagged); with a LUT it is TAGGED (re-encoded in the clip's own pixel grid with the LUT baked in, then tagged).
  */
-enum class ExportMode(val label: String) { LOSSLESS("Lossless"), REENCODE("Re-encode"), TAGGED("Tagged") }
+enum class ExportMode(val label: String) { LOSSLESS("Lossless"), REENCODE("Re-encode"), TAGGED("Tagged + LUT") }
 enum class ThemeMode(val label: String) { SYSTEM("System"), DARK("Dark"), LIGHT("Light") }
 
 val PRESETS = listOf(1.2f, 1.33f, 1.5f, 1.55f, 1.6f, 1.8f, 2.0f)

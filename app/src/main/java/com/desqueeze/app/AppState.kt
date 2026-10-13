@@ -91,6 +91,11 @@ class AppState(settings: Settings, luts: LutManager) {
     var strength: Float
         get() = videos.getOrNull(selected)?.let { strengthFor(it) } ?: 1f
         set(value) { videos.getOrNull(selected)?.let { clipStrength[keyOf(it)] = value } }
+    /** A LUT that actually changes the picture (strength above 0%). */
+    fun hasLut(v: VideoInfo) = lutFor(v) != null && strengthFor(v) > 0f
+    /** The tag method becomes Lossless or Tagged + LUT depending on this clip's LUT; Re-encode stays Re-encode. */
+    fun resolveMode(v: VideoInfo, m: ExportMode) =
+        if (m == ExportMode.REENCODE) ExportMode.REENCODE else if (hasLut(v)) ExportMode.TAGGED else ExportMode.LOSSLESS
     /** Gives every clip the selected clip's LUT and strength. */
     fun applyLutToAll() {
         val id = lutId; val s = strength

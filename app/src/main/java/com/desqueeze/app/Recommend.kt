@@ -31,20 +31,23 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         decodable && format != OutFormat.ORIGINAL -> Recommendation(facts, ExportMode.REENCODE, "Re-encode for ${format.short}",
             "Only Re-encode can reframe into ${format.short} for ${format.where}: the wide picture is " +
                 (if (fill) "cropped to fill the frame." else "fitted with black bars, nothing cut off.") + scaledText,
-            ExportMode.LOSSLESS, "Lossless, original wide frame", "Keeps every original pixel, but no ${format.short} reframing.")
+            ExportMode.LOSSLESS, if (lutSelected) "Tagged + LUT, original wide frame" else "Lossless, original wide frame",
+            if (lutSelected) "Full resolution with your LUT baked in, but no ${format.short} reframing." else "Keeps every original pixel, but no ${format.short} reframing.")
         !decodable -> Recommendation(facts, ExportMode.LOSSLESS, "Lossless Desqueeze",
             "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode isn't possible. Lossless doesn't need to decode, and keeps every pixel.",
             null, null, null)
-        // The stretched size doesn't fit the encoder: Tagged keeps every pixel with the LUT, at the cost of relying on the tag.
+        // The stretched size doesn't fit the encoder: Tagged + LUT keeps every pixel with the LUT, at the cost of relying on the tag.
         lutSelected && format == OutFormat.ORIGINAL && scaled && fit!!.second * 100 / target.second < 95 -> Recommendation(facts, ExportMode.TAGGED,
-            "Tagged: full detail with your LUT",
+            "Tagged + LUT: full detail",
             "Re-encode would be scaled down to ${fit.first}×${fit.second} (${fit.second * 100 / target.second}%) by this phone's encoder. " +
-                "Tagged keeps all ${g.dispW}×${g.dispH} pixels with your LUT baked in, and tags them to show ${g.ratioLabel()}, like Lossless. " +
+                "Tagged + LUT keeps all ${g.dispW}×${g.dispH} pixels with your LUT baked in, and tags them to show ${g.ratioLabel()}, like Lossless. " +
                 "Best for editing: Resolve, Premiere, Final Cut and VLC show it wide. Phone galleries and social apps may show it squeezed.",
             ExportMode.REENCODE, "Re-encode for sharing", "Shows wide in every app and website, scaled to ${fit.first}×${fit.second}.")
         lutSelected -> Recommendation(facts, ExportMode.REENCODE, "Re-encode with your LUT",
             "Only Re-encode can bake your LUT into the picture.$scaledText",
-            ExportMode.LOSSLESS, "Lossless for grading later", "Keeps the original $desc pixels; apply the LUT in your editor instead.")
+            ExportMode.TAGGED, "Tagged + LUT for editing",
+            "Full ${g.dispW}×${g.dispH} with your LUT baked in and a pixel-aspect tag: editors and VLC show it wide, galleries and social apps may show it squeezed. " +
+                "For the untouched original file, remove the LUT and it becomes Lossless.")
         // Lossless stores rotation and pixel stretch as two separate tags; players apply them in different orders.
         rotatedStretch(g) -> Recommendation(facts, ExportMode.REENCODE, "Re-encode (rotated clip)",
             "This clip is shown turned 90°. Lossless stores the rotation and the stretch as separate tags, and players apply them " +
@@ -67,9 +70,10 @@ fun recommendFor(st: AppState, exporter: Exporter, v: VideoInfo): Recommendation
     val g = st.geoOf(v)
     val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
     val fit = exporter.targetSize(g, v.fps, mime, st.formatOf(v), st.resOf(v)).let { it.first to it.second }
-    return recommend(v, g, st.effectiveSqueeze(v), st.lutFor(v) != null, fit, st.formatOf(v), st.fillOf(v), st.resOf(v))
+    val r = recommend(v, g, st.effectiveSqueeze(v), st.hasLut(v), fit, st.formatOf(v), st.fillOf(v), st.resOf(v))
+    return r.copy(mode = st.resolveMode(v, r.mode), alt = r.alt?.let { st.resolveMode(v, it) })
 }
 
 /** The method a clip will actually be exported with. */
-fun modeFor(st: AppState, exporter: Exporter, v: VideoInfo): ExportMode =
-    st.clipModes[v.uri.toString()] ?: if (st.followRecommendation) recommendFor(st, exporter, v).mode else st.mode
+fun modeFor(st: AppState, exporter: Exporter, v: VideoInfo): ExportMode = st.resolveMode(v,
+    st.clipModes[v.uri.toString()] ?: if (st.followRecommendation) recommendFor(st, exporter, v).mode else st.mode)
