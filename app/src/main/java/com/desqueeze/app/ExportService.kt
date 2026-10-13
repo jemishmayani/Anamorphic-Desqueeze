@@ -58,7 +58,11 @@ object ExportController {
                     } }
                     Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=$m, squeeze=${st.effectiveSqueeze(vid)}, " +
                         "trim=${j.trim}, format=${j.format}${if (j.fill) " fill" else ""}, lut=${j.lutId != null}")
-                    val r = if (m == ExportMode.LOSSLESS) exporter.exportLossless(j, prog) else exporter.export(j, prog)
+                    val r = when (m) {
+                        ExportMode.LOSSLESS -> exporter.exportLossless(j, prog)
+                        ExportMode.REENCODE -> exporter.export(j, prog)
+                        ExportMode.TAGGED -> exporter.export(j, prog, tagged = true)
+                    }
                     log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
                     ok++
                     if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.DONE, pct = 100, note = "${r.width} × ${r.height}")

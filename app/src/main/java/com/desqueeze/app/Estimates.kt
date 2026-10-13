@@ -33,7 +33,7 @@ fun estimate(ctx: Context, exporter: Exporter, settings: Settings, v: VideoInfo,
         return Estimate(bytes, bytes / Speed.copyBps(ctx).toDouble() + 1.0, g.outW, g.outH, null)
     }
     val mime = if (settings.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-    val (w, h, note) = exporter.targetSize(g, v.fps, mime, format, res)
+    val (w, h, note) = if (mode == ExportMode.TAGGED) exporter.taggedSize(g, v.fps, mime) else exporter.targetSize(g, v.fps, mime, format, res)
     val secs = lengthMs / 1000.0
     val fps = if (v.fps > 0) v.fps else 30f
     val audioBps = if (v.hasAudio) 256_000L else 0L

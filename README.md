@@ -107,19 +107,22 @@ Lossless writes a vertical pixel aspect (for example `100:133`) and, if you over
 a corrected rotation matrix, still without touching the video data. Re-encode rotates and
 stretches on the GPU.
 
-## Two export methods
+## Three export methods
 
-| | **Lossless** (default) | **Re-encode** |
-|---|---|---|
-| How it works | Copies the file byte-for-byte and adds a pixel-aspect-ratio tag (`pasp`), like setting pixel aspect in DaVinci Resolve | Decodes, stretches the pixels on the GPU, and encodes a new video |
-| Quality | Bit-identical to the original: bit depth, log/HDR, bitrate, frame rate, audio and metadata untouched | Re-compressed; quality depends on the chosen preset |
-| Speed | About as fast as copying the file | Real-time-ish; depends on the phone |
-| Resolution | Always full original resolution, any squeeze | Limited by the phone's video encoder (often 4096 px wide), so large squeezes on 4K are scaled down evenly |
-| LUTs | Not applied | Can apply a `.cube` LUT |
-| Compatibility | Shown de-squeezed by apps that respect pixel aspect (VLC, DaVinci Resolve, Premiere Pro, Final Cut Pro, most desktop players). Some phone galleries, social apps and web players ignore the tag and show it squeezed | Shown de-squeezed everywhere, because the pixels themselves are wider |
+| | **Lossless** (default) | **Re-encode** | **Tagged** |
+|---|---|---|---|
+| How it works | Copies the file byte-for-byte and adds a pixel-aspect-ratio tag (`pasp`), like setting pixel aspect in DaVinci Resolve | Decodes, stretches the pixels on the GPU, and encodes a new video | Decodes and re-encodes in the clip's own pixel grid (no stretch), then adds the same tag as Lossless |
+| Quality | Bit-identical to the original: bit depth, log/HDR, bitrate, frame rate, audio and metadata untouched | Re-compressed; quality depends on the chosen preset | Re-compressed, like Re-encode |
+| Speed | About as fast as copying the file | Real-time-ish; depends on the phone | Like Re-encode |
+| Resolution | Always full original resolution, any squeeze | Limited by the phone's video encoder (often 4096 px wide), so large squeezes on 4K are scaled down evenly | Full original resolution for clips up to the encoder's size (4K UHD fits), any squeeze |
+| LUTs | Not applied | Can apply a `.cube` LUT | Can apply a `.cube` LUT |
+| Formats (16:9, 2.39 …) | No | Yes | No (original frame only) |
+| Compatibility | Shown de-squeezed by apps that respect pixel aspect (VLC, DaVinci Resolve, Premiere Pro, Final Cut Pro, most desktop players). Some phone galleries, social apps and web players ignore the tag and show it squeezed | Shown de-squeezed everywhere, because the pixels themselves are wider | Same as Lossless: needs an app that respects the tag |
 
 **Tip:** use **Lossless** when the clip is going into an editor; use **Re-encode** when you
-want a finished file to share directly or to burn in a LUT. In DaVinci Resolve, if a
+want a finished file to share directly. Use **Tagged** when you want a LUT (or trim, rotation, 10-bit) baked in
+for editing, but Re-encode would have to scale the picture down to fit the phone's encoder: Tagged keeps
+every pixel. The app recommends it in exactly that case and warns that galleries and social apps may show it squeezed. In DaVinci Resolve, if a
 Lossless clip still looks squeezed, check *Clip Attributes → Pixel Aspect Ratio*.
 
 ### Why Re-encode output can be smaller than "4K"

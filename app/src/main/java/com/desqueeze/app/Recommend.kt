@@ -35,6 +35,13 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         !decodable -> Recommendation(facts, ExportMode.LOSSLESS, "Lossless Desqueeze",
             "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode isn't possible. Lossless doesn't need to decode, and keeps every pixel.",
             null, null, null)
+        // The stretched size doesn't fit the encoder: Tagged keeps every pixel with the LUT, at the cost of relying on the tag.
+        lutSelected && format == OutFormat.ORIGINAL && scaled && fit!!.second * 100 / target.second < 95 -> Recommendation(facts, ExportMode.TAGGED,
+            "Tagged: full detail with your LUT",
+            "Re-encode would be scaled down to ${fit.first}×${fit.second} (${fit.second * 100 / target.second}%) by this phone's encoder. " +
+                "Tagged keeps all ${g.dispW}×${g.dispH} pixels with your LUT baked in, and tags them to show ${g.ratioLabel()}, like Lossless. " +
+                "Best for editing: Resolve, Premiere, Final Cut and VLC show it wide. Phone galleries and social apps may show it squeezed.",
+            ExportMode.REENCODE, "Re-encode for sharing", "Shows wide in every app and website, scaled to ${fit.first}×${fit.second}.")
         lutSelected -> Recommendation(facts, ExportMode.REENCODE, "Re-encode with your LUT",
             "Only Re-encode can bake your LUT into the picture.$scaledText",
             ExportMode.LOSSLESS, "Lossless for grading later", "Keeps the original $desc pixels; apply the LUT in your editor instead.")

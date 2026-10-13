@@ -53,22 +53,34 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode: ExportMode):
         if (f != OutFormat.ORIGINAL)
             issues += Status.NO to "${f.short} can't be made in Lossless: this clip would export in its original wide frame. Switch it to Re-encode, or pick Wide."
         rows += "Encoder" to "Not used (Lossless)"
-        if (st.lutFor(v) != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode to bake it in."
+        if (st.lutFor(v) != null) issues += Status.WARN to "Your LUT isn't applied in Lossless. Switch this clip to Re-encode or Tagged to bake it in."
     } else {
         val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
-        val (w, h, _) = exporter.targetSize(g, v.fps, mime, st.formatOf(v), st.resOf(v))
-        val (tw, th) = reencodeTarget(g, st.formatOf(v), st.resOf(v))
+        val tagged = mode == ExportMode.TAGGED
+        val fmt = st.formatOf(v)
+        val (w, h, _) = if (tagged) exporter.taggedSize(g, v.fps, mime) else exporter.targetSize(g, v.fps, mime, fmt, st.resOf(v))
+        val (tw, th) = if (tagged) g.dispW to g.dispH else reencodeTarget(g, fmt, st.resOf(v))
         val maxW = DeviceCaps.maxWidthAt(mime, th)
-        rows += "Output" to if (st.formatOf(v) == OutFormat.ORIGINAL) "$tw × $th"
+        rows += "Output" to if (tagged) "$tw × $th pixels, tagged to show ${g.ratioLabel()} (${g.outW} × ${g.outH} shape)"
+            else if (fmt == OutFormat.ORIGINAL) "$tw × $th"
             else "$tw × $th, ${st.formatOf(v).short} for ${st.formatOf(v).where} (" +
                 (if (st.fillOf(v)) "cropped to fill, ${fillKeepsPercent(g, st.formatOf(v))}% of the picture kept" else "fitted with black bars") + ")"
         rows += "Your encoder" to (maxW?.let { "Max width $it at $th tall (${if (mime == "video/hevc") "HEVC" else "H.264"})" } ?: "Can't encode $th px tall")
         if (!DeviceCaps.canDecode(v.codec, v.bitDepth))
             issues += Status.NO to "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode will fail. Use Lossless."
+        if (tagged && fmt != OutFormat.ORIGINAL)
+            issues += Status.NO to "${fmt.short} can't be made in Tagged: it keeps the clip's own frame and only tags it wide. Switch to Re-encode for ${fmt.short}, or pick Wide."
         if (w < tw || h < th)
             issues += (if (w.toFloat() / tw >= 0.75f) Status.WARN else Status.NO) to
-                "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + if (st.formatOf(v) == OutFormat.ORIGINAL) " Lossless keeps full resolution." else ""
-        if (st.formatOf(v) != OutFormat.ORIGINAL && st.fillOf(v) && fillKeepsPercent(g, st.formatOf(v)) < 60)
+                "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + when {
+                    tagged -> " Lossless keeps full resolution."
+                    fmt == OutFormat.ORIGINAL -> " Tagged keeps all ${g.dispW} × ${g.dispH} pixels and still applies a LUT; Lossless keeps the original file."
+                    else -> ""
+                }
+        if (tagged)
+            issues += Status.WARN to "Tagged files rely on a pixel-aspect tag: editors (Resolve, Premiere, Final Cut) and VLC show them ${g.ratioLabel()}, " +
+                "but phone galleries, WhatsApp, Instagram, YouTube and other social apps may ignore the tag and show the picture squeezed. Use Re-encode for files you'll share."
+        if (!tagged && fmt != OutFormat.ORIGINAL && st.fillOf(v) && fillKeepsPercent(g, fmt) < 60)
             issues += Status.WARN to "Filling ${st.formatOf(v).short} crops away ${100 - fillKeepsPercent(g, st.formatOf(v))}% of the wide picture. Fit keeps it all with black bars."
         if (v.bitDepth >= 10 && v.footage.hdr == null) {
             if (st.tenBitReencode(v)) rows += "Bit depth" to "10-bit HEVC (Main 10); falls back to 8-bit if this phone refuses"

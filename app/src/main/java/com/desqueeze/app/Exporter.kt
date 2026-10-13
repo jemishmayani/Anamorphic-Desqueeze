@@ -45,6 +45,9 @@ data class ExportResult(val name: String, val width: Int, val height: Int, val n
 @OptIn(UnstableApi::class)
 class Exporter(private val ctx: Context, private val settings: Settings, private val luts: LutManager) {
 
+    /** Tagged: the picture is encoded in its own pixel grid (no stretch), so only the encoder's limits can shrink it. */
+    fun taggedSize(g: Geometry, fps: Float, mime: String): Triple<Int, Int, String?> = fitToEncoder(g.dispW, g.dispH, mime, fps)
+
     fun targetSize(g: Geometry, fps: Float, mime: String, format: OutFormat = OutFormat.ORIGINAL, res: OutRes = OutRes.AUTO): Triple<Int, Int, String?> {
         val (w, h) = reencodeTarget(g, format, res)
         return fitToEncoder(w, h, mime, fps)
@@ -78,12 +81,14 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
     private data class Attempt(val mime: String, val w: Int, val h: Int, val note: String?)
 
     /** Tries the best settings first, then progressively safer ones if the encoder refuses. */
-    suspend fun export(job: ExportJob, onProgress: (Int) -> Unit): ExportResult {
+    suspend fun export(job0: ExportJob, onProgress: (Int) -> Unit, tagged: Boolean = false): ExportResult {
+        // Tagged never reframes: formats need the picture stretched into a new frame.
+        val job = if (tagged) job0.copy(format = OutFormat.ORIGINAL, fill = false, res = OutRes.AUTO) else job0
         val hevcOk = hasEncoder(MimeTypes.VIDEO_H265)
         val first = if (settings.codec == Codec.HEVC && hevcOk) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
         val other = if (first == MimeTypes.VIDEO_H265) MimeTypes.VIDEO_H264 else if (hevcOk) MimeTypes.VIDEO_H265 else null
         val g = job.geo
-        val (w0, h0) = reencodeTarget(g, job.format, job.res); val fps = job.video.fps
+        val (w0, h0) = if (tagged) g.dispW to g.dispH else reencodeTarget(g, job.format, job.res); val fps = job.video.fps
         val started = System.nanoTime()
 
         val attempts = mutableListOf<Attempt>()
@@ -107,10 +112,11 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             val a = attempts.firstOrNull { it.mime == MimeTypes.VIDEO_H265 }
             if (a != null) try {
                 Diag.step("10-bit: start ${a.w}x${a.h}")
-                val rep = runTenBit(job, a, onProgress)
+                val rep = runTenBit(job, a, onProgress, tagged)
                 Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.lengthMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
                 val main10 = rep.profile == null || rep.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10
-                return ExportResult(outName(job), a.w, a.h, listOfNotNull(
+                return ExportResult(outName(job, tagged), a.w, a.h, listOfNotNull(
+                    if (tagged) taggedNote(job, a) else null,
                     if (main10) "10-bit HEVC (Main 10)." else "Encoded with the 10-bit pipeline, but the encoder reported profile ${rep.profile}.",
                     if (!rep.yuvSampling) "This phone's graphics driver converted the colours itself, which may limit precision to 8-bit." else null,
                     a.note).joinToString(" "))
@@ -125,10 +131,10 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         for ((i, a) in attempts.withIndex()) {
             try {
                 Diag.step("Attempt ${i + 1}: ${a.mime} ${a.w}x${a.h}")
-                runOnce(job, a, onProgress)
+                runOnce(job, a, onProgress, tagged)
                 Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.lengthMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
-                return ExportResult(outName(job), a.w, a.h,
-                    listOfNotNull(tenBitNote, a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
+                return ExportResult(outName(job, tagged), a.w, a.h,
+                    listOfNotNull(if (tagged) taggedNote(job, a) else null, tenBitNote, a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
                         .joinToString(" ").ifEmpty { null })
             } catch (e: ExportFailure) {
                 Diag.step("Attempt ${i + 1} failed: ${e.message?.replace("\n", " ")}")
@@ -172,11 +178,36 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
                 (if (t != null) " Trimmed ${fmtDuration(t.actualStartMs)}–${fmtDuration(t.actualEndMs)} (starts on the nearest keyframe)." else ""))
     }
 
-    private fun outName(job: ExportJob) =
+    private fun outName(job: ExportJob, tagged: Boolean = false) =
         "${job.video.name.substringBeforeLast('.')}_DESQUEEZED_${"%.2f".format(job.squeeze).trimEnd('0').trimEnd('.')}X" +
-            job.format.suffix + (if (job.trim != null) "_TRIM" else "") + ".mp4"
+            job.format.suffix + (if (tagged) "_TAGGED" else "") + (if (job.trim != null) "_TRIM" else "") + ".mp4"
 
-    private suspend fun runOnce(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit) {
+    private fun taggedNote(job: ExportJob, a: Attempt): String {
+        val g = job.geo
+        val (p, q) = PaspWriter.ratio(job.squeeze)
+        val (hs, vs) = if (g.vertical) q to p else p to q
+        return "Tagged: ${a.w}×${a.h} pixels with a $hs:$vs pixel aspect tag, shown ${g.ratioLabel()} in editors and VLC. " +
+            "Some phone galleries and social apps ignore the tag and show it squeezed; use Re-encode for those."
+    }
+
+    /** Re-encoded file into the gallery: as is, or (Tagged) with the pixel-aspect tag added on the way, like Lossless. */
+    private fun saveOutput(tmp: File, job: ExportJob, tagged: Boolean) {
+        if (!tagged) return saveToGallery(tmp, outName(job))
+        try {
+            // Our pipelines bake rotation into the pixels; still read it back, so the tag goes on the right stored axis.
+            val rot = android.media.MediaMetadataRetriever().run {
+                try { setDataSource(tmp.absolutePath); extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0 }
+                catch (_: Exception) { 0 } finally { release() }
+            }
+            val storedHorizontal = (!job.geo.vertical) != (rot % 180 != 0)
+            Diag.step("Tagging: squeeze ${job.squeeze}, stored ${if (storedHorizontal) "horizontal" else "vertical"}, rotation $rot")
+            saveStream(outName(job, true), "video/mp4") { out ->
+                PaspWriter.write(ctx, android.net.Uri.fromFile(tmp), out, job.squeeze, storedHorizontal, null) { }
+            }
+        } finally { tmp.delete() }
+    }
+
+    private suspend fun runOnce(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit, tagged: Boolean = false) {
         val effects = mutableListOf<Effect>()
         val extra = job.geo.extraRotation
         // Media3 rotates counter-clockwise; metadata rotation is clockwise.
@@ -240,12 +271,12 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         }
         onProgress(100)
         Diag.step("Encoded; saving to gallery")
-        withContext(Dispatchers.IO) { saveToGallery(tmp, outName(job)) }
+        withContext(Dispatchers.IO) { saveOutput(tmp, job, tagged) }
         Diag.step("Saved")
     }
 
     /** 10-bit pipeline (see [TenBitPipeline]) into a temp file, then into the gallery like the regular export. */
-    private suspend fun runTenBit(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit): TenBitPipeline.Report {
+    private suspend fun runTenBit(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit, tagged: Boolean = false): TenBitPipeline.Report {
         val tmp = File(ctx.cacheDir, "export10_${System.nanoTime()}.mp4")
         try {
             val lut = job.lutId?.takeIf { job.lutStrength > 0f }?.let { withContext(Dispatchers.IO) { luts.load(it) } }
@@ -258,7 +289,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
                 pipe.run(spec, tmp) { p -> if (p != last) { last = p; onProgress(p) } }
             }
             Diag.step("10-bit: encoded with ${rep.encoder}, YUV sampling=${rep.yuvSampling}, profile=${rep.profile}, ${spec.bitrate / 1_000_000} Mbps; saving")
-            withContext(Dispatchers.IO) { saveToGallery(tmp, outName(job)) }
+            withContext(Dispatchers.IO) { saveOutput(tmp, job, tagged) }
             Diag.step("Saved")
             return rep
         } finally { tmp.delete() }

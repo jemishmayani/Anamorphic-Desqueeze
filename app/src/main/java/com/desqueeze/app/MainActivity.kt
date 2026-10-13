@@ -209,9 +209,9 @@ fun ViewToggle(desqueezed: Boolean, held: Boolean = false, onChange: (Boolean) -
 @Composable
 fun MethodToggle(mode: ExportMode, enabled: Boolean, onChange: (ExportMode) -> Unit) {
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        listOf(ExportMode.LOSSLESS to "Lossless", ExportMode.REENCODE to "Re-encode").forEachIndexed { i, (m, label) ->
+        ExportMode.entries.forEachIndexed { i, m ->
             SegmentedButton(selected = mode == m, onClick = { onChange(m) }, enabled = enabled,
-                shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+                shape = SegmentedButtonDefaults.itemShape(i, ExportMode.entries.size)) { Text(m.label, maxLines = 1) }
         }
     }
 }

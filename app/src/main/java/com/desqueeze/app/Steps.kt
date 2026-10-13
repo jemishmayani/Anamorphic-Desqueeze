@@ -791,13 +791,14 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     TwoPane(panes, left = {
     ClipSwitcher(st) { clip ->
         val f = st.formatOf(clip)
-        if (modes[clip.uri.toString()] == ExportMode.LOSSLESS) "Lossless" + (if (f != OutFormat.ORIGINAL) " ✗ ${f.short}" else "")
+        val m = modes[clip.uri.toString()] ?: st.mode
+        if (m != ExportMode.REENCODE) m.label + (if (f != OutFormat.ORIGINAL) " ✗ ${f.short}" else "")
         else "Re-encode" + if (f != OutFormat.ORIGINAL) " ${f.short}" else ""
     }
 
     recs[key]?.let { rec -> RecommendationCard(rec, mode, enabled = !st.busy) { m ->
         setMode(m)
-        if (m == ExportMode.LOSSLESS && st.formatOf(v) != OutFormat.ORIGINAL) { st.clipFormat.remove(key); st.formatSwitch = null }
+        if (m != ExportMode.REENCODE && st.formatOf(v) != OutFormat.ORIGINAL) { st.clipFormat.remove(key); st.formatSwitch = null }
     } }
         ?: LinearProgressIndicator(Modifier.fillMaxWidth())
 
@@ -805,18 +806,25 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
         MethodToggle(mode, enabled = !st.busy) { setMode(it) }
         Spacer(Modifier.height(8.dp))
-        Text(if (mode == ExportMode.LOSSLESS)
-            "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag." +
-                if (st.lutFor(v) != null) " Your LUT won't be applied in Lossless." else ""
-        else "Renders new pixels so every app shows it de-squeezed${if (st.lutFor(v) != null) ", with your LUT baked in" else ""}. Slower and re-compressed.",
+        Text(when (mode) {
+            ExportMode.LOSSLESS ->
+                "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag." +
+                    if (st.lutFor(v) != null) " Your LUT won't be applied in Lossless." else ""
+            ExportMode.REENCODE ->
+                "Renders new pixels so every app shows it de-squeezed${if (st.lutFor(v) != null) ", with your LUT baked in" else ""}. Slower and re-compressed."
+            ExportMode.TAGGED ->
+                "Re-encodes in the clip's own pixel grid${if (st.lutFor(v) != null) " with your LUT baked in" else ""}, then tags the pixel aspect like Lossless, " +
+                    "so nothing is lost to this phone's encoder size limit. For editing: Resolve, Premiere, Final Cut and VLC show it wide. " +
+                    "Phone galleries and social apps may show it squeezed, so use Re-encode for sharing. Original frame only (no formats)."
+        },
             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         if (st.videos.size > 1) Row(Modifier.padding(top = 4.dp)) {
             TextButton(onClick = { st.videos.forEach { st.clipModes[it.uri.toString()] = mode } }, enabled = !st.busy) {
-                Text("Use ${if (mode == ExportMode.LOSSLESS) "Lossless" else "Re-encode"} for all")
+                Text("Use ${mode.label} for all")
             }
             TextButton(onClick = { st.clipModes.clear() }, enabled = !st.busy && st.clipModes.isNotEmpty()) { Text("Reset to recommended") }
         }
-        AnimatedVisibility(mode == ExportMode.REENCODE) {
+        AnimatedVisibility(mode != ExportMode.LOSSLESS) {
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PickerRow("Quality", st.quality.label, Quality.entries.map { it.label }, enabled = !st.busy) {
                     st.quality = Quality.entries[it]; settings.quality = st.quality }
@@ -840,19 +848,24 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
                 EstRow("Output", "${e.outW} × ${e.outH}")
                 EstRow("Output size", "≈ " + fmtSize(e.bytes))
                 EstRow("Processing time", fmtEta(e.seconds))
-                if (mode == ExportMode.REENCODE) {
+                if (mode != ExportMode.LOSSLESS) {
                     val full = e.scaledNote == null
                     Row(verticalAlignment = Alignment.Top) {
                         StatusIcon(if (full) Status.OK else Status.WARN)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (full) "This phone's encoder handles the full size." else (e.scaledNote + " Lossless keeps full resolution."),
+                        Text(when {
+                                full && mode == ExportMode.TAGGED -> "Every pixel kept; shown ${st.geoOf(v).ratioLabel()} through the tag."
+                                full -> "This phone's encoder handles the full size."
+                                mode == ExportMode.REENCODE && st.formatOf(v) == OutFormat.ORIGINAL -> e.scaledNote + " Tagged or Lossless keep full resolution."
+                                else -> e.scaledNote + " Lossless keeps full resolution."
+                            },
                             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                     }
                 }
                 if (st.videos.size > 1) {
                     HorizontalDivider(color = c.outlineVariant)
-                    val nL = modes.values.count { it == ExportMode.LOSSLESS }
-                    Text("All ${st.videos.size} clips ($nL Lossless, ${st.videos.size - nL} Re-encode)", style = MaterialTheme.typography.labelMedium, color = c.primary)
+                    val counts = ExportMode.entries.mapNotNull { m -> modes.values.count { it == m }.takeIf { it > 0 }?.let { "$it ${m.label}" } }
+                    Text("All ${st.videos.size} clips (${counts.joinToString(", ")})", style = MaterialTheme.typography.labelMedium, color = c.primary)
                     EstRow("Total size", "≈ " + fmtSize(all.values.sumOf { it.bytes }))
                     EstRow("Total time", fmtEta(all.values.sumOf { it.seconds }))
                 }
@@ -881,7 +894,7 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             val k = clip.uri.toString()
             val before = st.formatOf(clip)
             if (f == OutFormat.ORIGINAL) st.clipFormat.remove(k) else st.clipFormat[k] = f
-            if (f != OutFormat.ORIGINAL && modes[k] == ExportMode.LOSSLESS) {
+            if (f != OutFormat.ORIGINAL && modes[k] != ExportMode.REENCODE) {
                 switched[k] = st.clipModes[k] to before
                 st.clipModes[k] = ExportMode.REENCODE
             }
@@ -945,7 +958,7 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             if (sw.previous.isNotEmpty()) Notice(
                 color = Warm, icon = AppIcons.Warn,
                 title = if (sw.previous.size == 1) "Switched to Re-encode" else "Switched ${sw.previous.size} clips to Re-encode",
-                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless always keeps the original wide frame. " +
+                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless and Tagged always keep the original wide frame. " +
                     "Re-encode makes new pixels" + if (st.tenBitOn) "; 10-bit log stays 10-bit (HEVC)." else ", so 10-bit log becomes 8-bit.",
                 action = "Undo",
             ) {
@@ -957,11 +970,12 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             }
         }
 
-        // Red conflict: Lossless is selected AND a format is set (e.g. after "Use Lossless for all").
-        if (mode == ExportMode.LOSSLESS && format != OutFormat.ORIGINAL) Notice(
+        // Red conflict: Lossless or Tagged is selected AND a format is set (e.g. after "Use Lossless for all").
+        if (mode != ExportMode.REENCODE && format != OutFormat.ORIGINAL) Notice(
             color = c.error, icon = AppIcons.Cross,
-            title = "${format.short} can't be made in Lossless",
-            text = "Lossless copies the original pixels, so this clip would export in its original wide frame, not ${format.short}.",
+            title = "${format.short} can't be made in ${mode.label}",
+            text = (if (mode == ExportMode.LOSSLESS) "Lossless copies the original pixels" else "Tagged keeps the clip's own frame and only tags it wide") +
+                ", so this clip would export in its original wide frame, not ${format.short}.",
             action = "Switch to Re-encode", secondary = "Use Wide",
             onSecondary = { st.clipFormat.remove(key); st.formatSwitch = null },
         ) { st.clipModes[key] = ExportMode.REENCODE; st.formatSwitch = null }
@@ -1248,7 +1262,7 @@ fun RunList(runs: List<ClipRun>, maxRows: Int) {
                     color = if (r.state == RunState.WAITING) c.onSurfaceVariant else c.onSurface)
                 Spacer(Modifier.width(8.dp))
                 Text(when (r.state) {
-                    RunState.WAITING -> if (r.method == ExportMode.LOSSLESS) "Lossless" else "Re-encode"
+                    RunState.WAITING -> r.method.label
                     RunState.RUNNING -> "${r.pct}%"
                     RunState.DONE -> r.note ?: "Done"
                     RunState.FAILED -> if (r.note == "Cancelled") "Cancelled" else "Failed"

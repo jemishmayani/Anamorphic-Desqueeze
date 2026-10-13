@@ -2,6 +2,15 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.27 — 2026-10-13
+
+### Added
+- **Tagged, a third export method.** Phone video encoders have a maximum width (4096 px on many phones), so Re-encode has to scale de-squeezed 4K down, e.g. 4K at 1.2× becomes 4096 × 1920 instead of 4608 × 2160. **Tagged** re-encodes the picture in the clip's own pixel grid (3840 × 2160 for 4K UHD), with your LUT, trim, orientation and 10-bit applied, and then adds the same pixel-aspect tag as Lossless. Nothing is scaled away, and the file is still shown de-squeezed by editors and players that read the tag (DaVinci Resolve, Premiere Pro, Final Cut Pro, VLC). Files are named `…_TAGGED.mp4`.
+  - **Recommended automatically** when a clip has a LUT and Re-encode would be scaled below 95%, with Re-encode offered as the alternative "for sharing".
+  - **Clear warnings:** the method description, the compatibility check and the pre-export check say that phone galleries, WhatsApp, Instagram, YouTube and other social apps may ignore the tag and show the picture squeezed, and suggest Re-encode for files you'll share.
+  - **Original frame only.** Formats (16:9, 2.39:1, 9:16 …) need the picture stretched into a new frame, so they stay Re-encode only; picking a format on a Tagged clip switches it to Re-encode (with Undo), and a red notice explains any conflict.
+  - Re-encode's "scaled to fit this phone's encoder" warnings now point to Tagged as the way to keep full resolution with a LUT.
+
 ## v1.26 — 2026-10-13
 
 ### Added
