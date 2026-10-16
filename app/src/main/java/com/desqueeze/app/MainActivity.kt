@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -98,6 +99,7 @@ class MainActivity : ComponentActivity() {
                                     Screen.Settings -> SettingsScreen(state, settings, luts)
                                     Screen.Limits -> LimitsScreen { state.screen = Screen.Settings }
                                     Screen.Luts -> LutLibraryScreen(state, luts) { state.screen = state.lutsBack }
+                                    Screen.Photos -> PhotosScreen(state, settings, luts) { state.screen = Screen.Main }
                                     else -> {}
                                 }
                             }
@@ -124,8 +126,17 @@ class MainActivity : ComponentActivity() {
         }
         if (uris.isEmpty()) return
         intent.putExtra("handled", true)
-        state.screen = Screen.Main; state.step = Step.Clips
-        importClips(this, state, settings, uris, append = state.videos.isNotEmpty())
+        // Photos go to the Photos screen; videos to the clip list (a mixed share does both, showing Photos).
+        val (images, videos) = uris.partition { u ->
+            (contentResolver.getType(u) ?: intent.type)?.startsWith("image/") == true }
+        if (videos.isNotEmpty()) {
+            state.screen = Screen.Main; state.step = Step.Clips
+            importClips(this, state, settings, videos, append = state.videos.isNotEmpty())
+        }
+        if (images.isNotEmpty()) {
+            state.screen = Screen.Photos
+            lifecycleScope.launch { addPhotos(this@MainActivity, state, images) }
+        }
     }
 
     fun keepScreenOn(on: Boolean) =

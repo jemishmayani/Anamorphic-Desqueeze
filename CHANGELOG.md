@@ -2,6 +2,16 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.31 — 2026-10-17
+
+### Added
+- **Anamorphic photos.** Open **De-squeeze photos** from the Clips step, or share photos to De-Squeeze from your gallery. Pick any number of JPEG, HEIC, PNG or WebP photos, then set once for the batch:
+  - **Squeeze** (presets or any value 1–3×) and **direction** (stretch horizontally, or vertically for a turned adapter);
+  - **Edge crop** for adapter vignetting;
+  - a **LUT** from your library with its strength, and the **colour** controls.
+
+  A live preview shows the selected photo with everything applied. **Save** writes new JPEGs (quality 95) to Pictures/AnamorphicDesqueeze; originals are untouched. Photos have no pixel-aspect tag that viewers respect, so they're always stretched to their real shape: more pixels, nothing thrown away (results above 100 MP are scaled down evenly). The camera's EXIF (make, model, lens, exposure, ISO, focal length) is copied; the date taken and GPS location are copied when **Keep recording date & location** is on, and the gallery's "date taken" is set to match.
+
 ## v1.30 — 2026-10-17
 
 ### Added

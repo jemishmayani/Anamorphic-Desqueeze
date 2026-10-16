@@ -9,7 +9,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 
-enum class Screen { Main, Settings, Limits, Luts }
+enum class Screen { Main, Settings, Limits, Luts, Photos }
 
 /** Double Desqueeze Protection: what to do with a clip that is already tagged as anamorphic. */
 enum class TagPolicy(val label: String, val detail: String) {
@@ -29,6 +29,21 @@ enum class Step(val label: String) { Clips("Clips"), Frame("Frame"), Look("Look"
 /** Lives above the screens so navigating never loses clips or settings. */
 class AppState(settings: Settings, luts: LutManager) {
     private val prefs = settings
+
+    /* Anamorphic photos: one set of settings for the whole batch. */
+    var photos by mutableStateOf(listOf<PhotoItem>())
+    var photoSel by mutableIntStateOf(0)
+    var photoSqueeze by mutableFloatStateOf(settings.defaultSqueeze)
+    var photoVertical by mutableStateOf(false)
+    var photoLutId by mutableStateOf<String?>(null)
+    var photoStrength by mutableFloatStateOf(1f)
+    var photoColor by mutableStateOf(ColorAdjust())
+    var photoCrop by mutableFloatStateOf(0f)
+    var photoLoading by mutableStateOf(false)
+    var photoBusy by mutableStateOf(false)
+    var photoDone by mutableIntStateOf(0)
+    var photoResults by mutableStateOf(listOf<String>())
+    val photoLook get() = PhotoLook(photoSqueeze, photoVertical, photoLutId, photoStrength, photoColor, photoCrop)
     /** Preview / tool panel split in the Frame and Look steps on phones (dragged by the handle between them). */
     var editorSplit by mutableFloatStateOf(settings.editorSplit.coerceIn(EDITOR_SPLIT_MIN, EDITOR_SPLIT_MAX))
     fun saveEditorSplit() { prefs.editorSplit = editorSplit }

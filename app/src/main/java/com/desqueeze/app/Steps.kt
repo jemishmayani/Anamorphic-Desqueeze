@@ -302,6 +302,9 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
                 Text("Tip: in your gallery, select clips, tap Share and choose De-Squeeze to open them here directly.",
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             }
+            OutlinedButton(onClick = { st.screen = Screen.Photos }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
+                Icon(AppIcons.Aspect, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("De-squeeze photos")
+            }
         }
     } else TwoPane(panes, left = {
         ImportProgress(st)
@@ -319,6 +322,9 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
             }
             if (st.videos.size > 1) Text("Each clip can have its own squeeze, trim and export method in the next steps.",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        }
+        TextButton(onClick = { st.screen = Screen.Photos }, enabled = !st.busy) {
+            Icon(AppIcons.Aspect, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("De-squeeze photos")
         }
     }, right = {
         st.videos.getOrNull(st.selected)?.let { FootageCard(st, it, enabled = !st.busy, onChange = onPick) }
@@ -671,15 +677,7 @@ fun CropSection(st: AppState) {
     Section(if (st.videos.size > 1) "Edge crop for clip ${st.selected + 1}" else "Edge crop", trailing = {
         Text("%.1f%%".format(crop * 100), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
     }) {
-        Slider(crop, { st.crop = Math.round(it * 200f) / 200f }, valueRange = 0f..0.15f, enabled = !st.busy)
-        Row(Modifier.fillMaxWidth()) {
-            listOf(0f to "0%", 0.05f to "5%", 0.10f to "10%", 0.15f to "15%").forEachIndexed { i, (value, label) ->
-                if (i > 0) Spacer(Modifier.weight(1f))
-                Text(label, style = MaterialTheme.typography.labelMedium.merge(Mono),
-                    color = if (kotlin.math.abs(crop - value) < 0.0025f) c.primary else c.onSurfaceVariant,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { st.crop = value }.padding(horizontal = 6.dp, vertical = 4.dp))
-            }
-        }
+        CropSlider(crop, enabled = !st.busy) { st.crop = it }
         Text(
             "Zooms in evenly to hide dark or soft corners from an anamorphic adapter. The same share is cut from every edge, so the frame keeps its shape" +
                 (if (crop > 0f) "; ${(100 - crop * 200).toInt()}% of the width and height is kept and scaled back up to full size." else ".") +
@@ -694,30 +692,52 @@ fun CropSection(st: AppState) {
     }
 }
 
+/** 0–15% edge crop slider with quick marks (shared by clips and photos). */
+@Composable
+fun CropSlider(crop: Float, enabled: Boolean, onChange: (Float) -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Slider(crop, { onChange(Math.round(it * 200f) / 200f) }, valueRange = 0f..0.15f, enabled = enabled)
+    Row(Modifier.fillMaxWidth()) {
+        listOf(0f to "0%", 0.05f to "5%", 0.10f to "10%", 0.15f to "15%").forEachIndexed { i, (value, label) ->
+            if (i > 0) Spacer(Modifier.weight(1f))
+            Text(label, style = MaterialTheme.typography.labelMedium.merge(Mono),
+                color = if (kotlin.math.abs(crop - value) < 0.0025f) c.primary else c.onSurfaceVariant,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled) { onChange(value) }.padding(horizontal = 6.dp, vertical = 4.dp))
+        }
+    }
+}
+
+/** The five colour sliders; tap a value to reset it (shared by clips and photos). */
+@Composable
+fun ColorSliders(a: ColorAdjust, enabled: Boolean, onChange: (ColorAdjust) -> Unit) {
+    val c = MaterialTheme.colorScheme
+    @Composable fun row(label: String, value: Float, range: ClosedFloatingPointRange<Float>, text: String, set: (Float) -> Unit) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(text, style = MaterialTheme.typography.titleSmall.merge(Mono),
+                color = if (kotlin.math.abs(value) < 0.005f) c.onSurfaceVariant else c.primary,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled) { set(0f) }.padding(horizontal = 6.dp, vertical = 2.dp))
+        }
+        Slider(value, set, valueRange = range, enabled = enabled)
+    }
+    fun pct(v: Float) = if (kotlin.math.abs(v) < 0.005f) "0" else "%+d".format(Math.round(v * 100))
+    row("Exposure", a.exposure, -2f..2f, if (kotlin.math.abs(a.exposure) < 0.05f) "0 EV" else "%+.1f EV".format(a.exposure)) {
+        onChange(a.copy(exposure = Math.round(it * 10f) / 10f)) }
+    row("Contrast", a.contrast, -1f..1f, pct(a.contrast)) { onChange(a.copy(contrast = Math.round(it * 100f) / 100f)) }
+    row("Saturation", a.saturation, -1f..1f, pct(a.saturation)) { onChange(a.copy(saturation = Math.round(it * 100f) / 100f)) }
+    row("Temperature", a.temperature, -1f..1f, if (kotlin.math.abs(a.temperature) < 0.005f) "0" else pct(a.temperature) + if (a.temperature > 0) " warm" else " cool") {
+        onChange(a.copy(temperature = Math.round(it * 100f) / 100f)) }
+    row("Tint", a.tint, -1f..1f, if (kotlin.math.abs(a.tint) < 0.005f) "0" else pct(a.tint) + if (a.tint > 0) " magenta" else " green") {
+        onChange(a.copy(tint = Math.round(it * 100f) / 100f)) }
+}
+
 /** Exposure, contrast, saturation and white balance, applied after the LUT. */
 @Composable
 fun ColorSection(st: AppState) {
     val c = MaterialTheme.colorScheme
     val a = st.color
     Section(if (st.videos.size > 1) "Colour for clip ${st.selected + 1}" else "Colour") {
-        @Composable fun row(label: String, value: Float, range: ClosedFloatingPointRange<Float>, text: String, set: (Float) -> Unit) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Text(text, style = MaterialTheme.typography.titleSmall.merge(Mono),
-                    color = if (kotlin.math.abs(value) < 0.005f) c.onSurfaceVariant else c.primary,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { set(0f) }.padding(horizontal = 6.dp, vertical = 2.dp))
-            }
-            Slider(value, set, valueRange = range, enabled = !st.busy)
-        }
-        fun pct(v: Float) = if (kotlin.math.abs(v) < 0.005f) "0" else "%+d".format(Math.round(v * 100))
-        row("Exposure", a.exposure, -2f..2f, if (kotlin.math.abs(a.exposure) < 0.05f) "0 EV" else "%+.1f EV".format(a.exposure)) {
-            st.color = a.copy(exposure = Math.round(it * 10f) / 10f) }
-        row("Contrast", a.contrast, -1f..1f, pct(a.contrast)) { st.color = a.copy(contrast = Math.round(it * 100f) / 100f) }
-        row("Saturation", a.saturation, -1f..1f, pct(a.saturation)) { st.color = a.copy(saturation = Math.round(it * 100f) / 100f) }
-        row("Temperature", a.temperature, -1f..1f, if (kotlin.math.abs(a.temperature) < 0.005f) "0" else pct(a.temperature) + if (a.temperature > 0) " warm" else " cool") {
-            st.color = a.copy(temperature = Math.round(it * 100f) / 100f) }
-        row("Tint", a.tint, -1f..1f, if (kotlin.math.abs(a.tint) < 0.005f) "0" else pct(a.tint) + if (a.tint > 0) " magenta" else " green") {
-            st.color = a.copy(tint = Math.round(it * 100f) / 100f) }
+        ColorSliders(a, enabled = !st.busy) { st.color = it }
         Segmented(listOf("Look off", "Look on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
         Row {
             TextButton(onClick = { st.color = ColorAdjust() }, enabled = !st.busy && !a.isNeutral) { Text("Reset all") }

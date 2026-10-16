@@ -46,3 +46,22 @@ class LookTest {
         assertEquals("0% LUT and no colour = no cube", null, LookBuilder.build(inv, 0f, ColorAdjust()))
     }
 }
+
+class PhotoSizeTest {
+    private fun look(sq: Float, vertical: Boolean = false, crop: Float = 0f) = PhotoLook(sq, vertical, null, 1f, ColorAdjust(), crop)
+
+    @Test fun stretchesAlongTheSqueezeAxis() {
+        assertEquals(5320 to 3000, PhotoExporter.outputSize(4000, 3000, look(1.33f)))
+        assertEquals(3000 to 5320, PhotoExporter.outputSize(3000, 4000, look(1.33f, vertical = true)))
+    }
+
+    @Test fun edgeCropKeepsTheShape() {
+        assertEquals(4788 to 2700, PhotoExporter.outputSize(4000, 3000, look(1.33f, crop = 0.05f)))
+    }
+
+    @Test fun veryLargeResultsAreCappedEvenly() {
+        val (w, h) = PhotoExporter.outputSize(9000, 7000, look(2f))
+        assertTrue(w.toLong() * h <= PhotoExporter.MAX_OUTPUT_PIXELS + 20_000)
+        assertTrue(kotlin.math.abs(w.toFloat() / h - 18000f / 7000f) < 0.01f)
+    }
+}

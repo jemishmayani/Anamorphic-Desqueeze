@@ -153,6 +153,7 @@ actual image detail is similar or lower.
   Scopes are sampled at 384 px and drawn like a monitor scope: a phosphor-style brightness curve keeps both busy and faint areas readable, with a labelled IRE graticule; the histogram has 256 levels per channel.
 
 **Look**
+- **Anamorphic photos:** de-squeeze JPEG, HEIC, PNG and WebP photos (from the Clips step, or share them to De-Squeeze from your gallery). One squeeze, direction, edge crop, LUT and colour setting for the batch, with a live preview; saved as new JPEGs in Pictures/AnamorphicDesqueeze with the camera's EXIF (date and GPS only when **Keep recording date & location** is on). Photos have no pixel-aspect tag that viewers respect, so they're always stretched to their real shape (more pixels, nothing discarded; very large results are capped at 100 MP)
 - **Colour controls** (Look step, per clip): exposure (±2 EV), contrast, saturation, temperature and tint, applied after the LUT and baked into the same 3D cube, so the live preview, Before / After and the export match
 - **Edge crop** (Frame step, per clip): cuts the same share (up to 15%) from every edge to hide adapter vignetting or soft corners, scaled back up to full size; the preview zooms to match
 - **LUT picker with previews:** every LUT is a small tile showing your current clip through it, so you can compare looks at a glance
