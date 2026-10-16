@@ -2,6 +2,16 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.30 — 2026-10-17
+
+### Added
+- **Colour controls** (Look step → Colour, per clip): exposure (±2 EV), contrast, saturation, temperature (cool/warm) and tint (green/magenta). They apply after the LUT, on the picture as you see it, and are baked into the same 3D cube as the LUT, so the live preview, Before / After, Re-encode, Tagged and 10-bit exports all match. Tap a value to reset it; **Reset all** and **Apply to all clips** are below the sliders. The preview badge reads e.g. "LUT 80% · Colour".
+- **Edge crop for adapter vignetting** (Frame step → Crop, per clip): cuts the same share from every edge (0–15%) and scales the picture back to full size, so dark or soft corners from an anamorphic adapter disappear without changing the frame's shape. The preview zooms in to match, and Before / After stills are cropped the same way.
+
+### Changed
+- The tag method is named for all edits that need new pixels, not just a LUT: **Tagged + LUT**, **Tagged + colour**, **Tagged + crop**, or **Tagged + edits** for several. Recommendations, checks and descriptions say which edits will be baked in, and the Compatibility card lists them.
+- "LUT off / LUT on" is now **Look off / Look on** and switches the LUT and colour controls together in the preview.
+
 ## v1.29 — 2026-10-17
 
 ### Added

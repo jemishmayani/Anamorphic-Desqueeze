@@ -109,8 +109,9 @@ stretches on the GPU.
 
 ## Two export methods
 
-The first method is named for what it does with each clip: **Lossless** when the clip has no LUT, **Tagged + LUT**
-when it has one (a LUT changes colours, which needs new pixels, so the clip is re-encoded in its own pixel grid and tagged).
+The first method is named for what it does with each clip: **Lossless** when the clip has no pixel edits, **Tagged + LUT**,
+**Tagged + colour**, **Tagged + crop** or **Tagged + edits** when it has some (a LUT, colour changes or an edge crop need new
+pixels, so the clip is re-encoded in its own pixel grid and tagged).
 
 | | **Lossless** (default) | **Tagged + LUT** (Lossless with a LUT) | **Re-encode** |
 |---|---|---|---|
@@ -152,6 +153,8 @@ actual image detail is similar or lower.
   Scopes are sampled at 384 px and drawn like a monitor scope: a phosphor-style brightness curve keeps both busy and faint areas readable, with a labelled IRE graticule; the histogram has 256 levels per channel.
 
 **Look**
+- **Colour controls** (Look step, per clip): exposure (±2 EV), contrast, saturation, temperature and tint, applied after the LUT and baked into the same 3D cube, so the live preview, Before / After and the export match
+- **Edge crop** (Frame step, per clip): cuts the same share (up to 15%) from every edge to hide adapter vignetting or soft corners, scaled back up to full size; the preview zooms to match
 - **LUT picker with previews:** every LUT is a small tile showing your current clip through it, so you can compare looks at a glance
 - **LUT library:** import (several files at once, with duplicates skipped), rename and delete your own 3D `.cube` LUTs. None are bundled; import your camera maker's official log-to-Rec.709 LUT
 - **LUT preview:** off / on while the video plays (a lighter ~720p proxy keeps 4K 10-bit smooth), strength with 0% / 50% / 100% marks, and a full-quality **before / after** still with a draggable divider
