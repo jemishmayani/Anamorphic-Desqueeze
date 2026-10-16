@@ -2,6 +2,12 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.29 — 2026-10-17
+
+### Added
+- **Re-encoded files keep the recording date and location.** Re-encode, Tagged + LUT and trimmed Lossless exports used to be dated when you exported them, with no GPS, so galleries showed them under the export day. They now carry the original clip's recording time (shifted by the trim start, if trimmed) and its location, and the gallery's "date taken" is set to match. Untrimmed Lossless copies already kept everything, since the file is copied as is.
+- **Settings → Re-encode → Keep recording date & location** (on by default) replaces the old "Preserve metadata" switch, which didn't do anything. Turn it off to leave the location out, e.g. for files you'll share; re-encoded files are then dated at export time.
+
 ## v1.28 — 2026-10-13
 
 ### Changed

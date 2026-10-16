@@ -31,6 +31,12 @@ object PaspWriter {
 
     data class TopBox(val type: String, val offset: Long, val size: Long)
 
+    /**
+     * Header metadata to write: the recording time (seconds since 1904, as MP4 stores it) into mvhd/tkhd/mdhd,
+     * and a location (ISO 6709, e.g. "+12.9716+077.5946/") as a '©xyz' box in moov/udta. Null fields are left alone.
+     */
+    data class Meta(val mp4Time: Long? = null, val iso6709: String? = null)
+
     /** Returns the pixel-aspect ratio as a reduced fraction, e.g. 1.33 -> 133:100. */
     fun ratio(squeeze: Float): Pair<Int, Int> {
         var h = Math.round(squeeze * 1000).toLong(); var v = 1000L
@@ -43,8 +49,8 @@ object PaspWriter {
      * @param storedHorizontal stretch along the stored pixel width (normal) or height (vertical anamorphic).
      * @param rotation new clockwise display rotation for the video track, or null to keep the file's own.
      */
-    fun write(ctx: Context, src: Uri, out: OutputStream, squeeze: Float, storedHorizontal: Boolean = true,
-              rotation: Int? = null, onProgress: (Int) -> Unit) {
+    fun write(ctx: Context, src: Uri, out: OutputStream, squeeze: Float?, storedHorizontal: Boolean = true,
+              rotation: Int? = null, meta: Meta? = null, onProgress: (Int) -> Unit) {
         val pfd = ctx.contentResolver.openFileDescriptor(src, "r") ?: throw IllegalArgumentException("Can't open the source file.")
         // AutoCloseInputStream owns the descriptor, so it is closed exactly once (Android aborts on double close).
         run {
@@ -55,7 +61,7 @@ object PaspWriter {
                 require(moov.size < 256L * 1024 * 1024) { "File header is unusually large." }
                 val firstMdat = boxes.firstOrNull { b -> b.type == "mdat" }
                 val moovBytes = readFully(ch, moov.offset, moov.size.toInt())
-                val patched = patchMoov(moovBytes, squeeze, storedHorizontal, rotation, moovBeforeMdat = firstMdat != null && moov.offset < firstMdat.offset)
+                val patched = patchMoov(moovBytes, squeeze, storedHorizontal, rotation, meta, moovBeforeMdat = firstMdat != null && moov.offset < firstMdat.offset)
 
                 Diag.step("Header patched: ${moovBytes.size} -> ${patched.size} bytes; copying")
                 val total = boxes.sumOf { b -> b.size }.coerceAtLeast(1)
@@ -101,12 +107,13 @@ object PaspWriter {
 
     /* ---------------- moov patching ---------------- */
 
-    private fun patchMoov(moov: ByteArray, squeeze: Float, storedHorizontal: Boolean, rotation: Int?, moovBeforeMdat: Boolean): ByteArray {
+    internal fun patchMoov(moov: ByteArray, squeeze: Float?, storedHorizontal: Boolean, rotation: Int?, meta: Meta?, moovBeforeMdat: Boolean): ByteArray {
         val root = parse(moov, 0, moov.size, "").single()
+        if (meta != null) patchMeta(root, meta)
+        if (squeeze == null) return finish(root, moov.size, moovBeforeMdat)
         val (a, b) = ratio(squeeze)
         val (hs, vs) = if (storedHorizontal) a to b else b to a
         val pasp = ByteBuffer.allocate(8).putInt(hs).putInt(vs).array()
-        var grow = 0
         var visualFound = 0
         for (trak in root.children!!.filter { it.type == "trak" }) {
             var w = 0; var h = 0; var isVideo = false
@@ -116,16 +123,48 @@ object PaspWriter {
                     val pb = ByteBuffer.wrap(n.prefix); w = pb.getShort(24).toInt() and 0xFFFF; h = pb.getShort(26).toInt() and 0xFFFF
                     val kids = n.children!!
                     val existing = kids.firstOrNull { it.type == "pasp" }
-                    if (existing != null) { grow += 8 - (existing.raw?.size ?: 0); existing.raw = pasp }
-                    else { kids += Node("pasp", raw = pasp); grow += 16 }
+                    if (existing != null) existing.raw = pasp else kids += Node("pasp", raw = pasp)
                 }
             }
             if (isVideo && w > 0 && h > 0) trak.children!!.firstOrNull { it.type == "tkhd" }?.let { patchTkhd(it, w, h, hs, vs, rotation) }
         }
         require(visualFound > 0) { "No supported video track found to tag." }
-        // If the header sits before the media data, every sample offset moves by the bytes we added.
-        if (moovBeforeMdat && grow != 0) walk(root) { n, _ -> if (n.type == "stco" || n.type == "co64") shiftOffsets(n, grow) }
-        return ByteArrayOutputStream(moov.size + 64).also { serialize(root, it) }.toByteArray()
+        return finish(root, moov.size, moovBeforeMdat)
+    }
+
+    /** Serializes; if the header sits before the media data, every sample offset moves by the bytes it grew. */
+    private fun finish(root: Node, oldSize: Int, moovBeforeMdat: Boolean): ByteArray {
+        val first = ByteArrayOutputStream(oldSize + 128).also { serialize(root, it) }.toByteArray()
+        val grow = first.size - oldSize
+        if (!moovBeforeMdat || grow == 0) return first
+        walk(root) { n, _ -> if (n.type == "stco" || n.type == "co64") shiftOffsets(n, grow) }
+        return ByteArrayOutputStream(first.size).also { serialize(root, it) }.toByteArray()
+    }
+
+    /** Recording time into mvhd, every tkhd and mdhd; location as moov/udta/©xyz (replacing any old one). */
+    private fun patchMeta(root: Node, meta: Meta) {
+        meta.mp4Time?.let { t ->
+            walk(root) { n, _ ->
+                val raw = n.raw
+                if ((n.type == "mvhd" || n.type == "tkhd" || n.type == "mdhd") && raw != null && raw.size >= 20) {
+                    val b = ByteBuffer.wrap(raw)
+                    if (raw[0].toInt() == 1) { b.putLong(4, t); b.putLong(12, t) }
+                    else { val v = t.coerceIn(0, 0xFFFFFFFFL).toInt(); b.putInt(4, v); b.putInt(8, v) }
+                }
+            }
+        }
+        meta.iso6709?.let { loc ->
+            val str = loc.toByteArray(Charsets.US_ASCII)
+            val xyz = ByteBuffer.allocate(4 + str.size).putShort(str.size.toShort()).putShort(0x15c7).put(str).array()
+            val kids = root.children!!
+            val udta = kids.firstOrNull { it.type == "udta" }
+            if (udta == null) { kids += Node("udta", children = mutableListOf(Node("\u00a9xyz", raw = xyz))); return@let }
+            // udta is kept raw elsewhere; open it here only if it parses cleanly as boxes.
+            val inner = udta.raw?.let { r -> runCatching { parse(r, 0, r.size, "udta") }.getOrNull() } ?: udta.children ?: return@let
+            inner.removeAll { it.type == "\u00a9xyz" }
+            inner += Node("\u00a9xyz", raw = xyz)
+            udta.raw = null; udta.children = inner
+        }
     }
 
     /**

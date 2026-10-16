@@ -161,10 +161,12 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
                 android.net.Uri.fromFile(trimmed!!.file)
             } ?: job.video.uri
             val half = if (trimmed != null) 50 else 0
+            // An untrimmed copy keeps the file's own metadata; a trimmed one is rebuilt, so date and location are written back.
+            val meta = sourceMeta(job)
             saveStream(if (trimmed != null) name.replace(".$ext", ".mp4") else name,
-                if (trimmed == null && ext == "mov") "video/quicktime" else "video/mp4") { out ->
+                if (trimmed == null && ext == "mov") "video/quicktime" else "video/mp4", meta?.takenMs) { out ->
                 PaspWriter.write(ctx, src, out, job.squeeze, g.storedHorizontal,
-                    if (g.extraRotation != 0) g.rotation else null) { p -> onProgress(half + p * (100 - half) / 100) }
+                    if (g.extraRotation != 0) g.rotation else null, if (trimmed != null) meta?.header else null) { p -> onProgress(half + p * (100 - half) / 100) }
             }
         } finally { trimmed?.file?.delete() }
         Speed.recordCopy(ctx, job.video.sizeBytes * job.lengthMs / maxOf(1L, job.video.durationMs), (System.nanoTime() - t0) / 1e9)
@@ -190,9 +192,37 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             "Some phone galleries and social apps ignore the tag and show it squeezed; use Re-encode for those."
     }
 
-    /** Re-encoded file into the gallery: as is, or (Tagged) with the pixel-aspect tag added on the way, like Lossless. */
+    /** The source's recording date and location, when "Keep recording date & location" is on and the file has them. */
+    private class SourceMeta(val header: PaspWriter.Meta, val takenMs: Long?)
+    private fun sourceMeta(job: ExportJob): SourceMeta? {
+        if (!settings.preserveMeta) return null
+        val mmr = android.media.MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(ctx, job.video.uri)
+            val date = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DATE)
+            val loc = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_LOCATION)
+                ?.trim()?.takeIf { Regex("^[+-]\\d+(\\.\\d+)?[+-]\\d+(\\.\\d+)?.*").matches(it) }
+                ?.let { if (it.endsWith("/")) it else "$it/" }
+            // A trimmed export starts later than the recording did.
+            val startMs = parseMp4Date(date)?.let { it + (job.trim?.first ?: 0L) }
+            if (startMs == null && loc == null) null
+            else SourceMeta(PaspWriter.Meta(startMs?.let { it / 1000 + MP4_EPOCH_OFFSET }, loc), startMs)
+        } catch (_: Exception) { null } finally { runCatching { mmr.release() } }
+    }
+
+    /** Re-encoded file into the gallery, with the source's date and location, and (Tagged) the pixel-aspect tag. */
     private fun saveOutput(tmp: File, job: ExportJob, tagged: Boolean) {
-        if (!tagged) return saveToGallery(tmp, outName(job))
+        val meta = sourceMeta(job)
+        if (!tagged) {
+            if (meta == null) return saveToGallery(tmp, outName(job))
+            try {
+                Diag.step("Writing recording date/location")
+                saveStream(outName(job), "video/mp4", meta.takenMs) { out ->
+                    PaspWriter.write(ctx, android.net.Uri.fromFile(tmp), out, null, meta = meta.header) { }
+                }
+            } finally { tmp.delete() }
+            return
+        }
         try {
             // Our pipelines bake rotation into the pixels; still read it back, so the tag goes on the right stored axis.
             val rot = android.media.MediaMetadataRetriever().run {
@@ -201,8 +231,8 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             }
             val storedHorizontal = (!job.geo.vertical) != (rot % 180 != 0)
             Diag.step("Tagging: squeeze ${job.squeeze}, stored ${if (storedHorizontal) "horizontal" else "vertical"}, rotation $rot")
-            saveStream(outName(job, true), "video/mp4") { out ->
-                PaspWriter.write(ctx, android.net.Uri.fromFile(tmp), out, job.squeeze, storedHorizontal, null) { }
+            saveStream(outName(job, true), "video/mp4", meta?.takenMs) { out ->
+                PaspWriter.write(ctx, android.net.Uri.fromFile(tmp), out, job.squeeze, storedHorizontal, null, meta?.header) { }
             }
         } finally { tmp.delete() }
     }
@@ -314,13 +344,15 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         finally { tmp.delete() }
     }
 
-    private fun saveStream(name: String, mime: String, write: (java.io.OutputStream) -> Unit) {
+    private fun saveStream(name: String, mime: String, takenMs: Long? = null, write: (java.io.OutputStream) -> Unit) {
         val r = ctx.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
             put(MediaStore.Video.Media.MIME_TYPE, mime)
             put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/" + settings.folder)
             put(MediaStore.Video.Media.IS_PENDING, 1)
+            // Galleries sort by this; without it a re-encoded clip shows up under the day it was exported.
+            takenMs?.let { put(MediaStore.Video.Media.DATE_TAKEN, it) }
         }
         val uri = r.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: throw Exception("Couldn't create the output file. Is storage full?")
         try {
@@ -334,6 +366,20 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
     @Volatile var lastSaved: android.net.Uri? = null
 
     companion object {
+        /** Seconds between 1904-01-01 (MP4 time zero) and 1970-01-01. */
+        const val MP4_EPOCH_OFFSET = 2_082_844_800L
+
+        /** MediaMetadataRetriever's date ("20261007T030048.000Z"), in Unix ms; null when missing or the 1904/1970 placeholder. */
+        fun parseMp4Date(s: String?): Long? {
+            if (s.isNullOrBlank()) return null
+            for (pattern in listOf("yyyyMMdd'T'HHmmss.SSS'Z'", "yyyyMMdd'T'HHmmss'Z'", "yyyyMMdd'T'HHmmss")) {
+                val f = java.text.SimpleDateFormat(pattern, java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC"); isLenient = false }
+                val t = runCatching { f.parse(s.trim())?.time }.getOrNull() ?: continue
+                return t.takeIf { it > 31_536_000_000L }   // after 1971
+            }
+            return null
+        }
+
         fun even(f: Float) = (f.roundToInt() / 2) * 2
         fun align16(f: Float) = maxOf(16, (f.toInt() / 16) * 16)
         fun hasEncoder(mime: String) = DeviceCaps.infos

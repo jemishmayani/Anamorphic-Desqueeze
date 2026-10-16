@@ -191,7 +191,10 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     else "This phone has no 10-bit HEVC encoder, so these clips are re-encoded in 8-bit.", tint = Warm,
                     onClick = { s.tenBit = !s.tenBit; refresh() }, trailing = { Switch(s.tenBit && TenBitPipeline.main10Available, { s.tenBit = it; refresh() },
                         enabled = TenBitPipeline.main10Available) })
-                SettingRow(AppIcons.Info, "Preserve metadata", "Rotation, frame rate and original audio", divider = false,
+                SettingRow(AppIcons.Info, "Keep recording date & location",
+                    if (s.preserveMeta) "Re-encoded, Tagged and trimmed files keep the clip's recording date and GPS location, so galleries sort them with the original. Turn off to leave location out, e.g. before sharing."
+                    else "Off: re-encoded files are dated when you export them and carry no location. Untrimmed Lossless copies still keep the file's own metadata.",
+                    divider = false,
                     onClick = { s.preserveMeta = !s.preserveMeta; refresh() }, trailing = { Switch(s.preserveMeta, { s.preserveMeta = it; refresh() }) })
             }
 
