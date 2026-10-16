@@ -7,8 +7,9 @@ data class Recommendation(
 )
 
 /** Plain-language advice for the selected clip, so nobody has to know what a pixel aspect tag is. */
-fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, fit: Pair<Int, Int>?,
-              format: OutFormat = OutFormat.ORIGINAL, fill: Boolean = false, res: OutRes = OutRes.AUTO): Recommendation {
+/** [edits] is the clip's pixel edits for sentences ("your LUT", "the edge crop"…), null when there are none; [tagName] e.g. "Tagged + LUT". */
+fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, edits: String?, fit: Pair<Int, Int>?,
+              format: OutFormat = OutFormat.ORIGINAL, fill: Boolean = false, res: OutRes = OutRes.AUTO, tagName: String = "Tagged"): Recommendation {
     val f = v.footage
     val gm = f.gamma
     // Only metadata-confirmed log or HDR is named as a fact or changes the advice.
@@ -31,23 +32,23 @@ fun recommend(v: VideoInfo, g: Geometry, squeeze: Float, lutSelected: Boolean, f
         decodable && format != OutFormat.ORIGINAL -> Recommendation(facts, ExportMode.REENCODE, "Re-encode for ${format.short}",
             "Only Re-encode can reframe into ${format.short} for ${format.where}: the wide picture is " +
                 (if (fill) "cropped to fill the frame." else "fitted with black bars, nothing cut off.") + scaledText,
-            ExportMode.LOSSLESS, if (lutSelected) "Tagged + LUT, original wide frame" else "Lossless, original wide frame",
-            if (lutSelected) "Full resolution with your LUT baked in, but no ${format.short} reframing." else "Keeps every original pixel, but no ${format.short} reframing.")
+            ExportMode.LOSSLESS, if (edits != null) "$tagName, original wide frame" else "Lossless, original wide frame",
+            if (edits != null) "Full resolution with $edits baked in, but no ${format.short} reframing." else "Keeps every original pixel, but no ${format.short} reframing.")
         !decodable -> Recommendation(facts, ExportMode.LOSSLESS, "Lossless Desqueeze",
             "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode isn't possible. Lossless doesn't need to decode, and keeps every pixel.",
             null, null, null)
-        // The stretched size doesn't fit the encoder: Tagged + LUT keeps every pixel with the LUT, at the cost of relying on the tag.
-        lutSelected && format == OutFormat.ORIGINAL && scaled && fit!!.second * 100 / target.second < 95 -> Recommendation(facts, ExportMode.TAGGED,
-            "Tagged + LUT: full detail",
+        // The stretched size doesn't fit the encoder: Tagged keeps every pixel with the edits, at the cost of relying on the tag.
+        edits != null && format == OutFormat.ORIGINAL && scaled && fit!!.second * 100 / target.second < 95 -> Recommendation(facts, ExportMode.TAGGED,
+            "$tagName: full detail",
             "Re-encode would be scaled down to ${fit.first}×${fit.second} (${fit.second * 100 / target.second}%) by this phone's encoder. " +
-                "Tagged + LUT keeps all ${g.dispW}×${g.dispH} pixels with your LUT baked in, and tags them to show ${g.ratioLabel()}, like Lossless. " +
+                "$tagName keeps all ${g.dispW}×${g.dispH} pixels with $edits baked in, and tags them to show ${g.ratioLabel()}, like Lossless. " +
                 "Best for editing: Resolve, Premiere, Final Cut and VLC show it wide. Phone galleries and social apps may show it squeezed.",
             ExportMode.REENCODE, "Re-encode for sharing", "Shows wide in every app and website, scaled to ${fit.first}×${fit.second}.")
-        lutSelected -> Recommendation(facts, ExportMode.REENCODE, "Re-encode with your LUT",
-            "Only Re-encode can bake your LUT into the picture.$scaledText",
-            ExportMode.TAGGED, "Tagged + LUT for editing",
-            "Full ${g.dispW}×${g.dispH} with your LUT baked in and a pixel-aspect tag: editors and VLC show it wide, galleries and social apps may show it squeezed. " +
-                "For the untouched original file, remove the LUT and it becomes Lossless.")
+        edits != null -> Recommendation(facts, ExportMode.REENCODE, "Re-encode with $edits",
+            "Lossless can't change pixels, so Re-encode bakes $edits into the picture.$scaledText",
+            ExportMode.TAGGED, "$tagName for editing",
+            "Full ${g.dispW}×${g.dispH} with $edits baked in and a pixel-aspect tag: editors and VLC show it wide, galleries and social apps may show it squeezed. " +
+                "For the untouched original file, undo the edits and it becomes Lossless.")
         // Lossless stores rotation and pixel stretch as two separate tags; players apply them in different orders.
         rotatedStretch(g) -> Recommendation(facts, ExportMode.REENCODE, "Re-encode (rotated clip)",
             "This clip is shown turned 90°. Lossless stores the rotation and the stretch as separate tags, and players apply them " +
@@ -70,7 +71,8 @@ fun recommendFor(st: AppState, exporter: Exporter, v: VideoInfo): Recommendation
     val g = st.geoOf(v)
     val mime = if (st.codec == Codec.HEVC && Exporter.hasEncoder("video/hevc")) "video/hevc" else "video/avc"
     val fit = exporter.targetSize(g, v.fps, mime, st.formatOf(v), st.resOf(v)).let { it.first to it.second }
-    val r = recommend(v, g, st.effectiveSqueeze(v), st.hasLut(v), fit, st.formatOf(v), st.fillOf(v), st.resOf(v))
+    val r = recommend(v, g, st.effectiveSqueeze(v), if (st.hasEdits(v)) st.editsPhrase(v) else null, fit, st.formatOf(v), st.fillOf(v), st.resOf(v),
+        st.methodLabel(v, ExportMode.TAGGED))
     return r.copy(mode = st.resolveMode(v, r.mode), alt = r.alt?.let { st.resolveMode(v, it) })
 }
 

@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -468,6 +469,7 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
                 }
             }, enabled = !st.busy) { Text("Use ${o.label} / ${d.label} for all ${st.videos.size} clips") }
         },
+        Tool("Crop", AppIcons.FillCrop, if (st.crop > 0f) "%.1f%%".format(st.crop * 100) else "None", active = st.crop > 0f) { CropSection(st) },
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
     // True while the preview is pressed and held (showing the squeezed original).
@@ -478,7 +480,7 @@ fun FrameStep(st: AppState, memory: PlayheadMemory, settings: Settings, panes: P
             if (st.busy) ExportingPlaceholder(g.outRatio, videoMod)
             else PreviewPlayer(v, g, st.desqueezed, memory, guides = st.guides, trim = trim, exposure = st.scope, scopeLarge = st.scopeLarge,
                 onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = if (panes.wide) previewMax else null,
-                onHold = { held = it }, modifier = videoMod)
+                onHold = { held = it }, modifier = videoMod, crop = st.cropFor(v))
         }
         ViewToggle(st.desqueezed, held = held) { st.desqueezed = it }
     }
@@ -661,6 +663,74 @@ fun Segmented(options: List<String>, selected: Int, enabled: Boolean = true, onS
     }
 }
 
+/** Edge crop for adapter vignetting: the same share from every edge, so the shape is kept. */
+@Composable
+fun CropSection(st: AppState) {
+    val c = MaterialTheme.colorScheme
+    val crop = st.crop
+    Section(if (st.videos.size > 1) "Edge crop for clip ${st.selected + 1}" else "Edge crop", trailing = {
+        Text("%.1f%%".format(crop * 100), style = MaterialTheme.typography.titleLarge.merge(Mono), color = c.primary)
+    }) {
+        Slider(crop, { st.crop = Math.round(it * 200f) / 200f }, valueRange = 0f..0.15f, enabled = !st.busy)
+        Row(Modifier.fillMaxWidth()) {
+            listOf(0f to "0%", 0.05f to "5%", 0.10f to "10%", 0.15f to "15%").forEachIndexed { i, (value, label) ->
+                if (i > 0) Spacer(Modifier.weight(1f))
+                Text(label, style = MaterialTheme.typography.labelMedium.merge(Mono),
+                    color = if (kotlin.math.abs(crop - value) < 0.0025f) c.primary else c.onSurfaceVariant,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { st.crop = value }.padding(horizontal = 6.dp, vertical = 4.dp))
+            }
+        }
+        Text(
+            "Zooms in evenly to hide dark or soft corners from an anamorphic adapter. The same share is cut from every edge, so the frame keeps its shape" +
+                (if (crop > 0f) "; ${(100 - crop * 200).toInt()}% of the width and height is kept and scaled back up to full size." else ".") +
+                " The preview shows the result. Cropping needs new pixels: Lossless becomes Tagged + crop, and Re-encode crops too.",
+            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.padding(top = 4.dp)) {
+            TextButton(onClick = { st.crop = 0f }, enabled = !st.busy && crop > 0f) { Text("Reset") }
+            if (st.videos.size > 1) TextButton(onClick = {
+                st.videos.forEach { o -> if (crop < 0.0005f) st.clipCrop.remove(st.keyOf(o)) else st.clipCrop[st.keyOf(o)] = crop }
+            }, enabled = !st.busy) { Text("Apply to all clips") }
+        }
+    }
+}
+
+/** Exposure, contrast, saturation and white balance, applied after the LUT. */
+@Composable
+fun ColorSection(st: AppState) {
+    val c = MaterialTheme.colorScheme
+    val a = st.color
+    Section(if (st.videos.size > 1) "Colour for clip ${st.selected + 1}" else "Colour") {
+        @Composable fun row(label: String, value: Float, range: ClosedFloatingPointRange<Float>, text: String, set: (Float) -> Unit) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(text, style = MaterialTheme.typography.titleSmall.merge(Mono),
+                    color = if (kotlin.math.abs(value) < 0.005f) c.onSurfaceVariant else c.primary,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !st.busy) { set(0f) }.padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+            Slider(value, set, valueRange = range, enabled = !st.busy)
+        }
+        fun pct(v: Float) = if (kotlin.math.abs(v) < 0.005f) "0" else "%+d".format(Math.round(v * 100))
+        row("Exposure", a.exposure, -2f..2f, if (kotlin.math.abs(a.exposure) < 0.05f) "0 EV" else "%+.1f EV".format(a.exposure)) {
+            st.color = a.copy(exposure = Math.round(it * 10f) / 10f) }
+        row("Contrast", a.contrast, -1f..1f, pct(a.contrast)) { st.color = a.copy(contrast = Math.round(it * 100f) / 100f) }
+        row("Saturation", a.saturation, -1f..1f, pct(a.saturation)) { st.color = a.copy(saturation = Math.round(it * 100f) / 100f) }
+        row("Temperature", a.temperature, -1f..1f, if (kotlin.math.abs(a.temperature) < 0.005f) "0" else pct(a.temperature) + if (a.temperature > 0) " warm" else " cool") {
+            st.color = a.copy(temperature = Math.round(it * 100f) / 100f) }
+        row("Tint", a.tint, -1f..1f, if (kotlin.math.abs(a.tint) < 0.005f) "0" else pct(a.tint) + if (a.tint > 0) " magenta" else " green") {
+            st.color = a.copy(tint = Math.round(it * 100f) / 100f) }
+        Segmented(listOf("Look off", "Look on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
+        Row {
+            TextButton(onClick = { st.color = ColorAdjust() }, enabled = !st.busy && !a.isNeutral) { Text("Reset all") }
+            if (st.videos.size > 1) TextButton(onClick = {
+                st.videos.forEach { o -> if (a.isNeutral) st.clipColor.remove(st.keyOf(o)) else st.clipColor[st.keyOf(o)] = a }
+            }, enabled = !st.busy) { Text("Apply to all clips") }
+        }
+        Text("Applied after the LUT, on the picture as you see it. Tap a value to reset it. Colour changes need new pixels: " +
+            "they're baked in by Re-encode, and Lossless becomes Tagged + colour.",
+            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+    }
+}
+
 /* ------------------------------------------------------------------ 3. Look */
 
 @Composable
@@ -670,6 +740,15 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     val cube by produceState<LutManager.CubeLut?>(null, st.lutId) {
         value = st.lutId?.let { id -> withContext(Dispatchers.IO) { try { luts.load(id) } catch (_: Exception) { null } } }
     }
+    // What the preview and Before / After show: LUT at its strength + colour controls, as one cube (same as the export).
+    val strength = st.strength; val adj = st.color
+    val look by produceState<LutManager.CubeLut?>(null, cube, strength, adj) {
+        if (cube == null && adj.isNeutral) { value = null; return@produceState }
+        delay(200)   // sliders move continuously; build once they settle
+        value = withContext(Dispatchers.Default) { LookBuilder.build(cube, strength, adj) }
+    }
+    val lookLabel = listOfNotNull(if (st.hasLut(v)) "LUT ${(strength * 100).toInt()}%" else null, if (!adj.isNeutral) "Colour" else null)
+        .joinToString(" · ").ifEmpty { null }
     var importMsg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }   // text, isError
     val importLuts = rememberLutImporter(st, luts) { r ->
         if (r.added.size == 1) st.lutId = r.added[0].id
@@ -714,7 +793,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
         }
         AnimatedVisibility(st.lutId != null) {
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Segmented(listOf("LUT off", "LUT on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
+                Segmented(listOf("Look off", "Look on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Strength", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Text("${(st.strength * 100).toInt()}%", style = MaterialTheme.typography.titleMedium.merge(Mono), color = MaterialTheme.colorScheme.primary)
@@ -746,13 +825,14 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
         },
+        Tool("Colour", AppIcons.Sliders, adj.summary() ?: "None", active = !adj.isNeutral) { ColorSection(st) },
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
     PreviewWithTools(st, panes, tools, st.lookTool, { st.lookTool = it }) { videoMod ->
         ClipSwitcher(st) { clip -> st.lutFor(clip)?.let { id -> st.lutList.firstOrNull { it.id == id }?.name } ?: "No LUT" }
         key(v.uri) {
             if (st.busy) ExportingPlaceholder(g.outRatio, videoMod)
-            else PreviewPlayer(v, g, st.desqueezed, memory, lut = cube, lutStrength = st.strength, lutOn = st.lutPreview,
+            else PreviewPlayer(v, g, st.desqueezed, memory, lut = look, lutStrength = 1f, lutOn = st.lutPreview, crop = st.cropFor(v), lookLabel = lookLabel,
                 guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, scopeLarge = st.scopeLarge,
                 onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = if (panes.wide) previewMax else null, modifier = videoMod)
         }
@@ -792,7 +872,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
     ClipSwitcher(st) { clip ->
         val f = st.formatOf(clip)
         val m = modes[clip.uri.toString()] ?: st.mode
-        if (m != ExportMode.REENCODE) m.label + (if (f != OutFormat.ORIGINAL) " ✗ ${f.short}" else "")
+        if (m != ExportMode.REENCODE) st.methodLabel(clip, m) + (if (f != OutFormat.ORIGINAL) " ✗ ${f.short}" else "")
         else "Re-encode" + if (f != OutFormat.ORIGINAL) " ${f.short}" else ""
     }
 
@@ -804,24 +884,24 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
 
 
     Section(if (st.videos.size > 1) "Export method for this clip" else "Export method") {
-        MethodToggle(mode, st.hasLut(v), enabled = !st.busy) { setMode(it) }
+        MethodToggle(mode, if (st.hasEdits(v)) st.methodLabel(v, ExportMode.TAGGED) else null, enabled = !st.busy) { setMode(it) }
         Spacer(Modifier.height(8.dp))
         Text(when (mode) {
             ExportMode.LOSSLESS ->
                 "Copies your file untouched and tags its pixel aspect ratio, like setting it in DaVinci Resolve. Editors and players like Resolve, Premiere, Final Cut and VLC show it wide; a few apps and social sites ignore the tag. " +
-                    "Pick a LUT in Look and this becomes Tagged + LUT, which bakes it in at full resolution."
+                    "Add a LUT, colour changes or an edge crop and this becomes Tagged, which bakes them in at full resolution."
             ExportMode.REENCODE ->
-                "Renders new pixels so every app shows it de-squeezed${if (st.lutFor(v) != null) ", with your LUT baked in" else ""}. Slower and re-compressed."
+                "Renders new pixels so every app shows it de-squeezed${if (st.hasEdits(v)) ", with ${st.editsPhrase(v)} baked in" else ""}. Slower and re-compressed."
             ExportMode.TAGGED ->
-                "Lossless can't change colours, so with a LUT this clip is re-encoded in its own pixel grid with the LUT baked in, then tagged like Lossless. " +
+                "Lossless can't change pixels, so this clip is re-encoded in its own pixel grid with ${st.editsPhrase(v)} baked in, then tagged like Lossless. " +
                     "Nothing is lost to this phone's encoder size limit. For editing: Resolve, Premiere, Final Cut and VLC show it wide; " +
                     "phone galleries and social apps may show it squeezed, so use Re-encode for sharing. Original frame only (no formats). " +
-                    "Remove the LUT for an untouched Lossless copy."
+                    "Undo the edits for an untouched Lossless copy."
         },
             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         if (st.videos.size > 1) Row(Modifier.padding(top = 4.dp)) {
             TextButton(onClick = { st.videos.forEach { st.clipModes[it.uri.toString()] = mode } }, enabled = !st.busy) {
-                Text("Use ${mode.label} for all")
+                Text("Use ${if (mode == ExportMode.REENCODE) "Re-encode" else "Lossless / Tagged"} for all")
             }
             TextButton(onClick = { st.clipModes.clear() }, enabled = !st.busy && st.clipModes.isNotEmpty()) { Text("Reset to recommended") }
         }
@@ -857,7 +937,7 @@ fun ExportStep(st: AppState, settings: Settings, exporter: Exporter, panes: Pane
                         Text(when {
                                 full && mode == ExportMode.TAGGED -> "Every pixel kept; shown ${st.geoOf(v).ratioLabel()} through the tag."
                                 full -> "This phone's encoder handles the full size."
-                                mode == ExportMode.REENCODE && st.formatOf(v) == OutFormat.ORIGINAL -> e.scaledNote + if (st.hasLut(v)) " Tagged + LUT keeps full resolution." else " Lossless keeps full resolution."
+                                mode == ExportMode.REENCODE && st.formatOf(v) == OutFormat.ORIGINAL -> e.scaledNote + if (st.hasEdits(v)) " ${st.methodLabel(v, ExportMode.TAGGED)} keeps full resolution." else " Lossless keeps full resolution."
                                 else -> e.scaledNote + " Lossless keeps full resolution."
                             },
                             style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
@@ -959,7 +1039,7 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             if (sw.previous.isNotEmpty()) Notice(
                 color = Warm, icon = AppIcons.Warn,
                 title = if (sw.previous.size == 1) "Switched to Re-encode" else "Switched ${sw.previous.size} clips to Re-encode",
-                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless and Tagged + LUT always keep the original wide frame. " +
+                text = "Only Re-encode can reframe into ${sw.format.short}; Lossless and Tagged always keep the original wide frame. " +
                     "Re-encode makes new pixels" + if (st.tenBitOn) "; 10-bit log stays 10-bit (HEVC)." else ", so 10-bit log becomes 8-bit.",
                 action = "Undo",
             ) {
@@ -971,11 +1051,11 @@ fun FormatSection(st: AppState, settings: Settings, v: VideoInfo, g: Geometry, m
             }
         }
 
-        // Red conflict: Lossless or Tagged + LUT is selected AND a format is set (e.g. after "Use Lossless for all").
+        // Red conflict: Lossless or Tagged is selected AND a format is set (e.g. after "Use Lossless for all").
         if (mode != ExportMode.REENCODE && format != OutFormat.ORIGINAL) Notice(
             color = c.error, icon = AppIcons.Cross,
             title = "${format.short} can't be made in ${mode.label}",
-            text = (if (mode == ExportMode.LOSSLESS) "Lossless copies the original pixels" else "Tagged + LUT keeps the clip's own frame and only tags it wide") +
+            text = (if (mode == ExportMode.LOSSLESS) "Lossless copies the original pixels" else "Tagged keeps the clip's own frame and only tags it wide") +
                 ", so this clip would export in its original wide frame, not ${format.short}.",
             action = "Switch to Re-encode", secondary = "Use Wide",
             onSecondary = { st.clipFormat.remove(key); st.formatSwitch = null },

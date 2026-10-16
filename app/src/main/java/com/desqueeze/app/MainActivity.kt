@@ -207,13 +207,13 @@ fun ViewToggle(desqueezed: Boolean, held: Boolean = false, onChange: (Boolean) -
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MethodToggle(mode: ExportMode, hasLut: Boolean, enabled: Boolean, onChange: (ExportMode) -> Unit) {
-    // The first choice is named for what it will do with this clip: copy (Lossless) or bake the LUT in (Tagged + LUT).
-    val options = listOf(if (hasLut) ExportMode.TAGGED else ExportMode.LOSSLESS, ExportMode.REENCODE)
+fun MethodToggle(mode: ExportMode, tagLabel: String?, enabled: Boolean, onChange: (ExportMode) -> Unit) {
+    // The first choice is named for what it will do with this clip: copy (Lossless) or bake edits in ([tagLabel], e.g. "Tagged + LUT").
+    val options = listOf(if (tagLabel != null) ExportMode.TAGGED else ExportMode.LOSSLESS, ExportMode.REENCODE)
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { i, m ->
             SegmentedButton(selected = (mode == ExportMode.REENCODE) == (m == ExportMode.REENCODE), onClick = { onChange(m) }, enabled = enabled,
-                shape = SegmentedButtonDefaults.itemShape(i, options.size)) { Text(m.label, maxLines = 1) }
+                shape = SegmentedButtonDefaults.itemShape(i, options.size)) { Text(if (m == ExportMode.TAGGED) tagLabel!! else m.label, maxLines = 1) }
         }
     }
 }

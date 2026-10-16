@@ -57,7 +57,7 @@ object ExportController {
                         }
                     } }
                     Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=$m, squeeze=${st.effectiveSqueeze(vid)}, " +
-                        "trim=${j.trim}, format=${j.format}${if (j.fill) " fill" else ""}, lut=${j.lutId != null}")
+                        "trim=${j.trim}, format=${j.format}${if (j.fill) " fill" else ""}, lut=${j.lutId != null}, color=${!j.color.isNeutral}, crop=${j.crop}")
                     val r = when (m) {
                         ExportMode.LOSSLESS -> exporter.exportLossless(j, prog)
                         ExportMode.REENCODE -> exporter.export(j, prog)

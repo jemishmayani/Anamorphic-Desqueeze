@@ -93,9 +93,37 @@ class AppState(settings: Settings, luts: LutManager) {
         set(value) { videos.getOrNull(selected)?.let { clipStrength[keyOf(it)] = value } }
     /** A LUT that actually changes the picture (strength above 0%). */
     fun hasLut(v: VideoInfo) = lutFor(v) != null && strengthFor(v) > 0f
-    /** The tag method becomes Lossless or Tagged + LUT depending on this clip's LUT; Re-encode stays Re-encode. */
+
+    /** Per-clip colour controls (applied after the LUT) and edge crop (fraction cut from each edge, 0..0.2). */
+    val clipColor = mutableStateMapOf<String, ColorAdjust>()
+    val clipCrop = mutableStateMapOf<String, Float>()
+    fun colorFor(v: VideoInfo) = clipColor[keyOf(v)] ?: ColorAdjust()
+    fun cropFor(v: VideoInfo) = clipCrop[keyOf(v)] ?: 0f
+    /** Colour controls of the selected clip. */
+    var color: ColorAdjust
+        get() = videos.getOrNull(selected)?.let { colorFor(it) } ?: ColorAdjust()
+        set(value) { videos.getOrNull(selected)?.let { v -> if (value.isNeutral) clipColor.remove(keyOf(v)) else clipColor[keyOf(v)] = value } }
+    /** Edge crop of the selected clip. */
+    var crop: Float
+        get() = videos.getOrNull(selected)?.let { cropFor(it) } ?: 0f
+        set(value) { videos.getOrNull(selected)?.let { v -> if (value < 0.0005f) clipCrop.remove(keyOf(v)) else clipCrop[keyOf(v)] = value } }
+
+    /** What needs new pixels on this clip: "LUT", "colour", "crop". Empty = Lossless can copy it. */
+    fun editsOf(v: VideoInfo) = listOfNotNull(if (hasLut(v)) "LUT" else null, if (!colorFor(v).isNeutral) "colour" else null,
+        if (cropFor(v) > 0f) "crop" else null)
+    fun hasEdits(v: VideoInfo) = editsOf(v).isNotEmpty()
+    /** "LUT", "colour", "crop", or "edits" when there are several (for "Tagged + …"). */
+    fun editsShort(v: VideoInfo) = editsOf(v).let { if (it.size == 1) it[0] else "edits" }
+    /** For sentences: "your LUT", "your colour changes", "the edge crop", "your edits (LUT, crop)". */
+    fun editsPhrase(v: VideoInfo) = editsOf(v).let { e -> when (e) {
+        listOf("LUT") -> "your LUT"; listOf("colour") -> "your colour changes"; listOf("crop") -> "the edge crop"
+        else -> "your edits (${e.joinToString(", ")})" } }
+    /** Method name as shown for this clip: "Tagged + LUT", "Tagged + crop", "Tagged + edits"… */
+    fun methodLabel(v: VideoInfo, m: ExportMode) = if (m == ExportMode.TAGGED) "Tagged + ${editsShort(v)}" else m.label
+
+    /** The tag method becomes Lossless, or Tagged when the clip has edits that need new pixels; Re-encode stays Re-encode. */
     fun resolveMode(v: VideoInfo, m: ExportMode) =
-        if (m == ExportMode.REENCODE) ExportMode.REENCODE else if (hasLut(v)) ExportMode.TAGGED else ExportMode.LOSSLESS
+        if (m == ExportMode.REENCODE) ExportMode.REENCODE else if (hasEdits(v)) ExportMode.TAGGED else ExportMode.LOSSLESS
     /** Gives every clip the selected clip's LUT and strength. */
     fun applyLutToAll() {
         val id = lutId; val s = strength
@@ -168,7 +196,7 @@ class AppState(settings: Settings, luts: LutManager) {
     var frameTool by mutableIntStateOf(0)
     var lookTool by mutableIntStateOf(0)
 
-    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutFor(v), strengthFor(v), orientationOf(v), directionOf(v),
+    fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutFor(v), strengthFor(v), colorFor(v), cropFor(v), orientationOf(v), directionOf(v),
         trim = trimFor(v), format = formatOf(v), fill = fillOf(v), res = resOf(v))
 }
 

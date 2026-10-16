@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -91,6 +92,10 @@ fun PreviewPlayer(
     /** Reports press-and-hold, so the Squeezed / De-squeezed toggle can show what's on screen. */
     onHold: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
+    /** Edge crop (fraction from each edge): the preview zooms in by the same amount. */
+    crop: Float = 0f,
+    /** Badge text for the look (e.g. "LUT 80% · colour"); defaults to the LUT strength. */
+    lookLabel: String? = null,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -197,7 +202,13 @@ fun PreviewPlayer(
         player.playWhenReady = false; comparing = true
         scope.launch {
             val pair = withContext(Dispatchers.Default) {
-                val before = Frames.frameAt(ctx, v, player.currentPosition, 1280, g.extraRotation, exact = true) ?: return@withContext null
+                val full = Frames.frameAt(ctx, v, player.currentPosition, 1280, g.extraRotation, exact = true) ?: return@withContext null
+                // Same edge crop as the export, so the still matches the preview.
+                val before = if (crop > 0f) {
+                    val k = 1f - 2f * crop.coerceIn(0f, 0.4f)
+                    val w = (full.width * k).toInt().coerceAtLeast(1); val h = (full.height * k).toInt().coerceAtLeast(1)
+                    Bitmap.createBitmap(full, (full.width - w) / 2, (full.height - h) / 2, w, h)
+                } else full
                 val px = IntArray(before.width * before.height); before.getPixels(px, 0, before.width, 0, 0, before.width, before.height)
                 val after = Bitmap.createBitmap(l.applyTo(px, lutStrength), before.width, before.height, Bitmap.Config.ARGB_8888)
                 before.asImageBitmap() to after.asImageBitmap()
@@ -279,7 +290,7 @@ fun PreviewPlayer(
             // only the player attached to the view changes, so the layout never removes and inserts a view in
             // the same frame as other changes (that combination crashed Compose when a LUT finished loading).
             // A TextureView stretches the picture to its bounds and lets the exposure tools read frames.
-            Box(videoMod) {
+            Box(videoMod.clipToBounds()) {
                 AndroidView(
                     factory = { c -> android.view.TextureView(c).also { tv -> texture = tv } },
                     update = { tv ->
@@ -295,7 +306,9 @@ fun PreviewPlayer(
                     // Laid out at the squeezed shape and stretched on screen. With a live LUT, Media3 fits each
                     // frame into the view keeping its shape, so a view already stretched would show black bars
                     // and lose the de-squeeze.
-                    modifier = Modifier.fillMaxSize().squeezedThenStretched(g.inRatio, ratio).rotatedContent(g.extraRotation),
+                    modifier = Modifier.fillMaxSize()
+                        .graphicsLayer { val z = 1f / (1f - 2f * crop.coerceIn(0f, 0.4f)); scaleX = z; scaleY = z }
+                        .squeezedThenStretched(g.inRatio, ratio).rotatedContent(g.extraRotation),
                 )
             }
             // Every layer below is always present; only what's inside each one comes and goes. Several layers
@@ -313,7 +326,7 @@ fun PreviewPlayer(
                 verticalAlignment = Alignment.CenterVertically) {
                 Pill(if (showWide) "De-squeezed ${fmtSqueeze(stretchFactor(g))} ${if (g.vertical) "↕" else "↔"}"
                      else if (holding) "Squeezed (holding)" else "Squeezed", accent = showWide)
-                if (useLut) { Spacer(Modifier.width(6.dp)); Pill("LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
+                if (useLut) { Spacer(Modifier.width(6.dp)); Pill(lookLabel ?: "LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }

@@ -32,6 +32,10 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode0: ExportMode)
         })
     }
     val rows = mutableListOf("Input" to input, "Desqueeze" to desq)
+    if (st.hasEdits(v)) rows += "Edits" to listOfNotNull(
+        if (st.hasLut(v)) "LUT ${(st.strengthFor(v) * 100).toInt()}%" else null,
+        st.colorFor(v).summary()?.let { "colour ($it)" },
+        if (st.cropFor(v) > 0f) "edge crop %.1f%%".format(st.cropFor(v) * 100) else null).joinToString(", ")
     val issues = mutableListOf<Pair<Status, String>>()
 
     if (tag != null && policy == null)
@@ -69,16 +73,16 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode0: ExportMode)
         if (!DeviceCaps.canDecode(v.codec, v.bitDepth))
             issues += Status.NO to "This phone can't decode ${v.bitDepth}-bit ${v.codec}, so Re-encode will fail. Use Lossless."
         if (tagged && fmt != OutFormat.ORIGINAL)
-            issues += Status.NO to "${fmt.short} can't be made in Tagged + LUT: it keeps the clip's own frame and only tags it wide. Switch to Re-encode for ${fmt.short}, or pick Wide."
+            issues += Status.NO to "${fmt.short} can't be made in ${st.methodLabel(v, ExportMode.TAGGED)}: it keeps the clip's own frame and only tags it wide. Switch to Re-encode for ${fmt.short}, or pick Wide."
         if (w < tw || h < th)
             issues += (if (w.toFloat() / tw >= 0.75f) Status.WARN else Status.NO) to
                 "Output will be scaled to $w × $h (${w * 100 / tw}% size)." + when {
                     tagged -> " Lossless keeps full resolution."
-                    fmt == OutFormat.ORIGINAL -> if (st.hasLut(v)) " Tagged + LUT keeps all ${g.dispW} × ${g.dispH} pixels with your LUT." else " Lossless keeps full resolution."
+                    fmt == OutFormat.ORIGINAL -> if (st.hasEdits(v)) " ${st.methodLabel(v, ExportMode.TAGGED)} keeps all ${g.dispW} × ${g.dispH} pixels with ${st.editsPhrase(v)}." else " Lossless keeps full resolution."
                     else -> ""
                 }
         if (tagged)
-            issues += Status.WARN to "Tagged + LUT files rely on a pixel-aspect tag: editors (Resolve, Premiere, Final Cut) and VLC show them ${g.ratioLabel()}, " +
+            issues += Status.WARN to "Tagged files rely on a pixel-aspect tag: editors (Resolve, Premiere, Final Cut) and VLC show them ${g.ratioLabel()}, " +
                 "but phone galleries, WhatsApp, Instagram, YouTube and other social apps may ignore the tag and show the picture squeezed. Use Re-encode for files you'll share."
         if (!tagged && fmt != OutFormat.ORIGINAL && st.fillOf(v) && fillKeepsPercent(g, fmt) < 60)
             issues += Status.WARN to "Filling ${st.formatOf(v).short} crops away ${100 - fillKeepsPercent(g, st.formatOf(v))}% of the wide picture. Fit keeps it all with black bars."

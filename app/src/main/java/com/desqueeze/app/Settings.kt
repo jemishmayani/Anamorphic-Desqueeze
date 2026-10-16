@@ -11,7 +11,7 @@ enum class Codec(val label: String) { HEVC("HEVC / H.265 (preferred)"), H264("H.
  * The tag method resolves per clip (see AppState.resolveMode): without a LUT it is LOSSLESS (the file is copied and
  * tagged); with a LUT it is TAGGED (re-encoded in the clip's own pixel grid with the LUT baked in, then tagged).
  */
-enum class ExportMode(val label: String) { LOSSLESS("Lossless"), REENCODE("Re-encode"), TAGGED("Tagged + LUT") }
+enum class ExportMode(val label: String) { LOSSLESS("Lossless"), REENCODE("Re-encode"), TAGGED("Tagged") }
 enum class ThemeMode(val label: String) { SYSTEM("System"), DARK("Dark"), LIGHT("Light") }
 
 val PRESETS = listOf(1.2f, 1.33f, 1.5f, 1.55f, 1.6f, 1.8f, 2.0f)

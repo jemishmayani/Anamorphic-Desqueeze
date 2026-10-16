@@ -13,6 +13,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Crop
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.SingleColorLut
@@ -28,6 +29,8 @@ import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
 data class ExportJob(val video: VideoInfo, val squeeze: Float, val lutId: String?, val lutStrength: Float,
+    /** Colour controls (after the LUT) and edge crop (fraction cut from each edge, scaled back to fill). */
+    val color: ColorAdjust = ColorAdjust(), val crop: Float = 0f,
     val orientation: Orientation = Orientation.AUTO, val direction: Direction = Direction.AUTO,
     /** Start/end in ms, or null for the whole clip. */
     val trim: Pair<Long, Long>? = null,
@@ -188,7 +191,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         val g = job.geo
         val (p, q) = PaspWriter.ratio(job.squeeze)
         val (hs, vs) = if (g.vertical) q to p else p to q
-        return "Tagged + LUT: ${a.w}×${a.h} pixels with a $hs:$vs pixel aspect tag, shown ${g.ratioLabel()} in editors and VLC. " +
+        return "Tagged: ${a.w}×${a.h} pixels with a $hs:$vs pixel aspect tag, shown ${g.ratioLabel()} in editors and VLC. " +
             "Some phone galleries and social apps ignore the tag and show it squeezed; use Re-encode for those."
     }
 
@@ -239,6 +242,8 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
 
     private suspend fun runOnce(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit, tagged: Boolean = false) {
         val effects = mutableListOf<Effect>()
+        // Edge crop first (same fraction from every edge, so the shape is kept); the sizes below scale it back up.
+        if (job.crop > 0f) { val c = (job.crop * 2f).coerceAtMost(0.8f); effects += Crop(-1f + c, 1f - c, -1f + c, 1f - c) }
         val extra = job.geo.extraRotation
         // Media3 rotates counter-clockwise; metadata rotation is clockwise.
         if (extra != 0) effects += ScaleAndRotateTransformation.Builder().setRotationDegrees((360 - extra).toFloat()).build()
@@ -252,8 +257,8 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             effects += Presentation.createForWidthAndHeight(a.w, a.h,
                 if (job.fill) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT)
         }
-        if (job.lutId != null && job.lutStrength > 0f)
-            effects += SingleColorLut.createFromCube(luts.load(job.lutId).toArgbCube(job.lutStrength))
+        // LUT at its strength and the colour controls, as one cube (the same one the preview shows).
+        lookCube(job)?.let { effects += SingleColorLut.createFromCube(it.toArgbCube(1f)) }
 
         // Never more than the encoder says it can do (some refuse to start otherwise).
         val bitrate = bitrateFor(a.w, a.h, job.video.fps, a.mime)
@@ -309,9 +314,9 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
     private suspend fun runTenBit(job: ExportJob, a: Attempt, onProgress: (Int) -> Unit, tagged: Boolean = false): TenBitPipeline.Report {
         val tmp = File(ctx.cacheDir, "export10_${System.nanoTime()}.mp4")
         try {
-            val lut = job.lutId?.takeIf { job.lutStrength > 0f }?.let { withContext(Dispatchers.IO) { luts.load(it) } }
-            val spec = TenBitPipeline.Spec(job.video, job.geo, a.w, a.h, job.format, job.fill, job.trim, lut, job.lutStrength,
-                bitrateFor(a.w, a.h, job.video.fps, MimeTypes.VIDEO_H265))
+            val lut = withContext(Dispatchers.IO) { lookCube(job) }
+            val spec = TenBitPipeline.Spec(job.video, job.geo, a.w, a.h, job.format, job.fill, job.trim, lut, 1f,
+                bitrateFor(a.w, a.h, job.video.fps, MimeTypes.VIDEO_H265), job.crop)
             val rep = withContext(Dispatchers.IO) {
                 val scope = this
                 val pipe = TenBitPipeline(ctx).apply { isCancelled = { !scope.isActive } }
@@ -324,6 +329,10 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             return rep
         } finally { tmp.delete() }
     }
+
+    /** LUT (at its strength) + colour controls as one cube; null when the clip has neither. */
+    private fun lookCube(job: ExportJob): LutManager.CubeLut? =
+        LookBuilder.build(job.lutId?.let { luts.load(it) }, job.lutStrength, job.color)
 
     /** Carries the real cause so the user (and we) can see exactly what the phone rejected. */
     private class ExportFailure(e: ExportException, a: Attempt, bitrate: Long) : Exception(

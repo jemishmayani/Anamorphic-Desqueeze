@@ -44,6 +44,8 @@ class TenBitPipeline(private val ctx: Context) {
         val video: VideoInfo, val geo: Geometry, val outW: Int, val outH: Int,
         val format: OutFormat, val fill: Boolean, val trim: Pair<Long, Long>?,
         val lut: LutManager.CubeLut?, val lutStrength: Float, val bitrate: Long,
+        /** Fraction cut from every edge (scaled back up to fill). */
+        val crop: Float = 0f,
     )
 
     /** What actually happened, for the diagnostics log and the result note. */
@@ -474,7 +476,8 @@ private class GlPrograms(yuvAvailable: Boolean, standard: Int, private val fullR
             pos[i * 2] = nx(x0 + x * rw); pos[i * 2 + 1] = ny(y0 + y * rh)
             // Display = stored turned clockwise by rot; invert to find the stored point (top-left origin).
             val (sx, sy) = when (rot) { 90 -> y to 1f - x; 180 -> 1f - x to 1f - y; 270 -> 1f - y to x; else -> x to y }
-            tex[i * 2] = sx; tex[i * 2 + 1] = 1f - sy      // pass 1 wrote the image upright: v = 0 at the bottom
+            val k = 1f - 2f * s.crop.coerceIn(0f, 0.4f)   // edge crop: sample the middle of the frame
+            tex[i * 2] = 0.5f + (sx - 0.5f) * k; tex[i * 2 + 1] = 1f - (0.5f + (sy - 0.5f) * k)      // pass 1 wrote the image upright: v = 0 at the bottom
         }
         drawQuad(p2, pos, tex)
         checkGl("draw")
