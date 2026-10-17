@@ -2,6 +2,18 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.35 — 2026-10-17
+
+### Changed
+- **Photos have pages, like the video steps:** **Photos → Edit → Save**, with Back / Next at the bottom, instead of every tool on one long page.
+  - **Edit** keeps the preview pinned on top with tool tabs for **Squeeze**, **Crop**, **LUT** and **Colour** (and the same resizable split as the video editor). A strip of thumbnails switches photos.
+- **Each photo has its own settings.** Squeeze and direction, edge crop, LUT and strength, and colour are per photo, so one photo can be 1.2× and another 1.33×. Every tool has **Apply to all photos**, and new photos start with the last settings you used. The Photos and Save lists show each photo's settings.
+- **Save one photo or all of them.** The Save page lists every photo with **Edit** and **Save** buttons; the bottom button saves all.
+
+### Added
+- **Progress bars like the video export:** reading photos shows "Reading photo 3 of 8" with a bar; saving shows an overall bar with percentage, a line per photo (waiting / saving / saved / failed) and **Cancel**. The preview shows a thin bar while it updates.
+- **Stretch direction on the photo preview:** a dashed outline of the original shape with arrows on the stretch axis, a "De-squeezed 1.20× ↔/↕" badge, and press-and-hold changes the frame only along that axis (like the video preview). The direction buttons now read "Stretch horizontally ↔" / "Stretch vertically ↕".
+
 ## v1.34 — 2026-10-17
 
 ### Fixed
