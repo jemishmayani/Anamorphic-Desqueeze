@@ -2,6 +2,12 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.32 — 2026-10-17
+
+### Fixed
+- **Black bars beside vertical clips after de-squeezing.** The preview's black frame never went narrower than 9:16, so a vertical clip stretched vertically (e.g. 1:1.78 → 1:2.13) sat inside a wider box with bars on both sides. The frame now hugs the picture at any shape.
+- **De-squeeze looked like it went the wrong way when comparing.** The preview fitted each shape on its own into the available height, so a vertical de-squeeze (a taller picture) was drawn *narrower* at the same height, and switching or press-and-hold looked like a horizontal squeeze. The preview is now sized for both shapes at once: a vertical de-squeeze keeps the width and grows taller, a horizontal one keeps the height and grows wider, so Squeezed ↔ De-squeezed changes the picture only along the real stretch axis. The filmstrip keeps one width while you switch.
+
 ## v1.31 — 2026-10-17
 
 ### Added

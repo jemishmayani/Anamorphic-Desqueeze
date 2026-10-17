@@ -225,7 +225,8 @@ fun PreviewPlayer(
     }
 
     // Portrait results (e.g. vertical desqueeze) get a tall frame that hugs the picture, not a wide black box.
-    val frame = ratio.coerceIn(0.56f, 4f)
+    // The black frame hugs the picture at every shape (it used to stop at 9:16, which left bars beside tall clips).
+    val frame = ratio
     val videoMod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
 
     // The video view (a TextureView; exposure tools read small frames from it) and the player attached to it.
@@ -369,17 +370,29 @@ fun PreviewPlayer(
         val maxW = c.maxWidth
         val stripH = m[1].minIntrinsicHeight(maxW)
         val limit = minOf(if (c.hasBoundedHeight) c.maxHeight else Int.MAX_VALUE, capPx ?: Int.MAX_VALUE)
-        var vw = maxW
-        if (limit != Int.MAX_VALUE) vw = minOf(vw, ((limit - stripH - gapPx).coerceAtLeast(1) * frame).toInt())
-        vw = vw.coerceAtLeast(1)
-        val vh = (vw / frame).toInt().coerceAtLeast(1)
+        val availH = if (limit == Int.MAX_VALUE) Float.POSITIVE_INFINITY else (limit - stripH - gapPx).coerceAtLeast(1).toFloat()
+        // Sized for both shapes (squeezed and de-squeezed) at once, so switching or press-and-hold changes the picture
+        // only along the stretch axis: a vertical de-squeeze keeps the width and grows taller, a horizontal one keeps
+        // the height and grows wider. (Fitting each shape on its own made a taller picture look narrower instead.)
+        val tallest = minOf(g.inRatio, g.outRatio, frame); val widest = maxOf(g.inRatio, g.outRatio, frame)
+        val envW: Float; val envH: Float; val vwF: Float; val vhF: Float
+        if (g.vertical) {
+            val w = minOf(maxW.toFloat(), availH * tallest)
+            envW = w; envH = w / tallest; vwF = w; vhF = w / frame
+        } else {
+            val hh = minOf(availH, maxW / widest)
+            envH = hh; envW = hh * widest; vhF = hh; vwF = hh * frame
+        }
+        val vw = vwF.toInt().coerceIn(1, maxW); val vh = vhF.toInt().coerceAtLeast(1)
+        val ew = envW.toInt().coerceIn(1, maxW); val eh = envH.toInt().coerceAtLeast(vh)
         val video = m[0].measure(androidx.compose.ui.unit.Constraints.fixed(vw, vh))
-        val strip = m[1].measure(androidx.compose.ui.unit.Constraints(minWidth = vw, maxWidth = vw))
-        val total = vh + gapPx + strip.height
+        val strip = m[1].measure(androidx.compose.ui.unit.Constraints(minWidth = ew, maxWidth = ew))
+        val total = eh + gapPx + strip.height
         val h = c.constrainHeight(total)
         layout(maxW, h) {
-            val x = (maxW - vw) / 2; val y = ((h - total) / 2).coerceAtLeast(0)
-            video.place(x, y); strip.place(x, y + vh + gapPx)
+            val y = ((h - total) / 2).coerceAtLeast(0)
+            video.place((maxW - vw) / 2, y + (eh - vh) / 2)
+            strip.place((maxW - ew) / 2, y + eh + gapPx)
         }
     }
 }
