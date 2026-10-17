@@ -59,14 +59,15 @@ fun PhotosScreen(st: AppState, settings: Settings, luts: LutManager, onBack: () 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (st.photos.isEmpty()) {
-                Text("De-squeeze photos taken through an anamorphic adapter. Photos have no pixel-aspect tag that viewers respect, " +
-                    "so the picture is stretched to its real shape (more pixels, nothing thrown away) and saved as a new JPEG. " +
-                    "Your originals are untouched.", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
+                Text("De-squeeze photos taken through an anamorphic adapter. DNG (RAW) files stay RAW: they're copied untouched and " +
+                    "tagged so Lightroom, Camera Raw and Photoshop open them de-squeezed. Other photos have no pixel-aspect tag that " +
+                    "viewers respect, so they're stretched to their real shape (more pixels, nothing thrown away) and saved as " +
+                    "JPEG at maximum quality or lossless PNG. Your originals are untouched.", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
                 Button(onClick = pick, enabled = !st.photoLoading, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
                     Text("Choose photos")
                 }
                 if (st.photoLoading) LoadingRow("Reading photos…")
-                Text("JPEG, HEIC, PNG and WebP. Tip: in your gallery, select photos, tap Share and choose De-Squeeze.",
+                Text("DNG, JPEG, HEIC, PNG and WebP. Tip: in your gallery, select photos, tap Share and choose De-Squeeze.",
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             } else PhotoEditor(st, settings, luts, pick, enabled)
         }
@@ -171,16 +172,40 @@ private fun ColumnScope.PhotoEditor(st: AppState, settings: Settings, luts: LutM
                 TextButton(onClick = { st.photoColor = ColorAdjust() }, enabled = enabled && !look.color.isNeutral) { Text("Reset all") }
             }
 
+            Section("Output") {
+                val dng = st.photos.count { it.isDng }; val other = st.photos.size - dng
+                val rendered = other > 0 || (dng > 0 && look.hasEdits)
+                if (dng > 0) {
+                    val raw = !look.hasEdits
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(if (raw) AppIcons.Check else AppIcons.Warn, null, Modifier.size(18.dp).padding(top = 2.dp), tint = if (raw) c.primary else Warm)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (raw) "$dng DNG file${if (dng == 1) "" else "s"}: saved as DNG, RAW data untouched, with a de-squeeze tag (DefaultScale). " +
+                                "Lightroom, Adobe Camera Raw and Photoshop open them de-squeezed; the gallery and most phone apps show the built-in preview, still squeezed."
+                            else "$dng DNG file${if (dng == 1) "" else "s"}: the LUT, colour or crop need new pixels, so they're rendered to " +
+                                "${st.photoFormat.ext.uppercase()} from this phone's RAW decode. The RAW data isn't kept, and some phones can only decode a small " +
+                                "preview. Remove the edits (LUT, colour, crop) to keep them as full-size RAW.",
+                            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                    }
+                }
+                if (rendered) {
+                    Segmented(PhotoFormat.entries.map { it.label }, st.photoFormat.ordinal, enabled = enabled) { st.photoFormat = PhotoFormat.entries[it] }
+                    Text(if (st.photoFormat == PhotoFormat.JPEG) "JPEG at quality 100: visually lossless and widely supported."
+                         else "PNG keeps every pixel exactly, but files are several times larger and some apps don't keep camera details (EXIF).",
+                        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                }
+            }
+
             Button(onClick = {
-                val list = st.photos; val l = look; val app = ctx.applicationContext
+                val list = st.photos; val l = look; val app = ctx.applicationContext; val fmt = st.photoFormat
                 st.photoBusy = true; st.photoDone = 0; st.photoResults = emptyList()
                 ExportController.scope.launch {
                     val log = mutableListOf<String>()
                     val exporter = PhotoExporter(app, settings, luts)
                     for (p in list) {
                         log += try {
-                            val r = withContext(Dispatchers.IO) { exporter.export(p, l) }
-                            "✓  ${r.name}  (${r.width} × ${r.height})"
+                            val r = withContext(Dispatchers.IO) { exporter.export(p, l, fmt) }
+                            "✓  ${r.name}  (${r.width} × ${r.height})" + (r.note?.let { "\n    $it" } ?: "")
                         } catch (e: Throwable) { "✗  ${p.name}: ${e.message ?: e.javaClass.simpleName}" }
                         st.photoDone++
                     }

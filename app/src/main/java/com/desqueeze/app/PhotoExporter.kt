@@ -12,18 +12,27 @@ import android.provider.OpenableColumns
 import java.io.File
 import kotlin.math.roundToInt
 
-/** One photo picked for de-squeezing: size as shown (EXIF orientation applied). */
-data class PhotoItem(val uri: Uri, val name: String, val width: Int, val height: Int)
+/** One photo picked for de-squeezing: size as shown (orientation applied); for DNG, the full RAW image's size. */
+data class PhotoItem(val uri: Uri, val name: String, val width: Int, val height: Int, val isDng: Boolean = false)
+
+/** File type for photos that have to be rendered. */
+enum class PhotoFormat(val label: String, val ext: String, val mime: String) {
+    JPEG("JPEG (max quality)", "jpg", "image/jpeg"), PNG("PNG (lossless)", "png", "image/png")
+}
 
 /** Settings shared by every photo in the batch (photos from one adapter usually match). */
 data class PhotoLook(
     val squeeze: Float, val vertical: Boolean, val lutId: String?, val lutStrength: Float,
     val color: ColorAdjust, val crop: Float,
-)
+) {
+    /** LUT, colour or crop: these need new pixels, so a DNG can't stay RAW. */
+    val hasEdits get() = (lutId != null && lutStrength > 0f) || !color.isNeutral || crop > 0f
+}
 
 /**
- * De-squeezes photos. Unlike video, JPEG has no pixel-aspect tag that viewers respect, so the pixels are always
- * re-rendered: edge crop, then stretched by the squeeze (more pixels, nothing thrown away), then LUT + colour.
+ * De-squeezes photos. DNG (RAW) files without edits are kept as RAW and tagged (see [DngTagger]). Everything else
+ * has no pixel-aspect tag that viewers respect, so it is rendered: edge crop, then stretched by the squeeze (more
+ * pixels, nothing thrown away), then LUT + colour, saved as JPEG at quality 100 or lossless PNG.
  * EXIF (camera, exposure, and date/location when "Keep recording date & location" is on) is copied.
  */
 class PhotoExporter(private val ctx: Context, private val settings: Settings, private val luts: LutManager) {
@@ -32,13 +41,28 @@ class PhotoExporter(private val ctx: Context, private val settings: Settings, pr
         /** Largest output we'll make; bigger results are scaled down evenly (keeps memory sane on 50 MP+ sensors). */
         const val MAX_OUTPUT_PIXELS = 100_000_000L
 
+        fun isDng(ctx: Context, uri: Uri, name: String) =
+            ctx.contentResolver.getType(uri)?.contains("dng", ignoreCase = true) == true || name.endsWith(".dng", ignoreCase = true)
+
+        /** Reads a DNG's header straight from its file descriptor (no copy). */
+        fun dngInfo(ctx: Context, uri: Uri): DngTagger.Info? = runCatching {
+            ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd -> DngTagger.info(File("/proc/self/fd/${pfd.fd}")) }
+        }.getOrNull()
+
         fun probe(ctx: Context, uri: Uri): PhotoItem? = try {
+            val name = displayName(ctx, uri)
+            val dng = if (isDng(ctx, uri, name)) dngInfo(ctx, uri) else null
+            if (dng != null) PhotoItem(uri, name, if (dng.turned) dng.rawHeight else dng.rawWidth, if (dng.turned) dng.rawWidth else dng.rawHeight, isDng = true)
+            else probeDecoded(ctx, uri, name)
+        } catch (_: Exception) { null }
+
+        private fun probeDecoded(ctx: Context, uri: Uri, name: String): PhotoItem? {
             var w = 0; var h = 0
             val src = ImageDecoder.createSource(ctx.contentResolver, uri)
             // Only the header is read: the listener cancels the decode once the size is known.
             runCatching { ImageDecoder.decodeBitmap(src) { _, info, _ -> w = info.size.width; h = info.size.height; throw StopDecode() } }
-            if (w <= 0 || h <= 0) null else PhotoItem(uri, displayName(ctx, uri), w, h)
-        } catch (_: Exception) { null }
+            return if (w <= 0 || h <= 0) null else PhotoItem(uri, name, w, h)
+        }
 
         private class StopDecode : RuntimeException()
 
@@ -99,26 +123,64 @@ class PhotoExporter(private val ctx: Context, private val settings: Settings, pr
         }
     }
 
-    data class Result(val name: String, val width: Int, val height: Int)
+    data class Result(val name: String, val width: Int, val height: Int, val note: String? = null)
 
-    /** De-squeezes one photo into Pictures/<folder>. Blocking; call from a background thread. */
-    fun export(item: PhotoItem, look: PhotoLook): Result {
+    private fun baseName(item: PhotoItem, look: PhotoLook) =
+        "${item.name.substringBeforeLast('.')}_DESQUEEZED_${"%.2f".format(look.squeeze).trimEnd('0').trimEnd('.')}X"
+
+    /**
+     * De-squeezes one photo into Pictures/<folder>. Blocking; call from a background thread.
+     * A DNG without edits stays a DNG (RAW data untouched, DefaultScale tag added); everything else is rendered.
+     */
+    fun export(item: PhotoItem, look: PhotoLook, format: PhotoFormat = PhotoFormat.JPEG): Result {
+        if (item.isDng && !look.hasEdits) return exportDng(item, look)
         val cube = LookBuilder.build(look.lutId?.let { luts.load(it) }, look.lutStrength, look.color)
         val src = decode(ctx, item.uri, look)
+        // Some phones decode only the small preview embedded in a RAW file; say so instead of quietly shrinking it.
+        val srcW = src.width; val srcH = src.height
+        val previewOnly = item.isDng && maxOf(srcW, srcH) < 0.7f * maxOf(item.width, item.height)
         // Output from the decoded (upright) size, so EXIF rotation can't swap the axes.
         val (ow, oh) = outputSize(src.width, src.height, look)
         val out = render(src, look, cube, ow, oh)
         if (out !== src) src.recycle()
 
-        val name = "${item.name.substringBeforeLast('.')}_DESQUEEZED_${"%.2f".format(look.squeeze).trimEnd('0').trimEnd('.')}X.jpg"
-        val tmp = File(ctx.cacheDir, "photo_${System.nanoTime()}.jpg")
+        val name = baseName(item, look) + "." + format.ext
+        val tmp = File(ctx.cacheDir, "photo_${System.nanoTime()}.${format.ext}")
         try {
-            tmp.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+            tmp.outputStream().use {
+                if (format == PhotoFormat.PNG) out.compress(Bitmap.CompressFormat.PNG, 100, it) else out.compress(Bitmap.CompressFormat.JPEG, 100, it)
+            }
             out.recycle()
             val taken = copyExif(item.uri, tmp, ow, oh)
-            save(tmp, name, taken)
+            save(tmp, name, format.mime, taken)
         } finally { tmp.delete() }
-        return Result(name, ow, oh)
+        return Result(name, ow, oh, listOfNotNull(
+            if (item.isDng) "Rendered from RAW (the RAW data isn't kept)." else null,
+            if (previewOnly) "This phone could only decode a ${srcW}×${srcH} preview from the RAW file, not its full " +
+                "${item.width}×${item.height}. Remove the edits to keep the DNG as RAW at full size." else null,
+        ).joinToString(" ").ifEmpty { null })
+    }
+
+    /** Lossless DNG: copy byte for byte, add DefaultScale to the RAW image (see [DngTagger]). */
+    private fun exportDng(item: PhotoItem, look: PhotoLook): Result {
+        val tmp = File(ctx.cacheDir, "dng_${System.nanoTime()}.dng")
+        try {
+            ctx.contentResolver.openInputStream(item.uri)!!.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 20) } }
+            val info = DngTagger.info(tmp) ?: throw IllegalArgumentException("Not a DNG this app can tag.")
+            // "Horizontal" is as the photo is shown; a 90° Orientation swaps that onto the RAW image's other axis.
+            val rawHorizontal = (!look.vertical) != info.turned
+            DngTagger.tag(tmp, look.squeeze, rawHorizontal)
+            val taken = if (settings.preserveMeta) runCatching {
+                val e = ExifInterface(tmp.absolutePath)
+                val d = e.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) ?: e.getAttribute(ExifInterface.TAG_DATETIME)
+                d?.let { java.text.SimpleDateFormat("yyyy:MM:dd HH:mm:ss", java.util.Locale.US).parse(it)?.time }
+            }.getOrNull() else null
+            save(tmp, baseName(item, look) + ".dng", "image/x-adobe-dng", taken)
+        } finally { tmp.delete() }
+        val (p, q) = PaspWriter.ratio(look.squeeze)
+        val (w, h) = if (look.vertical) item.width to (item.height * look.squeeze).roundToInt() else (item.width * look.squeeze).roundToInt() to item.height
+        return Result(baseName(item, look) + ".dng", w, h,
+            "RAW kept, tagged $p:$q (DefaultScale): Lightroom, Camera Raw and Photoshop open it de-squeezed. Galleries show the built-in preview, still squeezed.")
     }
 
     /** Copies the source's EXIF into [dest]; returns the date taken (ms) for the gallery, if known and kept. */
@@ -158,11 +220,11 @@ class PhotoExporter(private val ctx: Context, private val settings: Settings, pr
         }.getOrNull()
     }
 
-    private fun save(tmp: File, name: String, takenMs: Long?) {
+    private fun save(tmp: File, name: String, mime: String, takenMs: Long?) {
         val r = ctx.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.MIME_TYPE, mime)
             put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + settings.folder)
             put(MediaStore.Images.Media.IS_PENDING, 1)
             takenMs?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }

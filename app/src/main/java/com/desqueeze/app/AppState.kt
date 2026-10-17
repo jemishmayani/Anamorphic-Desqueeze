@@ -39,6 +39,7 @@ class AppState(settings: Settings, luts: LutManager) {
     var photoStrength by mutableFloatStateOf(1f)
     var photoColor by mutableStateOf(ColorAdjust())
     var photoCrop by mutableFloatStateOf(0f)
+    var photoFormat by mutableStateOf(PhotoFormat.JPEG)
     var photoLoading by mutableStateOf(false)
     var photoBusy by mutableStateOf(false)
     var photoDone by mutableIntStateOf(0)

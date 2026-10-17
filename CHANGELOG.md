@@ -2,6 +2,14 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.33 — 2026-10-17
+
+### Fixed
+- **DNG photos were turned into small, compressed JPEGs.** Android's decoder often returns only the small preview embedded in a RAW file, so a DNG could come out as e.g. 864 × 720 JPEG.
+  - **DNG files now stay RAW.** Without a LUT, colour changes or crop, a DNG is copied byte for byte and its RAW image gets the DNG *DefaultScale* tag (non-square pixels), the photo equivalent of Lossless for video. Lightroom, Adobe Camera Raw and Photoshop open it de-squeezed with every bit of RAW data; the gallery and most phone apps show the built-in preview, still squeezed. The squeeze is put on the right RAW axis even for portrait (rotated) shots.
+  - **With edits, DNGs are rendered**, and the Photos screen says so before you save: the RAW data isn't kept, and if the phone could only decode a small preview, the result tells you the size it got and the full RAW size.
+- **Higher-quality rendered photos:** JPEG is now saved at quality 100 (was 95), and there's a new **PNG (lossless)** option under **Output**.
+
 ## v1.32 — 2026-10-17
 
 ### Fixed
