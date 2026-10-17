@@ -88,8 +88,7 @@ class MainActivity : ComponentActivity() {
                     }
                     AnimatedContent(state.screen, label = "nav", transitionSpec = {
                         val fwd = targetState.ordinal > initialState.ordinal
-                        (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (fwd) it / 8 else -it / 8 }) togetherWith
-                            fadeOut(tween(140))
+                        smoothSlide(fwd, 8)
                     }) { s ->
                         if (s == Screen.Main) MainScreen(this@MainActivity, state, settings, luts)
                         // Settings-type pages stay a comfortable reading width on tablets and in landscape.
@@ -214,6 +213,19 @@ fun ViewToggle(desqueezed: Boolean, held: Boolean = false, onChange: (Boolean) -
                 shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(if (held && !d && desqueezed) "Squeezed (holding)" else label) }
         }
     }
+}
+
+/**
+ * Screen / step change: the new content eases in from the side (slightly delayed, so its first frame is ready),
+ * the old one eases out the other way, with standard Material easing and no clipping while sizes change.
+ */
+fun smoothSlide(forward: Boolean, fraction: Int): androidx.compose.animation.ContentTransform {
+    val ease = androidx.compose.animation.core.FastOutSlowInEasing
+    val enter = androidx.compose.animation.fadeIn(tween(240, delayMillis = 50, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) +
+        androidx.compose.animation.slideInHorizontally(tween(320, easing = ease)) { if (forward) it / fraction else -it / fraction }
+    val exit = androidx.compose.animation.fadeOut(tween(140, easing = androidx.compose.animation.core.FastOutLinearInEasing)) +
+        androidx.compose.animation.slideOutHorizontally(tween(320, easing = ease)) { if (forward) -it / (fraction * 2) else it / (fraction * 2) }
+    return androidx.compose.animation.ContentTransform(enter, exit, sizeTransform = androidx.compose.animation.SizeTransform(clip = false))
 }
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)

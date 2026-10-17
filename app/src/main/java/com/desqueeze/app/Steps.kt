@@ -96,7 +96,7 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                 }
                 AnimatedContent(st.step, label = "step", transitionSpec = {
                     val fwd = targetState.ordinal > initialState.ordinal
-                    (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (fwd) it / 10 else -it / 10 }) togetherWith fadeOut(tween(120))
+                    smoothSlide(fwd, 12)
                 }) { step ->
                     val panes = Panes(wide)
                     when (step) {
@@ -762,10 +762,12 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     }
     // What the preview and Before / After show: LUT at its strength + colour controls, as one cube (same as the export).
     val strength = st.strength; val adj = st.color
-    val look by produceState<LutManager.CubeLut?>(null, cube, strength, adj) {
-        if (cube == null && adj.isNeutral) { value = null; return@produceState }
-        delay(200)   // sliders move continuously; build once they settle
-        value = withContext(Dispatchers.Default) { LookBuilder.build(cube, strength, adj) }
+    // Kept across changes (produceState would drop to "no look" for a moment and rebuild the player twice).
+    var look by remember(v.uri) { mutableStateOf<LutManager.CubeLut?>(null) }
+    LaunchedEffect(cube, strength, adj) {
+        if (cube == null && adj.isNeutral) { look = null; return@LaunchedEffect }
+        if (look != null) delay(200)   // sliders move continuously; build once they settle
+        look = withContext(Dispatchers.Default) { LookBuilder.build(cube, strength, adj) }
     }
     val lookLabel = listOfNotNull(if (st.hasLut(v)) "LUT ${(strength * 100).toInt()}%" else null, if (!adj.isNeutral) "Colour" else null)
         .joinToString(" · ").ifEmpty { null }

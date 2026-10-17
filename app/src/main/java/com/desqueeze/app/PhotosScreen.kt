@@ -2,6 +2,11 @@ package com.desqueeze.app
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +35,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Preview images of one photo: with the look, without it, and as shot. */
+class PhotoPreview(val after: ImageBitmap, val plain: ImageBitmap, val original: ImageBitmap)
+
 /** Adds photos to the batch (reads only their size, so it's quick). */
 suspend fun addPhotos(ctx: android.content.Context, st: AppState, uris: List<android.net.Uri>) {
     if (uris.isEmpty()) return
@@ -37,6 +45,7 @@ suspend fun addPhotos(ctx: android.content.Context, st: AppState, uris: List<and
     try {
         val items = withContext(Dispatchers.IO) { uris.mapNotNull { PhotoExporter.probe(ctx, it) } }
         st.photos = (st.photos + items).distinctBy { it.uri.toString() }
+        if (items.any { it.isDng } && st.photoFormat != PhotoFormat.DNG && st.photos.none { it.isDng && it !in items }) st.photoFormat = PhotoFormat.DNG
         st.photoResults = emptyList()
     } finally { st.photoLoading = false }
 }
@@ -83,29 +92,67 @@ private fun ColumnScope.PhotoEditor(st: AppState, settings: Settings, luts: LutM
             val sel = st.photoSel.coerceIn(0, st.photos.size - 1)
             val item = st.photos[sel]
 
-            // Preview of the selected photo with everything applied (a ~1600 px version, rebuilt as settings settle).
+            // Preview of the selected photo (a ~1600 px version): with everything applied, without the look (for
+            // Before / After), and as shot (press and hold). The last preview stays on screen while a new one is made,
+            // so moving a slider never flashes a spinner.
             val lutCube by produceState<LutManager.CubeLut?>(null, look.lutId) {
                 value = look.lutId?.let { id -> withContext(Dispatchers.IO) { runCatching { luts.load(id) }.getOrNull() } }
             }
-            val preview by produceState<ImageBitmap?>(null, item.uri, look, lutCube) {
-                delay(150)
-                value = withContext(Dispatchers.Default) {
+            var preview by remember { mutableStateOf<PhotoPreview?>(null) }
+            var previewFor by remember { mutableStateOf<android.net.Uri?>(null) }
+            LaunchedEffect(item.uri, look, lutCube) {
+                if (previewFor == item.uri) delay(150)   // let sliders settle; a new photo shows at once
+                val p = withContext(Dispatchers.Default) {
                     runCatching {
-                        val src = PhotoExporter.decode(ctx, item.uri, look, maxSide = 1600)
+                        val src = PhotoExporter.decode(ctx, item.uri, look.copy(crop = 0f, squeeze = 1f), maxSide = 1600)
                         val (w, h) = PhotoExporter.outputSize(src.width, src.height, look)
                         val cube = LookBuilder.build(lutCube, look.lutStrength, look.color)
-                        PhotoExporter.render(src, look, cube, w, h).asImageBitmap()
+                        val plain = PhotoExporter.render(src, look, null, w, h)
+                        val graded = if (cube != null) PhotoExporter.render(src, look, cube, w, h) else plain
+                        PhotoPreview(graded.asImageBitmap(), plain.asImageBitmap(), src.asImageBitmap())
                     }.getOrNull()
                 }
+                if (p != null) { preview = p; previewFor = item.uri }
             }
             val (outW, outH) = PhotoExporter.outputSize(item.width, item.height, look)
-            val ratio = preview?.let { it.width.toFloat() / it.height } ?: (outW.toFloat() / outH)
-            Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 0.8f)).clip(RoundedCornerShape(20.dp)).background(Color.Black),
-                contentAlignment = Alignment.Center) {
-                preview?.let { Image(it, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-                    ?: CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+            var holding by remember { mutableStateOf(false) }
+            var comparing by remember { mutableStateOf(false) }
+            val shown = preview?.takeIf { previewFor == item.uri }
+            val outRatio = shown?.after?.let { it.width.toFloat() / it.height } ?: (outW.toFloat() / outH)
+            val origRatio = shown?.original?.let { it.width.toFloat() / it.height } ?: (item.width.toFloat() / item.height)
+            val ratio by animateFloatAsState(if (holding) origRatio else outRatio,
+                spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), label = "photoRatio")
+            val scope = rememberCoroutineScope()
+            // Same idea as the video preview: the frame keeps one side and grows along the stretch axis.
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                val boxMod = if (look.vertical) Modifier.fillMaxWidth(0.62f).aspectRatio(ratio) else Modifier.fillMaxWidth().aspectRatio(ratio)
+                Box(boxMod.clip(RoundedCornerShape(20.dp)).background(Color.Black)
+                    .pointerInput(enabled) {
+                        detectTapGestures(onPress = {
+                            val j = scope.launch { delay(200); holding = true }
+                            tryAwaitRelease(); j.cancel(); holding = false
+                        })
+                    }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.matchParentSize()) {
+                        val img = shown?.let { if (holding) it.original else it.after }
+                        if (img != null) Image(img, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+                    }
+                    Box(Modifier.align(Alignment.Center)) { if (shown == null) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp)) }
+                    Row(Modifier.align(Alignment.TopStart).padding(10.dp)) {
+                        Pill(if (holding) "Original (holding)" else "De-squeezed ${fmtSqueeze(look.squeeze)} ${if (look.vertical) "↕" else "↔"}", accent = !holding)
+                    }
+                    Box(Modifier.matchParentSize()) {
+                        val s2 = shown
+                        if (comparing && s2 != null && !holding) CompareOverlay(s2.plain, s2.after, ratio) { comparing = false }
+                    }
+                }
             }
-            Text("${item.name}\n${item.width} × ${item.height}  →  about $outW × $outH", style = MaterialTheme.typography.bodySmall.merge(Mono),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Hold the photo to see it as shot.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                val canCompare = look.lutId != null || !look.color.isNeutral
+                TextButton(onClick = { comparing = !comparing }, enabled = canCompare && shown != null) { Text(if (comparing) "Done" else "Before / After") }
+            }
+            Text("${item.name}\n${item.width} × ${item.height}${if (item.isDng) " RAW" else ""}  →  about $outW × $outH", style = MaterialTheme.typography.bodySmall.merge(Mono),
                 color = c.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
 
             // The batch: tap to preview, × to remove.
@@ -174,25 +221,30 @@ private fun ColumnScope.PhotoEditor(st: AppState, settings: Settings, luts: LutM
 
             Section("Output") {
                 val dng = st.photos.count { it.isDng }; val other = st.photos.size - dng
-                val rendered = other > 0 || (dng > 0 && look.hasEdits)
-                if (dng > 0) {
-                    val raw = !look.hasEdits
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(if (raw) AppIcons.Check else AppIcons.Warn, null, Modifier.size(18.dp).padding(top = 2.dp), tint = if (raw) c.primary else Warm)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (raw) "$dng DNG file${if (dng == 1) "" else "s"}: saved as DNG, RAW data untouched, with a de-squeeze tag (DefaultScale). " +
-                                "Lightroom, Adobe Camera Raw and Photoshop open them de-squeezed; the gallery and most phone apps show the built-in preview, still squeezed."
-                            else "$dng DNG file${if (dng == 1) "" else "s"}: the LUT, colour or crop need new pixels, so they're rendered to " +
-                                "${st.photoFormat.ext.uppercase()} from this phone's RAW decode. The RAW data isn't kept, and some phones can only decode a small " +
-                                "preview. Remove the edits (LUT, colour, crop) to keep them as full-size RAW.",
-                            style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-                    }
+                val formats = if (dng > 0) PhotoFormat.entries else PhotoFormat.entries - PhotoFormat.DNG
+                val fmt = st.photoFormat.takeIf { it in formats } ?: PhotoFormat.JPEG
+                Segmented(formats.map { it.label }, formats.indexOf(fmt), enabled = enabled) { st.photoFormat = formats[it] }
+                @Composable fun line(ok: Boolean, text: String) = Row(verticalAlignment = Alignment.Top) {
+                    Icon(if (ok) AppIcons.Check else AppIcons.Warn, null, Modifier.size(18.dp).padding(top = 2.dp), tint = if (ok) c.primary else Warm)
+                    Spacer(Modifier.width(8.dp))
+                    Text(text, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
                 }
-                if (rendered) {
-                    Segmented(PhotoFormat.entries.map { it.label }, st.photoFormat.ordinal, enabled = enabled) { st.photoFormat = PhotoFormat.entries[it] }
-                    Text(if (st.photoFormat == PhotoFormat.JPEG) "JPEG at quality 100: visually lossless and widely supported."
-                         else "PNG keeps every pixel exactly, but files are several times larger and some apps don't keep camera details (EXIF).",
-                        style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                fun n(k: Int, what: String) = "$k $what${if (k == 1) "" else "s"}"
+                when (fmt) {
+                    PhotoFormat.DNG -> {
+                        line(true, "${n(dng, "DNG file")} stay RAW, untouched: the de-squeeze" + (if (look.crop > 0f) " and edge crop are" else " is") +
+                            " written as DNG tags, so Lightroom, Adobe Camera Raw and Photoshop open them at full resolution, de-squeezed. " +
+                            "A new de-squeezed preview is embedded for the gallery (as sharp as this phone can decode the RAW).")
+                        if (look.lutId != null || !look.color.isNeutral)
+                            line(false, "LUT and colour aren't applied to RAW files. Apply them in your RAW editor, or pick JPEG or PNG.")
+                        if (other > 0) line(false, "${n(other, "photo")} that aren't RAW will be saved as JPEG.")
+                    }
+                    else -> {
+                        line(true, if (fmt == PhotoFormat.JPEG) "JPEG at quality 100: visually lossless and widely supported."
+                            else "PNG keeps every pixel exactly, but files are several times larger and some apps don't keep camera details (EXIF).")
+                        if (dng > 0) line(false, "${n(dng, "DNG file")} will be rendered from this phone's RAW decode, and the RAW data isn't kept. " +
+                            "Some phones (yours included, if the size above shows 720 × 720) can only decode a small preview. Pick DNG (RAW) to keep full resolution.")
+                    }
                 }
             }
 

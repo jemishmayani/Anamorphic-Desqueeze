@@ -47,12 +47,32 @@ class DngTaggerTest {
         assertEquals(4000, DngTagger.info(f)!!.rawWidth)
     }
 
-    @Test fun overwritesAnExistingScaleInPlace() {
-        val f = dng(withScale = true); val size = f.length()
+    @Test fun replacesAnExistingScale() {
+        val f = dng(withScale = true)
         DngTagger.tag(f, 1.5f, rawHorizontal = false)
         val (h, v) = DngTagger.defaultScale(f)!!
         assertEquals(1f, h, 0.001f); assertEquals(1.5f, v, 0.001f)
-        assertEquals("no growth when the tag already exists", size, f.length())
+    }
+
+    @Test fun edgeCropBecomesTheDefaultCrop() {
+        val f = dng()
+        DngTagger.tag(f, 1.2f, rawHorizontal = true, crop = 0.05f)
+        val c = DngTagger.defaultCrop(f)!!
+        assertEquals(200f, c[0].toFloat(), 0.01f); assertEquals(150f, c[1].toFloat(), 0.01f)
+        assertEquals(3600f, c[2].toFloat(), 0.01f); assertEquals(2700f, c[3].toFloat(), 0.01f)
+    }
+
+    @Test fun newPreviewReplacesTheSmallOneAndKeepsTheRaw() {
+        val f = dng()
+        DngTagger.tag(f, 1.2f, rawHorizontal = true)
+        val jpeg = ByteArray(5000) { (it % 251).toByte() }
+        DngTagger.setPreview(f, jpeg, 4800, 3000)
+        assertEquals(4800 to 3000, DngTagger.previewSize(f))
+        val i = DngTagger.info(f)!!
+        assertEquals(4000, i.rawWidth); assertEquals(6, i.orientation)
+        assertEquals(1.2f, DngTagger.defaultScale(f)!!.first, 0.001f)
+        val bytes = f.readBytes()
+        assertTrue("JPEG data appended", String(bytes, Charsets.ISO_8859_1).contains(String(jpeg, Charsets.ISO_8859_1)))
     }
 
     @Test fun refusesPlainTiffAndJpeg() {

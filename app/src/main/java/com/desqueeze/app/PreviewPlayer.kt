@@ -399,7 +399,7 @@ fun PreviewPlayer(
 
 /** Full-quality still: drag the divider to wipe between the original (left) and the LUT (right). */
 @Composable
-private fun CompareOverlay(before: ImageBitmap, after: ImageBitmap, ratio: Float, onClose: () -> Unit) {
+internal fun CompareOverlay(before: ImageBitmap, after: ImageBitmap, ratio: Float, onClose: () -> Unit) {
     var split by remember { mutableFloatStateOf(0.5f) }
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         val frame = ratio.coerceIn(0.8f, 4f)
