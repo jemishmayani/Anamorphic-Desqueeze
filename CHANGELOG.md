@@ -2,6 +2,19 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.34 — 2026-10-17
+
+### Fixed
+- **DNG files weren't recognised and came out as 720 × 720 (or 864 × 720) JPEG/PNG.** The app read a DNG's header by reopening the file through a system path, which Android refuses without photo permission, so it silently fell back to the small preview inside the file. It now reads the header from the file the picker opened, so DNGs show their real RAW size (e.g. "4000 × 3000 RAW") and the DNG path is used.
+
+### Added
+- **DNG (RAW) output.** **Output** now offers **DNG (RAW)**, **JPEG** and **PNG (lossless)**, and picks DNG when you add RAW files. DNG keeps the RAW data untouched: the de-squeeze is written as the DNG *DefaultScale* tag and the **edge crop as the DNG default crop** (both lossless), so Lightroom, Camera Raw and Photoshop open the file de-squeezed and cropped at full resolution. LUT and colour aren't applied to RAW (the screen says so); non-RAW photos in the batch are saved as JPEG.
+- **De-squeezed preview inside exported DNGs.** The small preview galleries show is replaced with a new de-squeezed, cropped JPEG preview, so the gallery shows the right shape. It's as sharp as the phone can decode the RAW file: on phones whose decoder only returns the camera's small preview, the embedded preview is that size, de-squeezed (the result says which).
+- **Before / after for photos**, like the video preview: **hold** the photo to see it as shot (the frame springs back to the original shape), and **Before / After** shows a draggable wipe between the photo with and without your LUT and colour.
+
+### Changed
+- **Smoother animations.** Screen and step changes use matched Material easing with the old screen sliding out as the new one slides in (new content fades in a moment later, so its first frame is ready), and nothing is clipped mid-transition. The photo preview keeps the current image on screen while a new one is made (no more spinner flashes while dragging sliders), and the video preview keeps the current LUT/colour while a new one is built, instead of dropping the look and rebuilding the player twice.
+
 ## v1.33 — 2026-10-17
 
 ### Fixed
