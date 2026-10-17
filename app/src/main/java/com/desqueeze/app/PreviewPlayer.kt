@@ -712,21 +712,24 @@ fun Modifier.rotatedContent(deg: Int): Modifier {
 
 /** Dashed outline of the original (squeezed) frame with arrows on the stretch axis; fades with the de-squeeze toggle. */
 @Composable
-fun StretchOutline(g: Geometry, show: Boolean, modifier: Modifier) {
-    val f = stretchFactor(g)
+fun StretchOutline(g: Geometry, show: Boolean, modifier: Modifier) = StretchOutline(g.vertical, stretchFactor(g), show, modifier)
+
+/** Same outline for anything stretched by [f] along the vertical or horizontal axis (photos use it too). */
+@Composable
+fun StretchOutline(vertical: Boolean, f: Float, show: Boolean, modifier: Modifier) {
     val a by animateFloatAsState(if (show && f > 1.005f) 1f else 0f, tween(300), label = "outline")
     // Always one Canvas (drawing nothing when hidden), so the preview's layout never gains or loses a child here.
     Canvas(modifier) {
         if (a <= 0f) return@Canvas
         val w = size.width; val h = size.height
-        val iw = if (g.vertical) w else w / f; val ih = if (g.vertical) h / f else h
+        val iw = if (vertical) w else w / f; val ih = if (vertical) h / f else h
         val l = (w - iw) / 2; val t = (h - ih) / 2
         val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
         drawRect(Color.White.copy(alpha = 0.75f * a), Offset(l, t), androidx.compose.ui.geometry.Size(iw, ih),
             style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f, pathEffect = dash))
         // Arrows from the original edge out to the stretched edge.
         val arrow = Color.White.copy(alpha = 0.85f * a); val head = 10f
-        if (g.vertical) {
+        if (vertical) {
             for ((from, to) in listOf(t to 0f, t + ih to h)) if (kotlin.math.abs(from - to) > 12f) {
                 val x = w / 2; drawLine(arrow, Offset(x, from), Offset(x, to + if (to > from) -2f else 2f), 3f)
                 val dir = if (to > from) 1f else -1f

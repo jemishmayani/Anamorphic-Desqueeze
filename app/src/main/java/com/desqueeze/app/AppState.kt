@@ -30,21 +30,31 @@ enum class Step(val label: String) { Clips("Clips"), Frame("Frame"), Look("Look"
 class AppState(settings: Settings, luts: LutManager) {
     private val prefs = settings
 
-    /* Anamorphic photos: one set of settings for the whole batch. */
+    /* Anamorphic photos: each photo has its own settings (squeeze, direction, crop, LUT, colour). */
     var photos by mutableStateOf(listOf<PhotoItem>())
     var photoSel by mutableIntStateOf(0)
-    var photoSqueeze by mutableFloatStateOf(settings.defaultSqueeze)
-    var photoVertical by mutableStateOf(false)
-    var photoLutId by mutableStateOf<String?>(null)
-    var photoStrength by mutableFloatStateOf(1f)
-    var photoColor by mutableStateOf(ColorAdjust())
-    var photoCrop by mutableFloatStateOf(0f)
+    var photoStep by mutableStateOf(PhotoStep.Photos)
+    var photoTool by mutableIntStateOf(0)
+    /** Settings new photos start with: the last ones edited. */
+    var photoDefault by mutableStateOf(PhotoLook(settings.defaultSqueeze, false, null, 1f, ColorAdjust(), 0f))
+    val photoLooks = mutableStateMapOf<String, PhotoLook>()
+    fun lookOf(p: PhotoItem) = photoLooks[p.uri.toString()] ?: photoDefault
+    /** Settings of the selected photo. Setting them changes only that photo. */
+    var photoLook: PhotoLook
+        get() = photos.getOrNull(photoSel)?.let { lookOf(it) } ?: photoDefault
+        set(value) { photos.getOrNull(photoSel)?.let { photoLooks[it.uri.toString()] = value }; photoDefault = value }
+    /** Copies part of the selected photo's settings to every photo, e.g. { it.copy(squeeze = …, vertical = …) }. */
+    fun applyPhotoToAll(change: (PhotoLook) -> PhotoLook) { photos.forEach { p -> photoLooks[p.uri.toString()] = change(lookOf(p)) } }
     var photoFormat by mutableStateOf(PhotoFormat.JPEG)
-    var photoLoading by mutableStateOf(false)
+    /** Reading photos: (done, total), or null. */
+    var photoImporting by mutableStateOf<Pair<Int, Int>?>(null)
     var photoBusy by mutableStateOf(false)
-    var photoDone by mutableIntStateOf(0)
+    var photoCancel by mutableStateOf(false)
+    var photoProgress by mutableFloatStateOf(0f)
+    var photoRunId by mutableIntStateOf(0)
+    val photoRuns = mutableStateListOf<ClipRun>()
+    /** Notes from the last save, per photo (e.g. what happened to a DNG's preview). */
     var photoResults by mutableStateOf(listOf<String>())
-    val photoLook get() = PhotoLook(photoSqueeze, photoVertical, photoLutId, photoStrength, photoColor, photoCrop)
     /** Preview / tool panel split in the Frame and Look steps on phones (dragged by the handle between them). */
     var editorSplit by mutableFloatStateOf(settings.editorSplit.coerceIn(EDITOR_SPLIT_MIN, EDITOR_SPLIT_MAX))
     fun saveEditorSplit() { prefs.editorSplit = editorSplit }
@@ -221,6 +231,8 @@ data class FormatSwitch(val format: OutFormat, val previous: Map<String, Pair<Ex
 
 /** One clip's line in the export progress panel. */
 enum class RunState { WAITING, RUNNING, DONE, FAILED }
-data class ClipRun(val name: String, val method: ExportMode, val state: RunState = RunState.WAITING, val pct: Int = 0, val note: String? = null)
+data class ClipRun(val name: String, val method: ExportMode, val state: RunState = RunState.WAITING, val pct: Int = 0, val note: String? = null,
+    /** Shown while waiting, instead of the export method (e.g. "DNG" for photos). */
+    val waitLabel: String? = null)
 /** Shown after an export finishes, until the user taps Done, so a fast export is never missed. */
 data class ExportSummary(val ok: Int, val failed: Int, val folder: String, val lastUri: android.net.Uri?)

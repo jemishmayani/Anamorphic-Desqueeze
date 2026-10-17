@@ -1365,7 +1365,7 @@ fun RunList(runs: List<ClipRun>, maxRows: Int) {
                     color = if (r.state == RunState.WAITING) c.onSurfaceVariant else c.onSurface)
                 Spacer(Modifier.width(8.dp))
                 Text(when (r.state) {
-                    RunState.WAITING -> r.method.label
+                    RunState.WAITING -> r.waitLabel ?: r.method.label
                     RunState.RUNNING -> "${r.pct}%"
                     RunState.DONE -> r.note ?: "Done"
                     RunState.FAILED -> if (r.note == "Cancelled") "Cancelled" else "Failed"
