@@ -163,9 +163,9 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                 }
             }
 
-            SettingsGroup("Defaults") {
+            SettingsGroup("Workflow") {
                 val isPreset = PRESETS.any { kotlin.math.abs(it - s.defaultSqueeze) < 0.001f }
-                SettingChoiceRow(AppIcons.Aspect, "Default squeeze", "Used for new clips", fmtSqueeze(s.defaultSqueeze) + if (isPreset) "" else " (custom)",
+                SettingChoiceRow(AppIcons.Aspect, "Default squeeze", "For new clips and photos", fmtSqueeze(s.defaultSqueeze) + if (isPreset) "" else " (custom)",
                     PRESETS.map { fmtSqueeze(it) } + "Custom value…") {
                     if (it < PRESETS.size) { s.defaultSqueeze = PRESETS[it]; if (!st.squeezeChosen) st.newClipSqueeze = PRESETS[it]; refresh() } else customDefault = true
                 }
@@ -179,40 +179,46 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                 }
             }
 
-            SettingsGroup("Re-encode") {
+            SettingsGroup("Video quality") {
                 SettingChoiceRow(AppIcons.Sliders, "Quality", "Higher means larger files", s.quality.label, Quality.entries.map { it.label }) {
                     s.quality = Quality.entries[it]; st.quality = s.quality; refresh() }
                 SettingChoiceRow(AppIcons.Codec, "Codec", if (Exporter.hasEncoder("video/hevc")) "HEVC is smaller at the same quality" else "No HEVC encoder on this phone",
-                    if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }) { s.codec = Codec.entries[it]; st.codec = s.codec; refresh() }
-                SettingRow(AppIcons.Hdr, "Keep HDR", "10-bit output for HLG / HDR10 clips", tint = Warm, onClick = { s.keepHdr = !s.keepHdr; st.keepHdrSetting = s.keepHdr; refresh() },
-                    trailing = { Switch(s.keepHdr, { s.keepHdr = it; st.keepHdrSetting = it; refresh() }) })
-                SettingRow(AppIcons.Hdr, "10-bit for log clips",
-                    if (TenBitPipeline.main10Available) "Keeps 10-bit standard/log footage (e.g. D-Log) 10-bit in HEVC. Falls back to 8-bit if the phone refuses."
-                    else "This phone has no 10-bit HEVC encoder, so these clips are re-encoded in 8-bit.", tint = Warm,
-                    onClick = { s.tenBit = !s.tenBit; refresh() }, trailing = { Switch(s.tenBit && TenBitPipeline.main10Available, { s.tenBit = it; refresh() },
-                        enabled = TenBitPipeline.main10Available) })
-                SettingRow(AppIcons.Info, "Keep recording date & location",
-                    if (s.preserveMeta) "Re-encoded, Tagged and trimmed files keep the clip's recording date and GPS location, so galleries sort them with the original. Turn off to leave location out, e.g. before sharing."
-                    else "Off: re-encoded files are dated when you export them and carry no location. Untrimmed Lossless copies still keep the file's own metadata.",
-                    divider = false,
-                    onClick = { s.preserveMeta = !s.preserveMeta; refresh() }, trailing = { Switch(s.preserveMeta, { s.preserveMeta = it; refresh() }) })
+                    if (s.codec == Codec.HEVC) "HEVC" else "H.264", Codec.entries.map { it.label }, divider = false) { s.codec = Codec.entries[it]; st.codec = s.codec; refresh() }
             }
 
-            SettingsGroup("Output & looks") {
-                SettingRow(AppIcons.Folder, "Save to", "Exports go to your Movies folder", "Movies/${s.folder}", onClick = { folderDialog = true })
+            SettingsGroup("Colour & bit depth") {
+                SettingRow(AppIcons.Hdr, "10-bit for log clips",
+                    if (TenBitPipeline.main10Available) "Keeps D-Log and other 10-bit footage 10-bit (HEVC)"
+                    else "No 10-bit HEVC encoder on this phone", tint = Warm,
+                    onClick = { s.tenBit = !s.tenBit; refresh() }, trailing = { Switch(s.tenBit && TenBitPipeline.main10Available, { s.tenBit = it; refresh() },
+                        enabled = TenBitPipeline.main10Available) })
+                SettingRow(AppIcons.Hdr, "Keep HDR", "HLG / HDR10 clips stay HDR", tint = Warm, divider = false,
+                    onClick = { s.keepHdr = !s.keepHdr; st.keepHdrSetting = s.keepHdr; refresh() },
+                    trailing = { Switch(s.keepHdr, { s.keepHdr = it; st.keepHdrSetting = it; refresh() }) })
+            }
+
+            SettingsGroup("Files") {
+                SettingRow(AppIcons.Folder, "Save to", "Videos in Movies, photos in Pictures", s.folder, onClick = { folderDialog = true })
+                SettingRow(AppIcons.Info, "Keep recording date & location",
+                    if (s.preserveMeta) "Exports sort next to the original in your gallery" else "Off: exports are dated today, with no location",
+                    onClick = { s.preserveMeta = !s.preserveMeta; refresh() }, trailing = { Switch(s.preserveMeta, { s.preserveMeta = it; refresh() }) })
                 SettingRow(AppIcons.Palette, "LUT library", "Import, rename and delete .cube LUTs",
-                    "${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}", tint = Warm, onClick = { st.lutsBack = Screen.Settings; st.screen = Screen.Luts })
+                    "${st.lutList.size} LUT${if (st.lutList.size == 1) "" else "s"}", tint = Warm, divider = false,
+                    onClick = { st.lutsBack = Screen.Settings; st.screen = Screen.Luts })
+            }
+
+            SettingsGroup("Appearance") {
                 SettingChoiceRow(AppIcons.Moon, "Theme", null, s.theme.label, ThemeMode.entries.map { it.label }) {
                     s.theme = ThemeMode.entries[it]; st.theme = s.theme; refresh() }
                 AccentPicker(st.accent) { s.accent = it; st.accent = it }
             }
 
             SettingsGroup("This phone") {
-                SettingRow(AppIcons.Pulse, "Device diagnostics", "Hardware video support, limits and what they mean for you",
+                SettingRow(AppIcons.Pulse, "Device diagnostics", "Video hardware, limits and what they mean for you",
                     divider = false, onClick = { st.screen = Screen.Limits })
             }
 
-            SettingsGroup("About & support") {
+            SettingsGroup("Support & updates") {
                 SettingRow(AppIcons.Coffee, "Support the development", "Buy me a coffee if this app helps you", tint = Warm,
                     onClick = { openUrl(ctx, SUPPORT_URL) })
                 if (BuildConfig.UPDATE_CHECK) {
@@ -230,7 +236,10 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
                     SettingRow(AppIcons.Update, "Updates", "Delivered by Google Play", onClick = {
                         openUrl(ctx, "https://play.google.com/store/apps/details?id=${ctx.packageName}") })
                 }
-                SettingRow(AppIcons.Doc, "What's new", "Changes in every version", onClick = { openUrl(ctx, "$REPO_URL/blob/main/CHANGELOG.md") })
+                SettingRow(AppIcons.Doc, "What's new", "Changes in every version", divider = false, onClick = { openUrl(ctx, "$REPO_URL/blob/main/CHANGELOG.md") })
+            }
+
+            SettingsGroup("About") {
                 SettingRow(AppIcons.Code, "Source code", "On GitHub", onClick = { openUrl(ctx, REPO_URL) })
                 SettingRow(AppIcons.Shield, "Privacy", "No accounts, ads or tracking", onClick = { info = "Privacy" to PRIVACY_TEXT })
                 SettingRow(AppIcons.Doc, "Open-source licenses", null, divider = false, onClick = { info = "Open-source licenses" to LICENSES_TEXT })

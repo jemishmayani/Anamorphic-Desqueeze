@@ -14,7 +14,7 @@ enum class Codec(val label: String) { HEVC("HEVC / H.265 (preferred)"), H264("H.
 enum class ExportMode(val label: String) { LOSSLESS("Lossless"), REENCODE("Re-encode"), TAGGED("Tagged") }
 enum class ThemeMode(val label: String) { SYSTEM("System"), DARK("Dark"), LIGHT("Light") }
 
-val PRESETS = listOf(1.2f, 1.33f, 1.5f, 1.55f, 1.6f, 1.8f, 2.0f)
+val PRESETS = listOf(1.0f, 1.2f, 1.33f, 1.5f, 1.55f, 1.6f, 1.8f, 2.0f)
 
 class Settings(ctx: Context) {
     private val p = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)

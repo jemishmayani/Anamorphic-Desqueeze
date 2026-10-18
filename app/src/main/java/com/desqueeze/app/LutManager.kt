@@ -66,8 +66,49 @@ class LutManager(private val ctx: Context) {
         }
     }
     fun rename(id: String, newName: String) = names.edit().putString(id, newName.trim()).apply()
-    fun delete(id: String) { File(dir, "$id.cube").delete(); names.edit().remove(id).apply() }
-    fun load(id: String): CubeLut = parse(File(dir, "$id.cube").readText())
+    fun delete(id: String) {
+        File(dir, "$id.cube").delete(); File(dir, "$id.lutbin").delete(); synchronized(cache) { cache.remove(id) }
+        names.edit().remove(id).apply()
+    }
+
+    /** Recently used LUTs, parsed (a 65-point LUT is ~3 MB, so only a few). */
+    private val cache = object : LinkedHashMap<String, CubeLut>(8, 0.75f, true) {
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, CubeLut>?) = size > 4
+    }
+
+    /**
+     * The LUT, fast: from memory if used recently, else from a binary copy made the first time (loads in a few ms
+     * instead of parsing hundreds of thousands of text lines), else parsed from the .cube file.
+     */
+    fun load(id: String): CubeLut {
+        synchronized(cache) { cache[id] }?.let { return it }
+        val cube = File(dir, "$id.cube"); val bin = File(dir, "$id.lutbin")
+        val lut = (if (bin.exists() && bin.lastModified() >= cube.lastModified()) runCatching { readBin(bin) }.getOrNull() else null)
+            ?: parse(cube.readText()).also { runCatching { writeBin(bin, it) } }
+        synchronized(cache) { cache[id] = lut }
+        return lut
+    }
+
+    private fun writeBin(f: File, l: CubeLut) {
+        val b = java.nio.ByteBuffer.allocate(4 * (2 + 6 + l.data.size)).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        b.putInt(0x4C555431); b.putInt(l.size)   // "LUT1"
+        l.domainMin.forEach { b.putFloat(it) }; l.domainMax.forEach { b.putFloat(it) }
+        b.asFloatBuffer().put(l.data); b.position(b.capacity()); b.flip()
+        val tmp = File(f.path + ".tmp")
+        java.io.FileOutputStream(tmp).channel.use { ch -> while (b.hasRemaining()) ch.write(b) }
+        tmp.renameTo(f)
+    }
+
+    private fun readBin(f: File): CubeLut? = java.io.RandomAccessFile(f, "r").channel.use { ch ->
+        val m = ch.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, ch.size()).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        if (m.getInt() != 0x4C555431) return@use null
+        val n = m.getInt(); if (n !in 2..65) return@use null
+        val min = FloatArray(3) { m.getFloat() }; val max = FloatArray(3) { m.getFloat() }
+        val data = FloatArray(n * n * n * 3)
+        if (m.remaining() < data.size * 4) return@use null
+        m.asFloatBuffer().get(data)
+        CubeLut(n, data, min, max)
+    }
 
     class CubeLut(val size: Int, val data: FloatArray, val domainMin: FloatArray, val domainMax: FloatArray) {
         /** Applies the LUT on the CPU (trilinear) to ARGB pixels, blended by [strength]. For still-frame compare. */
@@ -118,22 +159,45 @@ class LutManager(private val ctx: Context) {
 
     companion object {
         fun parse(text: String): CubeLut {
+            // Hand-rolled scan (no regex, no boxed floats): a 65-point LUT has ~275,000 lines.
             var size = 0; val min = floatArrayOf(0f, 0f, 0f); val max = floatArrayOf(1f, 1f, 1f)
-            val vals = ArrayList<Float>()
-            text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.forEach { l ->
-                val p = l.split(Regex("\\s+"))
-                when {
-                    p[0] == "LUT_3D_SIZE" -> size = p[1].toInt()
-                    p[0] == "LUT_1D_SIZE" -> throw IllegalArgumentException("1D LUTs are not supported; use a 3D .cube LUT.")
-                    p[0] == "DOMAIN_MIN" -> for (k in 0..2) min[k] = p[k + 1].toFloat()
-                    p[0] == "DOMAIN_MAX" -> for (k in 0..2) max[k] = p[k + 1].toFloat()
-                    p[0].first().isDigit() || p[0].first() == '-' || p[0].first() == '.' ->
-                        if (p.size >= 3) { vals += p[0].toFloat(); vals += p[1].toFloat(); vals += p[2].toFloat() }
+            var data = FloatArray(3 * 4096); var count = 0
+            val len = text.length; var i = 0
+            val tok = IntArray(8)   // start/end of up to 4 tokens
+            while (i < len) {
+                var e = text.indexOf('\n', i); if (e < 0) e = len
+                // Split the line into whitespace-separated tokens.
+                var nt = 0; var p = i
+                while (p < e && nt < 4) {
+                    while (p < e && text[p].isWhitespace()) p++
+                    if (p >= e) break
+                    val st = p; while (p < e && !text[p].isWhitespace()) p++
+                    tok[nt * 2] = st; tok[nt * 2 + 1] = p; nt++
                 }
+                if (nt > 0 && text[tok[0]] != '#') {
+                    val c0 = text[tok[0]]
+                    if (c0.isDigit() || c0 == '-' || c0 == '.' || c0 == '+') {
+                        if (nt >= 3) {
+                            if (count + 3 > data.size) data = data.copyOf(data.size * 2)
+                            for (k in 0..2) data[count++] = text.substring(tok[k * 2], tok[k * 2 + 1]).toFloat()
+                        }
+                    } else {
+                        val key = text.substring(tok[0], tok[1])
+                        fun num(k: Int) = text.substring(tok[k * 2], tok[k * 2 + 1])
+                        when (key) {
+                            "LUT_3D_SIZE" -> if (nt >= 2) { size = num(1).toInt(); val need = size * size * size * 3; if (need > data.size && size in 2..65) data = data.copyOf(need) }
+                            "LUT_1D_SIZE" -> throw IllegalArgumentException("1D LUTs are not supported; use a 3D .cube LUT.")
+                            "DOMAIN_MIN" -> if (nt >= 4) for (k in 0..2) min[k] = num(k + 1).toFloat()
+                            "DOMAIN_MAX" -> if (nt >= 4) for (k in 0..2) max[k] = num(k + 1).toFloat()
+                        }
+                    }
+                }
+                i = e + 1
             }
+            val vals = data.copyOf(count)
             require(size in 2..65) { "Missing or invalid LUT_3D_SIZE." }
             require(vals.size == size * size * size * 3) { "LUT has ${vals.size / 3} entries, expected ${size * size * size}." }
-            return CubeLut(size, vals.toFloatArray(), min, max)
+            return CubeLut(size, vals, min, max)
         }
     }
 }

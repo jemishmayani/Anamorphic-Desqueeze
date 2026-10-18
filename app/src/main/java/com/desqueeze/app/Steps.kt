@@ -30,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clipToBounds
@@ -143,9 +144,9 @@ fun PreviewWithTools(st: AppState, panes: Panes, tools: List<Tool>, selected: In
             verticalArrangement = Arrangement.spacedBy(14.dp)) { preview(Modifier) }
         Column(Modifier.weight(1f).fillMaxHeight().padding(top = 16.dp)) {
             ToolTabs(tools, sel, onSelect)
-            key(sel) {
+            ToolPanel(sel, Modifier.fillMaxSize()) { i ->
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+                    verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[i].content)
             }
         }
     } else {
@@ -164,13 +165,24 @@ fun PreviewWithTools(st: AppState, panes: Panes, tools: List<Tool>, selected: In
             Column(Modifier.weight(1f - split).fillMaxWidth()) {
                 Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
-                key(sel) {
-                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[sel].content)
+                ToolPanel(sel, Modifier.weight(1f).fillMaxWidth()) { i ->
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[i].content)
                 }
             }
         }
     }
+}
+
+/** Switches tool panels with a short crossfade and a slight slide in the direction of the tab. */
+@Composable
+private fun ToolPanel(sel: Int, modifier: Modifier, content: @Composable (Int) -> Unit) {
+    AnimatedContent(sel, modifier, label = "tool", transitionSpec = {
+        val dir = if (targetState > initialState) 1 else -1
+        (fadeIn(tween(220, delayMillis = 40)) + slideInHorizontally(tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { dir * it / 14 })
+            .togetherWith(fadeOut(tween(120)))
+            .using(androidx.compose.animation.SizeTransform(clip = false))
+    }) { content(it) }
 }
 
 /** Grip between the preview and the tools: drag to give either more room; double-tap for the default split. */
@@ -184,8 +196,9 @@ private fun SplitHandle(onDrag: (Float) -> Unit, onStop: () -> Unit, onReset: ()
         .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onReset() }) }
         .semantics { contentDescription = "Resize the preview. Drag up or down; double-tap to reset." },
         contentAlignment = Alignment.Center) {
-        Box(Modifier.width(if (active) 56.dp else 40.dp).height(5.dp).clip(CircleShape)
-            .background(if (active) c.primary else c.onSurfaceVariant.copy(alpha = 0.45f)))
+        val w by androidx.compose.animation.core.animateDpAsState(if (active) 56.dp else 40.dp, tween(180), label = "grip")
+        val col by androidx.compose.animation.animateColorAsState(if (active) c.primary else c.onSurfaceVariant.copy(alpha = 0.45f), tween(180), label = "gripC")
+        Box(Modifier.width(w).height(5.dp).clip(CircleShape).background(col))
     }
 }
 
@@ -200,20 +213,24 @@ private fun ToolTabs(tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit) 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         tools.forEachIndexed { i, t ->
             val on = i == selected
+            val bg by androidx.compose.animation.animateColorAsState(if (on) c.primary.copy(alpha = 0.18f) else c.surfaceContainer, tween(220), label = "tabBg")
+            val bd by androidx.compose.animation.animateColorAsState(if (on) c.primary.copy(alpha = 0.75f) else c.outlineVariant, tween(220), label = "tabBd")
+            val fg by androidx.compose.animation.animateColorAsState(if (on) c.primary else c.onSurfaceVariant, tween(220), label = "tabFg")
+            val scale by animateFloatAsState(if (on) 1f else 0.94f, androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 500f), label = "tabS")
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
                 tooltip = { PlainTooltip { Text(t.label + (t.value?.let { ": $it" } ?: "")) } },
                 state = rememberTooltipState(),
             ) {
                 Box(
-                    Modifier.size(52.dp).clip(RoundedCornerShape(16.dp))
-                        .background(if (on) c.primary.copy(alpha = 0.18f) else c.surfaceContainer)
-                        .border(1.dp, if (on) c.primary.copy(alpha = 0.75f) else c.outlineVariant, RoundedCornerShape(16.dp))
+                    Modifier.size(52.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(RoundedCornerShape(16.dp))
+                        .background(bg)
+                        .border(1.dp, bd, RoundedCornerShape(16.dp))
                         .clickable(onClickLabel = t.label) { onSelect(i) }
                         .semantics { contentDescription = t.label + (t.value?.let { ", $it" } ?: ""); this.selected = on },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(t.icon, null, Modifier.size(24.dp), tint = if (on) c.primary else c.onSurfaceVariant)
+                    Icon(t.icon, null, Modifier.size(24.dp), tint = fg)
                     if (t.active) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(7.dp).clip(CircleShape)
                         .background(if (on) c.primary else c.primary.copy(alpha = 0.8f)))
                 }
@@ -234,7 +251,8 @@ fun StepHeader(st: AppState) {
             val enabled = !st.busy && (s == Step.Clips || st.videos.isNotEmpty())
             Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { st.step = s }.padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(22.dp).clip(CircleShape).background(when { current -> c.primary; done -> c.primary.copy(alpha = 0.18f); else -> c.surfaceContainerHigh }),
+                val dot by androidx.compose.animation.animateColorAsState(when { current -> c.primary; done -> c.primary.copy(alpha = 0.18f); else -> c.surfaceContainerHigh }, tween(260), label = "stepDot")
+                Box(Modifier.size(22.dp).clip(CircleShape).background(dot),
                     contentAlignment = Alignment.Center) {
                     if (done) Icon(AppIcons.Check, null, Modifier.size(14.dp), tint = c.primary)
                     else Text("${i + 1}", style = MaterialTheme.typography.labelSmall, color = if (current) c.onPrimary else c.onSurfaceVariant)
@@ -242,7 +260,10 @@ fun StepHeader(st: AppState) {
                 Spacer(Modifier.width(6.dp))
                 Text(s.label, style = MaterialTheme.typography.labelLarge, color = if (current) c.onSurface else c.onSurfaceVariant)
             }
-            if (i < Step.entries.size - 1) Box(Modifier.weight(1f).height(1.dp).background(if (done) c.primary.copy(alpha = 0.5f) else c.outlineVariant))
+            if (i < Step.entries.size - 1) {
+                val line by androidx.compose.animation.animateColorAsState(if (done) c.primary.copy(alpha = 0.5f) else c.outlineVariant, tween(320), label = "stepLine")
+                Box(Modifier.weight(1f).height(1.dp).background(line))
+            }
         }
     }
 }
