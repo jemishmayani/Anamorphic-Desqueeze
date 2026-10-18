@@ -2,6 +2,25 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.36 — 2026-10-18
+
+### Changed
+- **New look: Cinema Amber.** Warm, near-black "screening room" backgrounds with a projector-amber accent, in a softer, rounder layout:
+  - The steps (Clips · Frame · Look · Export, and Photos · Edit · Save) are one segmented pill; the current step is a filled amber pill that glides to the next step.
+  - Tools are pills: the selected tool shows its name, the others are round icon buttons. The tools sit on a rounded sheet below the preview.
+  - Buttons are full pills, cards and the preview have larger rounded corners, and the Settings and Back buttons are round.
+  - New typeface: **Space Grotesk**, with **Space Mono** for numbers.
+  - A new amber app mark. The preview badges are smoked glass with an amber ring.
+  - Amber is the new default accent. The other accents (Flare blue, Cyan, Mint, Violet, Rose, Mono, Wallpaper) are still in **Settings → Appearance**, and light theme uses warm paper tones.
+- **Settings are organised into groups:** Workflow, Video quality, Colour & bit depth, Files, Appearance, This phone, Support & updates, About.
+- **Smoother animations.** Switching tools crossfades and slides the panel in the tool's direction instead of snapping. Tool, step and drag-handle colours fade, and the step pill moves on a spring.
+
+### Added
+- **1.00× squeeze preset** in the suggestions. Use it for spherical clips or photos that only need a LUT, colour or crop.
+
+### Fixed
+- **LUT previews are much quicker.** LUT files are parsed about 10× faster. Each LUT is also saved in a ready-to-use binary form the first time it's used, and recently used LUTs stay in memory, so the LUT thumbnails and the preview appear almost instantly when you switch LUTs.
+
 ## v1.35 — 2026-10-17
 
 ### Changed

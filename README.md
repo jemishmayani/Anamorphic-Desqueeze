@@ -140,7 +140,7 @@ actual image detail is similar or lower.
 ## Features
 
 **Framing**
-- **Squeeze presets** 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus any custom factor (1.00–3.00×, slider or typed). A **default squeeze** (preset or custom) is set in Settings
+- **Squeeze presets** 1.00× (spherical), 1.2×, 1.33×, 1.5×, 1.55×, 1.6×, 1.8×, 2.0×, plus any custom factor (1.00–3.00×, slider or typed). A **default squeeze** (preset or custom) is set in Settings
 - **Per-clip squeeze:** every clip keeps its own factor, so one batch can mix adapters; **Apply to all** copies one factor to every clip
 - **Double Desqueeze Protection:** a clip that's already tagged (e.g. 1.33×) triggers a warning with **Keep existing**, **Replace tag** or **Force anyway** (multiplies the factors)
 - **Pinned preview with an icon tool bar** (Frame and Look steps): the preview stays put while you switch between Squeeze, Trim, Guides, Orientation, Exposure and LUT. On phones, **drag the handle** between the preview and the tools to resize them (double-tap to reset); the preview scales to fit. A dot marks tools you've changed; long-press an icon for its name. No scrolling back and forth
@@ -188,7 +188,7 @@ actual image detail is similar or lower.
 - Organized settings with **About & support**: check for updates (GitHub version), what's new, source code, privacy, licenses and [support the development](https://buymeacoffee.com/jemishmayani)
 - **Share to De-Squeeze** from Google Photos, your gallery or a file manager (one or many videos)
 - **Tablet & landscape layout:** the preview sits beside the controls on wide screens
-- Light, dark or system theme with an **accent colour** of your choice (or your wallpaper's Material You colours); about 4 MB; no ads, accounts or tracking
+- **Cinema Amber** design (warm near-black, amber accent, Space Grotesk type, pill controls); light, dark or system theme with an **accent colour** of your choice (or your wallpaper's Material You colours); about 4 MB; no ads, accounts or tracking
 
 ## Install & update
 
@@ -335,7 +335,7 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `LutPicker.kt` | LUT tiles with clip previews, and the multi-file import launcher |
 | `Settings.kt`, `SettingsScreen.kt` | Preferences; Settings, LUT library, About & support, update check |
 | `Diag.kt` | Crash, freeze and low-memory reports |
-| `Theme.kt` | Neutral palette, accent colours, Material You, typography |
+| `Theme.kt` | Cinema Amber palette, accent colours, Material You, Space Grotesk typography, shapes |
 
 Build variants: `app/src/github/` adds the internet permission used only by *Check for updates*.
 
