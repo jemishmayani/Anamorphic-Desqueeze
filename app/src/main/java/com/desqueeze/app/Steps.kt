@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -89,11 +90,11 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                         Spacer(Modifier.width(12.dp))
                         Text("Anamorphic De-Squeeze", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                         if (wide) Box(Modifier.widthIn(max = 520.dp).weight(1.4f)) { StepHeader(st) }
-                        IconButton(onClick = { st.screen = Screen.Settings }) { Icon(Icons.Default.Settings, "Settings") }
+                        Spacer(Modifier.width(8.dp))
+                        RoundIconButton(Icons.Default.Settings, "Settings") { st.screen = Screen.Settings }
                     }
                     if (!wide) { Spacer(Modifier.height(10.dp)); StepHeader(st) }
-                    Spacer(Modifier.height(6.dp))
-                    FlareLine(alpha = 0.6f)
+                    Spacer(Modifier.height(4.dp))
                 }
                 AnimatedContent(st.step, label = "step", transitionSpec = {
                     val fwd = targetState.ordinal > initialState.ordinal
@@ -109,6 +110,16 @@ fun MainScreen(act: MainActivity, st: AppState, settings: Settings, luts: LutMan
                 }
             }
         }
+    }
+}
+
+/** Darkroom-style round, outlined icon button. */
+@Composable
+fun RoundIconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Box(Modifier.size(44.dp).clip(CircleShape).background(c.surfaceContainer).border(1.dp, c.outlineVariant, CircleShape)
+        .clickable(onClickLabel = label, onClick = onClick).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+        Icon(icon, null, Modifier.size(20.dp), tint = c.onSurfaceVariant)
     }
 }
 
@@ -162,9 +173,11 @@ fun PreviewWithTools(st: AppState, panes: Panes, tools: List<Tool>, selected: In
                 onStop = { st.saveEditorSplit() },
                 onReset = { st.editorSplit = EDITOR_SPLIT_DEFAULT; st.saveEditorSplit() },
             )
-            Column(Modifier.weight(1f - split).fillMaxWidth()) {
+            Column(Modifier.weight(1f - split).fillMaxWidth().padding(horizontal = 10.dp)
+                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                .padding(top = 12.dp)) {
                 Box(Modifier.padding(horizontal = 12.dp)) { ToolTabs(tools, sel, onSelect) }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
                 ToolPanel(sel, Modifier.weight(1f).fillMaxWidth()) { i ->
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp), content = tools[i].content)
@@ -203,36 +216,43 @@ private fun SplitHandle(onDrag: (Float) -> Unit, onStop: () -> Unit, onReset: ()
 }
 
 /**
- * Icon-only tool bar: equal square buttons spread across the width. A dot marks a tool that's changed
- * from its default; long-press shows the name. The panel below carries the full title and value.
+ * Tool bar of pills: the selected tool is a filled pill with its name; the others are round icon buttons.
+ * A dot marks a tool that's changed from its default; long-press shows the name and value.
  */
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolTabs(tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit) {
     val c = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically) {
         tools.forEachIndexed { i, t ->
             val on = i == selected
-            val bg by androidx.compose.animation.animateColorAsState(if (on) c.primary.copy(alpha = 0.18f) else c.surfaceContainer, tween(220), label = "tabBg")
-            val bd by androidx.compose.animation.animateColorAsState(if (on) c.primary.copy(alpha = 0.75f) else c.outlineVariant, tween(220), label = "tabBd")
-            val fg by androidx.compose.animation.animateColorAsState(if (on) c.primary else c.onSurfaceVariant, tween(220), label = "tabFg")
-            val scale by animateFloatAsState(if (on) 1f else 0.94f, androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 500f), label = "tabS")
+            val bg by androidx.compose.animation.animateColorAsState(if (on) c.primary else c.surfaceContainer, tween(240), label = "tabBg")
+            val bd by androidx.compose.animation.animateColorAsState(if (on) c.primary else c.outlineVariant, tween(240), label = "tabBd")
+            val fg by androidx.compose.animation.animateColorAsState(if (on) c.onPrimary else c.onSurfaceVariant, tween(240), label = "tabFg")
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
                 tooltip = { PlainTooltip { Text(t.label + (t.value?.let { ": $it" } ?: "")) } },
                 state = rememberTooltipState(),
             ) {
-                Box(
-                    Modifier.size(52.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(RoundedCornerShape(16.dp))
-                        .background(bg)
-                        .border(1.dp, bd, RoundedCornerShape(16.dp))
+                Row(
+                    Modifier.height(46.dp).widthIn(min = 46.dp).clip(CircleShape).background(bg).border(1.dp, bd, CircleShape)
                         .clickable(onClickLabel = t.label) { onSelect(i) }
-                        .semantics { contentDescription = t.label + (t.value?.let { ", $it" } ?: ""); this.selected = on },
-                    contentAlignment = Alignment.Center,
+                        .semantics { contentDescription = t.label + (t.value?.let { ", $it" } ?: ""); this.selected = on }
+                        .animateContentSize(androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 500f))
+                        .padding(horizontal = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
                 ) {
-                    Icon(t.icon, null, Modifier.size(24.dp), tint = fg)
-                    if (t.active) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(7.dp).clip(CircleShape)
-                        .background(if (on) c.primary else c.primary.copy(alpha = 0.8f)))
+                    Box {
+                        Icon(t.icon, null, Modifier.size(22.dp), tint = fg)
+                        if (t.active && !on) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-3).dp).size(7.dp).clip(CircleShape).background(c.primary))
+                    }
+                    if (on) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(t.label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
+                        if (t.active) { Spacer(Modifier.width(6.dp)); Box(Modifier.size(6.dp).clip(CircleShape).background(fg)) }
+                        Spacer(Modifier.width(4.dp))
+                    }
                 }
             }
         }
@@ -242,27 +262,33 @@ private fun ToolTabs(tools: List<Tool>, selected: Int, onSelect: (Int) -> Unit) 
 /* ------------------------------------------------------------------ step header + bottom bar */
 
 @Composable
-fun StepHeader(st: AppState) {
+fun StepHeader(st: AppState) = PillSteps(Step.entries.map { it.label }, st.step.ordinal,
+    enabled = { i -> !st.busy && (i == 0 || st.videos.isNotEmpty()) }, onSelect = { st.step = Step.entries[it] })
+
+/** Segmented pill of steps: the current one is a filled pill that glides between steps; done steps get a tick. */
+@Composable
+fun PillSteps(labels: List<String>, current: Int, enabled: (Int) -> Boolean, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Step.entries.forEachIndexed { i, s ->
-            val current = s == st.step
-            val done = s.ordinal < st.step.ordinal
-            val enabled = !st.busy && (s == Step.Clips || st.videos.isNotEmpty())
-            Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { st.step = s }.padding(horizontal = 4.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                val dot by androidx.compose.animation.animateColorAsState(when { current -> c.primary; done -> c.primary.copy(alpha = 0.18f); else -> c.surfaceContainerHigh }, tween(260), label = "stepDot")
-                Box(Modifier.size(22.dp).clip(CircleShape).background(dot),
-                    contentAlignment = Alignment.Center) {
-                    if (done) Icon(AppIcons.Check, null, Modifier.size(14.dp), tint = c.primary)
-                    else Text("${i + 1}", style = MaterialTheme.typography.labelSmall, color = if (current) c.onPrimary else c.onSurfaceVariant)
+    val n = labels.size
+    BoxWithConstraints(modifier.fillMaxWidth().clip(CircleShape).background(c.surfaceContainer)
+        .border(1.dp, c.outlineVariant, CircleShape).padding(4.dp)) {
+        val seg = maxWidth / n
+        val x by androidx.compose.animation.core.animateDpAsState(seg * current,
+            androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 420f), label = "stepPill")
+        Box(Modifier.offset(x = x).width(seg).height(36.dp).clip(CircleShape).background(c.primary))
+        Row(Modifier.fillMaxWidth()) {
+            labels.forEachIndexed { i, label ->
+                val on = i == current; val done = i < current; val en = enabled(i)
+                val fg by androidx.compose.animation.animateColorAsState(when {
+                    on -> c.onPrimary; done || en -> c.onSurfaceVariant; else -> c.onSurfaceVariant.copy(alpha = 0.5f)
+                }, tween(260), label = "stepFg")
+                Row(Modifier.weight(1f).height(36.dp).clip(CircleShape).clickable(enabled = en && !on) { onSelect(i) }
+                    .semantics { this.selected = on },
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    if (done) { Icon(AppIcons.Check, null, Modifier.size(13.dp), tint = fg); Spacer(Modifier.width(4.dp)) }
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1,
+                        fontWeight = if (on) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium)
                 }
-                Spacer(Modifier.width(6.dp))
-                Text(s.label, style = MaterialTheme.typography.labelLarge, color = if (current) c.onSurface else c.onSurfaceVariant)
-            }
-            if (i < Step.entries.size - 1) {
-                val line by androidx.compose.animation.animateColorAsState(if (done) c.primary.copy(alpha = 0.5f) else c.outlineVariant, tween(320), label = "stepLine")
-                Box(Modifier.weight(1f).height(1.dp).background(line))
             }
         }
     }
@@ -271,7 +297,7 @@ fun StepHeader(st: AppState) {
 @Composable
 fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
     val hasClips = st.videos.isNotEmpty()
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
             if (st.status.isNotEmpty() && !st.busy) {
                 Text(st.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 3)
@@ -283,7 +309,7 @@ fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
             else if (done != null) ExportDonePanel(st, done)
             else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (st.step != Step.Clips) OutlinedButton(onClick = { st.step = Step.entries[st.step.ordinal - 1] },
-                    Modifier.height(56.dp), shape = RoundedCornerShape(16.dp)) { Text("Back") }
+                    Modifier.height(56.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Back") }
                 val last = st.step == Step.Export
                 Button(
                     onClick = {
@@ -295,7 +321,7 @@ fun StepBar(st: AppState, exporter: Exporter, begin: () -> Unit) {
                             if (issues.isEmpty()) begin() else st.preflight = issues
                         }
                     },
-                    enabled = hasClips, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(16.dp),
+                    enabled = hasClips, modifier = Modifier.weight(1f).height(56.dp), shape = androidx.compose.foundation.shape.CircleShape,
                 ) {
                     Text(when {
                         !last -> "Next: ${Step.entries[st.step.ordinal + 1].label}"
@@ -323,7 +349,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
                 Text("Tip: in your gallery, select clips, tap Share and choose De-Squeeze to open them here directly.",
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             }
-            OutlinedButton(onClick = { st.screen = Screen.Photos }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
+            OutlinedButton(onClick = { st.screen = Screen.Photos }, Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                 Icon(AppIcons.Aspect, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("De-squeeze photos")
             }
         }
@@ -538,9 +564,9 @@ fun TrimSection(st: AppState, v: VideoInfo, memory: PlayheadMemory) {
             Text(fmtDuration(cur.second), style = MaterialTheme.typography.labelMedium.merge(Mono))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-            OutlinedButton(onClick = { set(memory.positionMs, cur.second) }, enabled = !st.busy, shape = RoundedCornerShape(12.dp),
+            OutlinedButton(onClick = { set(memory.positionMs, cur.second) }, enabled = !st.busy, shape = androidx.compose.foundation.shape.CircleShape,
                 contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.weight(1f)) { Text("Start here", maxLines = 1) }
-            OutlinedButton(onClick = { set(cur.first, memory.positionMs) }, enabled = !st.busy, shape = RoundedCornerShape(12.dp),
+            OutlinedButton(onClick = { set(cur.first, memory.positionMs) }, enabled = !st.busy, shape = androidx.compose.foundation.shape.CircleShape,
                 contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.weight(1f)) { Text("End here", maxLines = 1) }
             TextButton(onClick = { st.clipTrim.remove(st.keyOf(v)) }, enabled = !st.busy && st.trimFor(v) != null) { Text("Reset") }
         }
@@ -852,7 +878,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
                     }
                 }
                 OutlinedButton(onClick = { st.compareRequest++ }, enabled = !st.busy && cube != null,
-                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                     Text("Before / After at full quality")
                 }
                 Text("What you see is what you export. The live preview plays at a lighter ~720p so it stays smooth; Before / After shows a full-quality frame with a slider. " +
@@ -1230,8 +1256,8 @@ private fun EstRow(k: String, v: String) = Row(verticalAlignment = Alignment.Cen
 @Composable
 fun RecommendationCard(r: Recommendation, current: ExportMode, enabled: Boolean, onUse: (ExportMode) -> Unit) {
     val c = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceContainer)
-        .border(1.dp, c.outlineVariant, RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(c.surfaceContainer)
+        .border(1.dp, c.outlineVariant, RoundedCornerShape(26.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(r.facts.joinToString("\n"), style = MaterialTheme.typography.bodySmall.merge(Mono), color = c.onSurfaceVariant)
         HorizontalDivider(color = c.outlineVariant)
         Option(AppIcons.Spark, "Recommended", r.title, r.why, highlighted = true, chosen = current == r.mode, enabled = enabled) { onUse(r.mode) }
@@ -1324,7 +1350,7 @@ fun ExportProgressPanel(st: AppState) {
             style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = { ExportController.cancel(st) },
-            Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Cancel export") }
+            Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Cancel export") }
     }
 }
 
@@ -1358,10 +1384,10 @@ fun ExportDonePanel(st: AppState, done: ExportSummary) {
                 ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(done.lastUri, "video/*")
                     .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION))
             }
-        }, Modifier.height(52.dp), shape = RoundedCornerShape(16.dp)) {
+        }, Modifier.height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) {
             Icon(AppIcons.Play, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Play")
         }
-        Button(onClick = { st.exportDone = null }, Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Done") }
+        Button(onClick = { st.exportDone = null }, Modifier.weight(1f).height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Done") }
     }
 }
 

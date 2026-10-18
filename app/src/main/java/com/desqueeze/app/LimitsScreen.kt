@@ -80,7 +80,7 @@ fun LimitsScreen(onBack: () -> Unit) {
                     ctx.getSystemService(android.content.ClipboardManager::class.java)
                         .setPrimaryClip(android.content.ClipData.newPlainText("diagnostics", text))
                     copied = true
-                }, Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                }, Modifier.fillMaxWidth().height(48.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                     Text(if (copied) "Copied" else "Copy diagnostics")
                 }
                 Column {

@@ -82,8 +82,8 @@ fun FootageCard(st: AppState, v: VideoInfo, enabled: Boolean, onChange: () -> Un
     var open by remember { mutableStateOf(false) }
     val f = v.footage
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceContainer)
-            .border(1.dp, c.outlineVariant, RoundedCornerShape(20.dp)).padding(16.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(c.surfaceContainer)
+            .border(1.dp, c.outlineVariant, RoundedCornerShape(26.dp)).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

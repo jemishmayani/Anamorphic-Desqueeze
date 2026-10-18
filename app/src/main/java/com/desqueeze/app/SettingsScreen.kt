@@ -82,8 +82,8 @@ fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     val c = MaterialTheme.colorScheme
     Column {
         Text(title, style = MaterialTheme.typography.labelLarge, color = c.primary, modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceContainer)
-            .border(1.dp, c.outlineVariant, RoundedCornerShape(20.dp)), content = content)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(c.surfaceContainer)
+            .border(1.dp, c.outlineVariant, RoundedCornerShape(26.dp)), content = content)
     }
 }
 
@@ -153,8 +153,8 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
             verticalArrangement = Arrangement.spacedBy(22.dp)) {
 
             // App header
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer)
-                .border(1.dp, c.outlineVariant, RoundedCornerShape(24.dp)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(c.surfaceContainer)
+                .border(1.dp, c.outlineVariant, RoundedCornerShape(28.dp)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 BrandMark(Modifier.size(56.dp))
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
@@ -286,7 +286,7 @@ fun LutLibraryScreen(st: AppState, luts: LutManager, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("3D .cube LUTs you import are stored privately in the app. None are bundled; for log footage, import your camera maker's official log-to-Rec.709 LUT.",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-            Button(onClick = { msg = null; importLuts() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp),
+            Button(onClick = { msg = null; importLuts() }, Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.CircleShape,
                 enabled = !st.lutLoading) { Text("Import .cube LUTs") }
             Text("You can pick several files at once. Duplicates already in your library are skipped.",
                 style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
@@ -331,6 +331,7 @@ This app is built with open-source software:
 • AndroidX Media3 (ExoPlayer, Transformer, Effect): Apache License 2.0
 • Jetpack Compose and AndroidX libraries: Apache License 2.0
 • Kotlin and kotlinx.coroutines: Apache License 2.0
+• Space Grotesk and Space Mono fonts: SIL Open Font License 1.1 (https://openfontlicense.org)
 
 Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
 """.trimIndent()

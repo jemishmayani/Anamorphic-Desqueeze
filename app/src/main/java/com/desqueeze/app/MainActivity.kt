@@ -157,18 +157,17 @@ fun Section(title: String, trailing: (@Composable () -> Unit)? = null, content: 
 @Composable
 fun BrandMark(modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
-    Canvas(modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF141A22))) {
+    val ink = c.onPrimary
+    Canvas(modifier.clip(androidx.compose.foundation.shape.CircleShape).background(c.primary)) {
         val w = size.width; val h = size.height
-        drawLine(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF8CC4FF), Color.Transparent)),
-            Offset(0f, h / 2), Offset(w, h / 2), strokeWidth = h * 0.035f)
-        drawOval(Color(0xFFE8EEF5), Offset(w * 0.24f, h * 0.36f), Size(w * 0.52f, h * 0.28f), style = Stroke(h * 0.06f))
-        drawOval(Color.White, Offset(w * 0.44f, h * 0.475f), Size(w * 0.12f, h * 0.05f))
+        drawLine(ink, Offset(w * 0.08f, h / 2), Offset(w * 0.92f, h / 2), strokeWidth = h * 0.04f)
+        drawOval(ink, Offset(w * 0.22f, h * 0.35f), Size(w * 0.56f, h * 0.30f), style = Stroke(h * 0.065f))
     }
 }
 
 @Composable
 fun ExportingPlaceholder(ratio: Float, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(20.dp))
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(Modifier.fillMaxWidth().aspectRatio(maxOf(ratio, 16f / 9f)).clip(RoundedCornerShape(26.dp))
         .background(MaterialTheme.colorScheme.surfaceContainer), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             FlareLine(Modifier.width(160.dp))
@@ -183,8 +182,8 @@ fun ExportingPlaceholder(ratio: Float, modifier: Modifier = Modifier) {
 fun EmptyPreview(onPick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Box(
-        Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(20.dp)).background(c.surfaceContainer)
-            .border(1.dp, c.outlineVariant, RoundedCornerShape(20.dp)).clickable(onClick = onPick),
+        Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(26.dp)).background(c.surfaceContainer)
+            .border(1.dp, c.outlineVariant, RoundedCornerShape(26.dp)).clickable(onClick = onPick),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -195,7 +194,7 @@ fun EmptyPreview(onPick: () -> Unit) {
                 drawOval(c.onSurface.copy(alpha = 0.85f), Offset((size.width - ow) / 2, 2f), Size(ow, size.height - 4f), style = Stroke(5f))
             }
             Spacer(Modifier.height(14.dp))
-            Button(onClick = onPick, shape = RoundedCornerShape(14.dp)) { Text("Choose video") }
+            Button(onClick = onPick, shape = androidx.compose.foundation.shape.CircleShape) { Text("Choose video") }
             Spacer(Modifier.height(8.dp))
             Text("MP4 or MOV, HEVC or H.264. Pick several to batch.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         }
@@ -380,8 +379,9 @@ fun displayName(ctx: android.content.Context, u: Uri): String =
 
 @Composable
 fun TopBar(title: String, onBack: () -> Unit) =
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.statusBarsPadding().padding(top = 4.dp, end = 20.dp)) {
-        IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.statusBarsPadding().padding(start = 16.dp, top = 8.dp, end = 20.dp, bottom = 8.dp)) {
+        RoundIconButton(Icons.Default.ArrowBack, "Back", onBack)
+        Spacer(Modifier.width(14.dp))
         Text(title, style = MaterialTheme.typography.headlineSmall)
     }
 

@@ -274,8 +274,8 @@ fun PreviewPlayer(
     val gapPx = with(density) { 10.dp.roundToPx() }
     Layout(modifier = modifier.fillMaxWidth(), content = {
         Box(
-            Modifier.clip(RoundedCornerShape(24.dp)).background(Color.Black)
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            Modifier.clip(RoundedCornerShape(28.dp)).background(Color.Black)
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(28.dp))
                 .pointerInput(player) {
                     detectTapGestures(
                         onPress = {
@@ -497,10 +497,13 @@ fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pai
 
 @Composable
 fun Pill(text: String, accent: Boolean, warm: Boolean = false) {
+    // Darkroom-style: smoked glass; the accent pill gets an accent ring and tinted text, warnings are filled.
+    val p = MaterialTheme.colorScheme.primary
     Box(Modifier.clip(CircleShape)
-        .background(when { accent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.9f); warm -> Warm.copy(alpha = 0.85f); else -> Color.Black.copy(alpha = 0.45f) })
-        .padding(horizontal = 10.dp, vertical = 4.dp)) {
-        Text(text, fontSize = 12.sp, color = if (accent) MaterialTheme.colorScheme.onPrimary else if (warm) Color(0xFF2A1A00) else Color.White, style = Mono)
+        .background(if (warm) Warm.copy(alpha = 0.9f) else Color.Black.copy(alpha = if (accent) 0.72f else 0.55f))
+        .then(if (accent) Modifier.border(1.dp, p, CircleShape) else Modifier)
+        .padding(horizontal = 11.dp, vertical = 5.dp)) {
+        Text(text, fontSize = 12.sp, color = when { accent -> androidx.compose.ui.graphics.lerp(p, Color.White, 0.35f); warm -> Color(0xFF2A1A00); else -> Color.White }, style = Mono)
     }
 }
 

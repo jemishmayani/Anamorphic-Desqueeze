@@ -117,8 +117,7 @@ fun PhotosScreen(st: AppState, settings: Settings, luts: LutManager, onBack: () 
     Column(Modifier.fillMaxSize()) {
         TopBar("Anamorphic photos", onBack)
         PhotoStepHeader(st, Modifier.padding(horizontal = 20.dp))
-        Spacer(Modifier.height(6.dp))
-        FlareLine(Modifier.padding(horizontal = 20.dp), alpha = 0.6f)
+        Spacer(Modifier.height(4.dp))
         Box(Modifier.weight(1f)) {
             AnimatedContent(st.photoStep, label = "photoStep", transitionSpec = {
                 smoothSlide(targetState.ordinal > initialState.ordinal, 12)
@@ -135,42 +134,24 @@ fun PhotosScreen(st: AppState, settings: Settings, luts: LutManager, onBack: () 
 }
 
 @Composable
-private fun PhotoStepHeader(st: AppState, modifier: Modifier) {
-    val c = MaterialTheme.colorScheme
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        PhotoStep.entries.forEachIndexed { i, s ->
-            val current = s == st.photoStep; val done = s.ordinal < st.photoStep.ordinal
-            val enabled = !st.photoBusy && (s == PhotoStep.Photos || st.photos.isNotEmpty())
-            Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { st.photoStep = s }.padding(horizontal = 4.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(22.dp).clip(CircleShape).background(when { current -> c.primary; done -> c.primary.copy(alpha = 0.18f); else -> c.surfaceContainerHigh }),
-                    contentAlignment = Alignment.Center) {
-                    if (done) Icon(AppIcons.Check, null, Modifier.size(14.dp), tint = c.primary)
-                    else Text("${i + 1}", style = MaterialTheme.typography.labelSmall, color = if (current) c.onPrimary else c.onSurfaceVariant)
-                }
-                Spacer(Modifier.width(6.dp))
-                Text(s.label, style = MaterialTheme.typography.labelLarge, color = if (current) c.onSurface else c.onSurfaceVariant)
-            }
-            if (i < PhotoStep.entries.size - 1) Box(Modifier.weight(1f).height(1.dp).background(if (done) c.primary.copy(alpha = 0.5f) else c.outlineVariant))
-        }
-    }
-}
+private fun PhotoStepHeader(st: AppState, modifier: Modifier) = PillSteps(PhotoStep.entries.map { it.label }, st.photoStep.ordinal,
+    enabled = { i -> !st.photoBusy && (i == 0 || st.photos.isNotEmpty()) }, onSelect = { st.photoStep = PhotoStep.entries[it] }, modifier = modifier)
 
 /** Back / Next, or the save progress while saving (like the video export bar). */
 @Composable
 private fun PhotoBottomBar(st: AppState, settings: Settings, luts: LutManager) {
     val ctx = LocalContext.current
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
             if (st.photoBusy) PhotoProgressPanel(st)
             else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (st.photoStep != PhotoStep.Photos) OutlinedButton(onClick = { st.photoStep = PhotoStep.entries[st.photoStep.ordinal - 1] },
-                    Modifier.height(56.dp), shape = RoundedCornerShape(16.dp)) { Text("Back") }
+                    Modifier.height(56.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Back") }
                 val last = st.photoStep == PhotoStep.Export
                 Button(onClick = {
                     if (!last) st.photoStep = PhotoStep.entries[st.photoStep.ordinal + 1]
                     else startPhotoExport(ctx, st, settings, luts, st.photos)
-                }, enabled = st.photos.isNotEmpty() && st.photoImporting == null, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(16.dp)) {
+                }, enabled = st.photos.isNotEmpty() && st.photoImporting == null, modifier = Modifier.weight(1f).height(56.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                     Text(if (!last) "Next: ${PhotoStep.entries[st.photoStep.ordinal + 1].label}"
                          else "Save ${st.photos.size} photo${if (st.photos.size == 1) "" else "s"}", style = MaterialTheme.typography.labelLarge)
                 }
@@ -198,7 +179,7 @@ private fun PhotoProgressPanel(st: AppState) {
         RunList(st.photoRuns, maxRows = 3)
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = { st.photoCancel = true }, enabled = !st.photoCancel,
-            modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
+            modifier = Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) {
             Text(if (st.photoCancel) "Stopping after this photo…" else "Cancel")
         }
         Text("Saved photos stay saved; cancelling skips the rest.", style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant,
@@ -218,7 +199,7 @@ private fun PhotosPage(st: AppState, luts: LutManager, pick: () -> Unit) {
                 "DNG (RAW) files can stay RAW: copied untouched and tagged so Lightroom, Camera Raw and Photoshop open them de-squeezed. " +
                 "Other photos are stretched to their real shape and saved as JPEG or lossless PNG. Your originals are untouched.",
                 style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
-            Button(onClick = pick, enabled = st.photoImporting == null, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
+            Button(onClick = pick, enabled = st.photoImporting == null, modifier = Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                 Text("Choose photos")
             }
             Text("DNG, JPEG, HEIC, PNG and WebP. Tip: in your gallery, select photos, tap Share and choose De-Squeeze.",
@@ -434,7 +415,7 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
     val canCompare = look.lutId != null || !look.color.isNeutral
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StretchFrame(origRatio, outRatio, ratio, look.vertical, (if (bounded) Modifier.weight(1f, fill = false) else Modifier).fillMaxWidth()) {
-            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(Color.Black)
+            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(26.dp)).background(Color.Black)
                 .pointerInput(Unit) {
                     detectTapGestures(onPress = {
                         val j = scope.launch { delay(200); holding = true }
