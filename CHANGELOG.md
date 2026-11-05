@@ -2,6 +2,12 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.37 — 2026-11-05
+
+### Fixed
+- **Crash when tapping Before / After on a clip with a LUT.** The app read the playback position from a background thread, which the video player doesn't allow. It now reads the position first and only grabs the frame in the background. If the frame can't be grabbed, it shows a message instead of closing.
+- **Clearer crash reports when the live LUT preview fails.** Reports now include the underlying reason, not just the error type.
+
 ## v1.36 — 2026-10-18
 
 ### Changed

@@ -159,7 +159,9 @@ fun PreviewPlayer(
         val usingFx = useLut || useRotate
         val l = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
-                Diag.step("Preview error ${e.errorCodeName} (attempt ${attempt + 1}, fx=$usingFx): ${e.cause?.javaClass?.simpleName}")
+                Diag.step("Preview error ${e.errorCodeName} (attempt ${attempt + 1}, fx=$usingFx): " +
+                    generateSequence(e.cause) { it.cause }.take(3).joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message?.take(160)}" } +
+                    (e.cause?.stackTrace?.take(3)?.joinToString(prefix = " @ ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" } ?: ""))
                 val unsupported = !DeviceCaps.canDecode(v.codec, v.bitDepth) ||
                     (e.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED && autoRetries >= 1)
                 when {
@@ -200,9 +202,11 @@ fun PreviewPlayer(
     fun startCompare() {
         val l = lut ?: return
         player.playWhenReady = false; comparing = true
+        // The player may only be touched on the main thread: read the position here, then grab the frame in the background.
+        val atMs = player.currentPosition
         scope.launch {
-            val pair = withContext(Dispatchers.Default) {
-                val full = Frames.frameAt(ctx, v, player.currentPosition, 1280, g.extraRotation, exact = true) ?: return@withContext null
+            val pair = runCatching { withContext(Dispatchers.Default) {
+                val full = Frames.frameAt(ctx, v, atMs, 1280, g.extraRotation, exact = true) ?: return@withContext null
                 // Same edge crop as the export, so the still matches the preview.
                 val before = if (crop > 0f) {
                     val k = 1f - 2f * crop.coerceIn(0f, 0.4f)
@@ -212,7 +216,7 @@ fun PreviewPlayer(
                 val px = IntArray(before.width * before.height); before.getPixels(px, 0, before.width, 0, 0, before.width, before.height)
                 val after = Bitmap.createBitmap(l.applyTo(px, lutStrength), before.width, before.height, Bitmap.Config.ARGB_8888)
                 before.asImageBitmap() to after.asImageBitmap()
-            }
+            } }.getOrNull()
             comparing = false
             if (pair == null) error = "Couldn't grab this frame for comparison." else compare = pair
         }
