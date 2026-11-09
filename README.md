@@ -178,7 +178,7 @@ actual image detail is similar or lower.
 - **Compatibility check** for each clip (input, desqueeze, output, your phone's encoder limit, ✓ / ⚠ / ✗ result) and a **pre-export warning** that lists anything worth knowing before starting
 - **Estimates** of output size and processing time, which learn your phone's real speed
 - **Re-encode options:** HEVC (preferred) or H.264; Maximum / High / Balanced / Smaller File; frame rate and audio kept; automatic retries with safer settings if the encoder refuses
-- **Batch export** with progress and a per-clip result list
+- **Batch export** with numbered clips, progress and a per-clip result list; clips interrupted by another app retry automatically, and **Export the failed clips again** re-runs only the failures
 
 **This phone**
 - **Device diagnostics:** a plain-language summary; chipset, memory, storage, display HDR and graphics; measured and manufacturer speeds; a ✓ / ⚠ / ✗ checklist of decode/encode support (HEVC, 10-bit, H.264, AV1), maximum frame width, 4K frame rate and bitrate; and a squeeze check for 4K and 1080p. **Copy report** for bug reports
