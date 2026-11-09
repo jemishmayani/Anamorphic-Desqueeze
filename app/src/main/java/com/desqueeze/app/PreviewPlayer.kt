@@ -93,6 +93,11 @@ fun PreviewPlayer(
     onHold: (Boolean) -> Unit = {},
     /** Shows the Before / After button on the video (only the Colour tool asks for it). */
     showCompare: Boolean = true,
+    /**
+     * What press-and-hold does: false = show the clip squeezed (as shot); true = show it without the look
+     * ("Before") and with it again on release ("After"), keeping the de-squeezed shape. The Colour tool uses true.
+     */
+    holdForBefore: Boolean = false,
     modifier: Modifier = Modifier,
     /** Edge crop (fraction from each edge): the preview zooms in by the same amount. */
     crop: Float = 0f,
@@ -106,7 +111,8 @@ fun PreviewPlayer(
     var holding by remember { mutableStateOf(false) }
     val holdCb by rememberUpdatedState(onHold)
     LaunchedEffect(holding) { holdCb(holding) }
-    val showWide = desqueezed && !holding
+    val holdBefore = holding && holdForBefore
+    val showWide = desqueezed && !(holding && !holdForBefore)
     val target = if (showWide) g.outRatio else g.inRatio
     val ratio by animateFloatAsState(target, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow), label = "ratio")
 
@@ -123,9 +129,11 @@ fun PreviewPlayer(
     var glFailed by remember(v.uri) { mutableStateOf(false) }
     val glPath = !v.isHdr && !glFailed
     val useLut = lut != null && lutOn && (glPath || !effectsFailed)
+    // What's on screen right now: the look, unless "Before" is being held (instant on the GPU path).
+    val lookShown = useLut && !holdBefore
     // Orientation overrides rotate the video view itself (instant), instead of rebuilding the player with a GPU effect.
     val useRotate = false
-    val effectsKey = if (glPath) null else Triple(if (useRotate) g.extraRotation else 0, useLut, if (useLut) (appliedStrength * 20).toInt() else -1)
+    val effectsKey = if (glPath) null else Triple(if (useRotate) g.extraRotation else 0, lookShown, if (lookShown) (appliedStrength * 20).toInt() else -1)
     val gfx = remember(v.uri) { GlHolder() }
 
     // Bumped to rebuild the player after a transient decoder failure (or when the user taps Retry).
@@ -215,7 +223,7 @@ fun PreviewPlayer(
     }
 
     var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
-    LaunchedEffect(gfx, lut, lutStrength, useLut) { gfx.look = if (useLut) lut else null; gfx.strength = lutStrength; gfx.applyLook() }
+    LaunchedEffect(gfx, lut, lutStrength, lookShown) { gfx.look = if (lookShown) lut else null; gfx.strength = lutStrength; gfx.applyLook() }
 
     fun startCompare() {
         val l = lut ?: return
@@ -376,13 +384,14 @@ fun PreviewPlayer(
                 verticalAlignment = Alignment.CenterVertically) {
                 Pill(if (showWide) "De-squeezed ${fmtSqueeze(stretchFactor(g))} ${if (g.vertical) "↕" else "↔"}"
                      else if (holding) "Squeezed (holding)" else "Squeezed", accent = showWide)
-                if (useLut) { Spacer(Modifier.width(6.dp)); Pill(lookLabel ?: "LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
+                if (holdBefore && useLut) { Spacer(Modifier.width(6.dp)); Pill("Before (holding)", accent = false) }
+                else if (useLut) { Spacer(Modifier.width(6.dp)); Pill(lookLabel ?: "LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
                 // The phone couldn't play the look live: say so, and point to the still comparison (which still works).
                 else if (lut != null && lutOn && !glPath && effectsFailed) { Spacer(Modifier.width(6.dp)); Pill("Look: tap Before / After", accent = false, warm = true) }
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }
-            Box(Modifier.align(Alignment.Center)) { if (hint && error == null && !comparing) Pill("Hold to compare with the original", accent = false) }
+            Box(Modifier.align(Alignment.Center)) { if (hint && error == null && !comparing) Pill(if (holdForBefore && useLut) "Hold to see it before the look" else "Hold to see it squeezed", accent = false) }
             Box(Modifier.align(Alignment.Center)) {
                 val spinning = comparing || (!ready && error == null && compare == null)
                 if (spinning) CircularProgressIndicator(color = Color.White.copy(alpha = 0.85f), strokeWidth = 2.dp, modifier = Modifier.size(30.dp))

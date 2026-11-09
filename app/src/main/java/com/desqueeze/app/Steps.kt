@@ -919,7 +919,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
             else PreviewPlayer(v, g, st.desqueezed, memory, lut = look, lutStrength = 1f, lutOn = st.lutPreview, crop = st.cropFor(v), lookLabel = lookLabel,
                 guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, scopeLarge = st.scopeLarge,
                 onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = if (panes.wide) previewMax else null,
-                showCompare = st.lookTool == 1, modifier = videoMod)
+                showCompare = st.lookTool == 1, holdForBefore = st.lookTool == 1, modifier = videoMod)
         }
     }
 }

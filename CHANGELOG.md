@@ -2,6 +2,11 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.40 — 2026-11-09
+
+### Fixed
+- **Press-and-hold in the Colour tool now shows Before / After:** hold the video (or photo) to see it without the LUT and colour changes, and let go to see the look again. The shape stays de-squeezed, and the switch is instant on the live preview. In every other tool, press-and-hold still only shows the picture squeezed, with the look kept on.
+
 ## v1.39 — 2026-11-09
 
 ### Changed

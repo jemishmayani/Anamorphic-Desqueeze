@@ -372,7 +372,8 @@ private fun PhotoEditPage(st: AppState, luts: LutManager, panes: Panes) {
     )
     PreviewWithTools(st, panes, tools, st.photoTool, { st.photoTool = it }) { mod ->
         PhotoSwitcher(st)
-        key(item.uri) { PhotoPreviewBox(st, luts, item, look, mod, bounded = !panes.wide) }
+        // In the Colour tool, press-and-hold shows the photo before the look; elsewhere it shows it squeezed.
+        key(item.uri) { PhotoPreviewBox(st, luts, item, look, mod, bounded = !panes.wide, holdForBefore = st.photoTool == 3) }
     }
 }
 
@@ -381,7 +382,7 @@ private fun PhotoEditPage(st: AppState, luts: LutManager, panes: Panes) {
  * changes the picture only along the stretch axis. Dashed outline + arrows show the stretch.
  */
 @Composable
-private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, look: PhotoLook, modifier: Modifier, bounded: Boolean) {
+private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, look: PhotoLook, modifier: Modifier, bounded: Boolean, holdForBefore: Boolean = false) {
     val ctx = LocalContext.current
     val c = MaterialTheme.colorScheme
     val lutCube by produceState<LutManager.CubeLut?>(null, look.lutId) {
@@ -412,7 +413,8 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
     val shown = preview
     val outRatio = shown?.after?.let { it.width.toFloat() / it.height } ?: (outW.toFloat() / outH)
     val origRatio = shown?.original?.let { it.width.toFloat() / it.height } ?: (item.width.toFloat() / item.height)
-    val ratio by animateFloatAsState(if (holding) origRatio else outRatio, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), label = "photoRatio")
+    val squeezeHeld = holding && !holdForBefore
+    val ratio by animateFloatAsState(if (squeezeHeld) origRatio else outRatio, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), label = "photoRatio")
     val scope = rememberCoroutineScope()
     val canCompare = look.lutId != null || !look.color.isNeutral
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -429,12 +431,14 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
                     })
                 }) {
                 Box(Modifier.matchParentSize()) {
-                    val img = shown?.after   // hold only changes the shape (as shot); the look stays on
+                    // Hold: in Colour, the photo without the look (same shape); elsewhere, the shape as shot with the look on.
+                    val img = shown?.let { if (holding && holdForBefore) it.plain else it.after }
                     if (img != null) Image(img, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
                 }
-                StretchOutline(look.vertical, look.squeeze, show = !holding, Modifier.matchParentSize())
+                StretchOutline(look.vertical, look.squeeze, show = !squeezeHeld, Modifier.matchParentSize())
                 Row(Modifier.align(Alignment.TopStart).padding(10.dp)) {
-                    Pill(if (holding) "As shot (holding)" else "De-squeezed ${fmtSqueeze(look.squeeze)} ${if (look.vertical) "↕" else "↔"}", accent = !holding)
+                    Pill(when { squeezeHeld -> "As shot (holding)"; holding -> "Before (holding)"
+                        else -> "De-squeezed ${fmtSqueeze(look.squeeze)} ${if (look.vertical) "↕" else "↔"}" }, accent = !holding)
                 }
                 Box(Modifier.align(Alignment.Center)) { if (shown == null) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp)) }
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -447,7 +451,7 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${item.width} × ${item.height}${if (item.isDng) " RAW" else ""} → $outW × $outH · hold to see it as shot",
+            Text("${item.width} × ${item.height}${if (item.isDng) " RAW" else ""} → $outW × $outH · hold to see it ${if (holdForBefore) "before the look" else "as shot"}",
                 Modifier.weight(1f), style = MaterialTheme.typography.labelSmall.merge(Mono), color = c.onSurfaceVariant, maxLines = 2)
             TextButton(onClick = { comparing = !comparing }, enabled = canCompare && shown != null) { Text(if (comparing) "Done" else "Before / After") }
         }
