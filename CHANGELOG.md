@@ -2,6 +2,24 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.38 — 2026-11-09
+
+### Fixed
+- **Before / After for LUTs and colour:**
+  - Dragging the divider counted as press-and-hold, which squeezed the picture underneath (videos) or hid the comparison (photos). Touches on the comparison now stay on it.
+  - It no longer keeps showing a still from the previous clip or the previous look after you switch.
+  - **Before / After at full quality** now works for colour-only looks too. A tap while the look is still being prepared is no longer ignored: it opens as soon as the look is ready.
+  - If the phone can't open a second decoder to read the frame (common with 4K 10-bit), it uses the paused preview frame instead of failing.
+- **The live LUT preview no longer keeps restarting on phones where it fails.** After two failures it turns off for that clip, plays the plain preview, and a badge points to **Before / After**, which still shows the look.
+- **Switching to another clip with the same LUT showed it without the look** in the Look step.
+- **Exports interrupted by another app** (for example a video playing in a Google Photos floating window, which takes the phone's video hardware) no longer fail or quietly drop to 8-bit or a smaller size. The clip waits a few seconds and starts again with the same settings, up to three tries. The export list shows "Retrying" meanwhile.
+- When every clip fails, the summary now says "Nothing was saved" instead of "Saved to Movies/…".
+- The clip details said "The same settings apply to all" even though each clip has its own settings.
+
+### Added
+- **Export the failed clips again:** after an export with failures, one button re-runs only the clips that failed.
+- **Clip numbers in batches:** clips are numbered in the clip list, the clip chips, the export list (#1, #2 …), the results, the notification ("Exporting 2 of 5 · clip 4") and the crash report. Photos are numbered too.
+
 ## v1.37 — 2026-11-05
 
 ### Fixed
