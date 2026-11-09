@@ -372,8 +372,8 @@ private fun PhotoEditPage(st: AppState, luts: LutManager, panes: Panes) {
     )
     PreviewWithTools(st, panes, tools, st.photoTool, { st.photoTool = it }) { mod ->
         PhotoSwitcher(st)
-        // In the Colour tool, press-and-hold shows the photo before the look; elsewhere it shows it squeezed.
-        key(item.uri) { PhotoPreviewBox(st, luts, item, look, mod, bounded = !panes.wide, holdForBefore = st.photoTool == 3) }
+        // In the LUT and Colour tools, press-and-hold shows the photo without the look; in Squeeze and Crop, as shot.
+        key(item.uri) { PhotoPreviewBox(st, luts, item, look, mod, bounded = !panes.wide, holdForBefore = st.photoTool >= 2) }
     }
 }
 
@@ -413,7 +413,8 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
     val shown = preview
     val outRatio = shown?.after?.let { it.width.toFloat() / it.height } ?: (outW.toFloat() / outH)
     val origRatio = shown?.original?.let { it.width.toFloat() / it.height } ?: (item.width.toFloat() / item.height)
-    val squeezeHeld = holding && !holdForBefore
+    val canBefore = holdForBefore && (look.lutId != null || !look.color.isNeutral)
+    val squeezeHeld = holding && !canBefore
     val ratio by animateFloatAsState(if (squeezeHeld) origRatio else outRatio, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), label = "photoRatio")
     val scope = rememberCoroutineScope()
     val canCompare = look.lutId != null || !look.color.isNeutral
@@ -432,7 +433,7 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
                 }) {
                 Box(Modifier.matchParentSize()) {
                     // Hold: in Colour, the photo without the look (same shape); elsewhere, the shape as shot with the look on.
-                    val img = shown?.let { if (holding && holdForBefore) it.plain else it.after }
+                    val img = shown?.let { if (holding && canBefore) it.plain else it.after }
                     if (img != null) Image(img, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
                 }
                 StretchOutline(look.vertical, look.squeeze, show = !squeezeHeld, Modifier.matchParentSize())
@@ -451,7 +452,7 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${item.width} × ${item.height}${if (item.isDng) " RAW" else ""} → $outW × $outH · hold to see it ${if (holdForBefore) "before the look" else "as shot"}",
+            Text("${item.width} × ${item.height}${if (item.isDng) " RAW" else ""} → $outW × $outH · hold to see it ${if (canBefore) "without the look" else "as shot"}",
                 Modifier.weight(1f), style = MaterialTheme.typography.labelSmall.merge(Mono), color = c.onSurfaceVariant, maxLines = 2)
             TextButton(onClick = { comparing = !comparing }, enabled = canCompare && shown != null) { Text(if (comparing) "Done" else "Before / After") }
         }

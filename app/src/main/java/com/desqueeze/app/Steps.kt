@@ -866,6 +866,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
         }
         AnimatedVisibility(st.lutId != null) {
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Segmented(listOf("Look off", "Look on"), if (st.lutPreview) 1 else 0) { st.lutPreview = it == 1 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Strength", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Text("${(st.strength * 100).toInt()}%", style = MaterialTheme.typography.titleMedium.merge(Mono), color = MaterialTheme.colorScheme.primary)
@@ -880,7 +881,11 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
                                 .padding(horizontal = 6.dp, vertical = 4.dp))
                     }
                 }
-                Text("What you see is what you export. Press and hold the video to see it squeezed. To compare with and without the look, use Before / After in Colour. " +
+                OutlinedButton(onClick = { st.compareRequest++ }, enabled = !st.busy && look != null,
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = androidx.compose.foundation.shape.CircleShape) {
+                    Text("Before / After at full quality")
+                }
+                Text("What you see is what you export. Press and hold the video to see it without the look; let go to see it again. " +
                     "LUTs are only applied in Re-encode, so clips are now recommended for Re-encode.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -896,22 +901,20 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
         Tool("Colour", AppIcons.Sliders, adj.summary() ?: "None", active = !adj.isNeutral) {
             // Before / After of the whole look (LUT + colour) lives here; in the LUT tool, press-and-hold only squeezes.
             Section("Before / After") {
-                Segmented(listOf("Before", "After"), if (st.lutPreview || look == null) 1 else 0) { st.lutPreview = it == 1 }
+                Segmented(listOf("Look off", "Look on"), if (st.lutPreview || look == null) 1 else 0) { st.lutPreview = it == 1 }
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(onClick = { st.compareRequest++ }, enabled = !st.busy && look != null,
                     modifier = Modifier.fillMaxWidth().height(48.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                     Text("Before / After at full quality")
                 }
                 Text(if (look == null) "Add a LUT or change a colour setting to compare." else
-                    "Before shows the clip without the LUT and colour changes. The full-quality view is a still frame with a slider.",
+                    "Press and hold the video to see it without the LUT and colour changes. The full-quality view is a still frame with a slider.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
             ColorSection(st)
         },
         Tool("Exposure", AppIcons.Histogram, st.scope.label, active = st.scope != Scope.OFF) { ExposureSection(st) },
     )
-    // "Before" is a Colour-tool view: leaving that tool always comes back to the look.
-    LaunchedEffect(st.lookTool) { if (st.lookTool != 1) st.lutPreview = true }
     PreviewWithTools(st, panes, tools, st.lookTool, { st.lookTool = it }) { videoMod ->
         ClipSwitcher(st) { clip -> st.lutFor(clip)?.let { id -> st.lutList.firstOrNull { it.id == id }?.name } ?: "No LUT" }
         key(v.uri) {
@@ -919,7 +922,8 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
             else PreviewPlayer(v, g, st.desqueezed, memory, lut = look, lutStrength = 1f, lutOn = st.lutPreview, crop = st.cropFor(v), lookLabel = lookLabel,
                 guides = st.guides, compareRequest = st.compareRequest, trim = st.trimFor(v), exposure = st.scope, scopeLarge = st.scopeLarge,
                 onScopeLarge = { st.scopeLarge = it }, scopePos = st.scopePos, onScopePos = { st.scopePos = it }, onScopeClose = { st.scope = Scope.OFF }, onStats = { st.scopeStats = it }, maxHeight = if (panes.wide) previewMax else null,
-                showCompare = st.lookTool == 1, holdForBefore = st.lookTool == 1, modifier = videoMod)
+                // In Look, press-and-hold compares with and without the look (the Frame step's hold shows it squeezed).
+                showCompare = true, holdForBefore = true, modifier = videoMod)
         }
     }
 }

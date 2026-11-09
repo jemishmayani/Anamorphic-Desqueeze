@@ -111,8 +111,10 @@ fun PreviewPlayer(
     var holding by remember { mutableStateOf(false) }
     val holdCb by rememberUpdatedState(onHold)
     LaunchedEffect(holding) { holdCb(holding) }
-    val holdBefore = holding && holdForBefore
-    val showWide = desqueezed && !(holding && !holdForBefore)
+    // Hold shows "Before" only when there's a look to take off; otherwise it shows the clip squeezed.
+    val beforeMode = holdForBefore && lut != null && lutOn
+    val holdBefore = holding && beforeMode
+    val showWide = desqueezed && !(holding && !beforeMode)
     val target = if (showWide) g.outRatio else g.inRatio
     val ratio by animateFloatAsState(target, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow), label = "ratio")
 
@@ -391,7 +393,7 @@ fun PreviewPlayer(
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }
-            Box(Modifier.align(Alignment.Center)) { if (hint && error == null && !comparing) Pill(if (holdForBefore && useLut) "Hold to see it before the look" else "Hold to see it squeezed", accent = false) }
+            Box(Modifier.align(Alignment.Center)) { if (hint && error == null && !comparing) Pill(if (beforeMode) "Hold to see it without the look" else "Hold to see it squeezed", accent = false) }
             Box(Modifier.align(Alignment.Center)) {
                 val spinning = comparing || (!ready && error == null && compare == null)
                 if (spinning) CircularProgressIndicator(color = Color.White.copy(alpha = 0.85f), strokeWidth = 2.dp, modifier = Modifier.size(30.dp))

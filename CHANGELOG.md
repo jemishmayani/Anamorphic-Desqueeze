@@ -2,6 +2,13 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.41 — 2026-11-09
+
+### Fixed
+- **Press-and-hold in the Look step is Before / After again:** hold the video to see it without the LUT and colour changes, and let go to see the look. This works in every Look tool (LUT, Colour, Exposure) and keeps the de-squeezed shape. v1.39–1.40 made the LUT tool's hold show the clip squeezed, which looks like nothing happened on a 1.00× clip. With no look applied, hold still shows the clip squeezed, and the Frame step's hold is unchanged.
+- **The Look off / Look on toggle and "Before / After at full quality" are back in the LUT tool.** v1.39 had moved them to Colour only; they're now in both.
+- **Photos:** in the LUT and Colour tools, press-and-hold shows the photo without the look. In Squeeze and Crop, it shows the photo as shot.
+
 ## v1.40 — 2026-11-09
 
 ### Fixed
