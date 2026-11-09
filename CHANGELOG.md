@@ -2,6 +2,33 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.39 — 2026-11-09
+
+### Changed
+- **New look: Ice liquid glass.** The app floats on a softly blurred, dimmed copy of the clip you're editing (Android 12+; older phones get the coloured glow alone), with ice-blue light behind it.
+  - Panels, the tool sheet, the step pill, cards and buttons are translucent glass with fine light edges, so the backdrop glows through.
+  - Menus and dialogs stay solid so they're easy to read.
+  - Ice blue is the new default accent. Amber, Mint, Cyan, Violet, Rose, Mono and Wallpaper are still in **Settings → Appearance**, and light theme is frosted white.
+- **Much smoother live preview with a LUT or colour changes.** The look is now drawn by the app's own GPU shader between the player and the screen, instead of rebuilding the video player for every change:
+  - A new LUT, strength or colour setting shows at once, even while paused.
+  - No black flash and no reloading the clip.
+  - It also avoids the live-preview failures some phones had with D-Log footage.
+  - HDR clips keep the previous path, so the phone's HDR handling stays as it was.
+- **Live scrubbing:** dragging along the timeline now shows the picture under your finger, then lands on the exact frame when you let go. Before, the picture only moved when you released. The playhead also moves more smoothly while playing.
+- **Press-and-hold only switches between squeezed and de-squeezed.** The look stays on, for videos and photos alike.
+- **Before / After moved to the Colour tool:** Before / After switches, the full-quality comparison, and the Before / After button on the video (shown while Colour is open). The LUT tool keeps just the LUT picker and strength.
+
+### Fixed
+- **LUT thumbnails colour in almost at once.** Each LUT now has a tiny 17-point copy for the small tiles, made once in the background and saved next to it. Before, every tile loaded the full LUT (up to 3 MB each). Up to 160 tiles stay in memory.
+
+### Added
+- **Full-size de-squeezed previews inside exported DNGs.** The app now develops the RAW sensor data itself instead of relying on the phone's decoder, which only gave a small preview (often 720 px):
+  - Uncompressed and lossless-JPEG DNGs, in strips or tiles.
+  - Uses the camera's black/white levels, as-shot white balance and colour matrix, with a gentle tone curve.
+  - The embedded preview has the DNG's crop and de-squeeze, so galleries show the real shape at full sharpness.
+  - Sensors over 14 MP are developed at half resolution to fit in memory.
+  - If a DNG can't be developed, the app falls back to the previous preview.
+
 ## v1.38 — 2026-11-09
 
 ### Fixed

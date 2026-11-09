@@ -188,7 +188,7 @@ actual image detail is similar or lower.
 - Organized settings with **About & support**: check for updates (GitHub version), what's new, source code, privacy, licenses and [support the development](https://buymeacoffee.com/jemishmayani)
 - **Share to De-Squeeze** from Google Photos, your gallery or a file manager (one or many videos)
 - **Tablet & landscape layout:** the preview sits beside the controls on wide screens
-- **Cinema Amber** design (warm near-black, amber accent, Space Grotesk type, pill controls); light, dark or system theme with an **accent colour** of your choice (or your wallpaper's Material You colours); about 4 MB; no ads, accounts or tracking
+- **Ice liquid glass** design (translucent panels over a blurred copy of your clip, ice-blue accent, Space Grotesk type, pill controls); light, dark or system theme with an **accent colour** of your choice (or your wallpaper's Material You colours); about 4 MB; no ads, accounts or tracking
 
 ## Install & update
 
@@ -335,7 +335,9 @@ Source layout (`app/src/main/java/com/desqueeze/app/`):
 | `LutPicker.kt` | LUT tiles with clip previews, and the multi-file import launcher |
 | `Settings.kt`, `SettingsScreen.kt` | Preferences; Settings, LUT library, About & support, update check |
 | `Diag.kt` | Crash, freeze and low-memory reports |
-| `Theme.kt` | Cinema Amber palette, accent colours, Material You, Space Grotesk typography, shapes |
+| `Theme.kt` | Ice liquid-glass palette, glass backdrop, accent colours, Material You, Space Grotesk typography, shapes |
+| `LookRenderer.kt` | GPU shader that draws the live look (3D LUT) between the player and the screen |
+| `RawDeveloper.kt` | DNG RAW developer (uncompressed / lossless JPEG, white balance, colour matrix) for full-size DNG previews |
 
 Build variants: `app/src/github/` adds the internet permission used only by *Check for updates*.
 
