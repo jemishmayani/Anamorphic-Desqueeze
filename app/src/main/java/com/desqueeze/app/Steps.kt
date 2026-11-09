@@ -360,7 +360,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
         }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 st.videos.forEachIndexed { i, v ->
-                    ClipRow(v, selected = i == st.selected, onClick = { st.selected = i },
+                    ClipRow(v, selected = i == st.selected, num = if (st.videos.size > 1) i + 1 else 0, onClick = { st.selected = i },
                         onRemove = if (st.busy) null else ({
                             st.videos = st.videos.filterIndexed { j, _ -> j != i }
                             st.selected = st.selected.coerceAtMost((st.videos.size - 1).coerceAtLeast(0))
@@ -379,7 +379,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
 }
 
 @Composable
-fun ClipRow(v: VideoInfo, selected: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)?) {
+fun ClipRow(v: VideoInfo, selected: Boolean, num: Int = 0, onClick: () -> Unit, onRemove: (() -> Unit)?) {
     val c = MaterialTheme.colorScheme
     val border = if (selected) c.primary else c.outlineVariant
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surfaceContainer)
@@ -392,6 +392,10 @@ fun ClipRow(v: VideoInfo, selected: Boolean, onClick: () -> Unit, onRemove: (() 
             Box(Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.6f))
                 .padding(horizontal = 5.dp, vertical = 1.dp)) {
                 Text(fmtDuration(v.durationMs), style = MaterialTheme.typography.labelSmall.merge(Mono), color = Color.White)
+            }
+            if (num > 0) Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(20.dp).clip(CircleShape)
+                .background(if (selected) c.primary else Color.Black.copy(alpha = 0.65f)), contentAlignment = Alignment.Center) {
+                Text("$num", style = MaterialTheme.typography.labelSmall, color = if (selected) c.onPrimary else Color.White)
             }
         }
         Spacer(Modifier.width(12.dp))
@@ -811,7 +815,8 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
     val strength = st.strength; val adj = st.color
     // Kept across changes (produceState would drop to "no look" for a moment and rebuild the player twice).
     var look by remember(v.uri) { mutableStateOf<LutManager.CubeLut?>(null) }
-    LaunchedEffect(cube, strength, adj) {
+    // Keyed on the clip too: the next clip with the same LUT and settings used to get no look at all.
+    LaunchedEffect(v.uri, cube, strength, adj) {
         if (cube == null && adj.isNeutral) { look = null; return@LaunchedEffect }
         if (look != null) delay(200)   // sliders move continuously; build once they settle
         look = withContext(Dispatchers.Default) { LookBuilder.build(cube, strength, adj) }
@@ -877,7 +882,7 @@ fun LookStep(st: AppState, luts: LutManager, memory: PlayheadMemory, panes: Pane
                                 .padding(horizontal = 6.dp, vertical = 4.dp))
                     }
                 }
-                OutlinedButton(onClick = { st.compareRequest++ }, enabled = !st.busy && cube != null,
+                OutlinedButton(onClick = { st.compareRequest++ }, enabled = !st.busy && look != null,
                     modifier = Modifier.fillMaxWidth().height(48.dp), shape = androidx.compose.foundation.shape.CircleShape) {
                     Text("Before / After at full quality")
                 }
@@ -1372,12 +1377,22 @@ fun ExportDonePanel(st: AppState, done: ExportSummary) {
                 good -> "Exported ${done.ok} videos"
                 else -> "${done.ok} exported, ${done.failed} failed"
             }, style = MaterialTheme.typography.titleMedium)
-            Text("Saved to ${done.folder}. Your originals are untouched.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            Text(if (done.ok > 0) "Saved to ${done.folder}. Your originals are untouched." else "Nothing was saved. Your originals are untouched.",
+                style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
         }
     }
     Spacer(Modifier.height(10.dp))
     RunList(st.runs, maxRows = 3)
     Spacer(Modifier.height(10.dp))
+    val retry = done.failedUris.filter { u -> st.videos.any { it.uri == u } }.toSet()
+    if (retry.isNotEmpty()) {
+        Button(onClick = { ExportController.exporter?.let { ExportController.start(ctx, st, it, only = retry) } },
+            Modifier.fillMaxWidth().height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) {
+            Icon(AppIcons.Rotate, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+            Text(if (retry.size == 1) "Export the failed clip again" else "Export the ${retry.size} failed clips again")
+        }
+        Spacer(Modifier.height(10.dp))
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (done.lastUri != null) OutlinedButton(onClick = {
             runCatching {
@@ -1387,7 +1402,8 @@ fun ExportDonePanel(st: AppState, done: ExportSummary) {
         }, Modifier.height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) {
             Icon(AppIcons.Play, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Play")
         }
-        Button(onClick = { st.exportDone = null }, Modifier.weight(1f).height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Done") }
+        if (retry.isEmpty()) Button(onClick = { st.exportDone = null }, Modifier.weight(1f).height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Done") }
+        else OutlinedButton(onClick = { st.exportDone = null }, Modifier.weight(1f).height(52.dp), shape = androidx.compose.foundation.shape.CircleShape) { Text("Done") }
     }
 }
 
@@ -1408,12 +1424,16 @@ fun RunList(runs: List<ClipRun>, maxRows: Int) {
                     }
                 }
                 Spacer(Modifier.width(8.dp))
+                if (r.num > 0) {
+                    Text("#${r.num}", style = MaterialTheme.typography.labelSmall.merge(Mono), color = c.primary, modifier = Modifier.widthIn(min = 26.dp))
+                    Spacer(Modifier.width(4.dp))
+                }
                 Text(r.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = if (r.state == RunState.WAITING) c.onSurfaceVariant else c.onSurface)
                 Spacer(Modifier.width(8.dp))
                 Text(when (r.state) {
                     RunState.WAITING -> r.waitLabel ?: r.method.label
-                    RunState.RUNNING -> "${r.pct}%"
+                    RunState.RUNNING -> if (r.note == "Retrying" && r.pct == 0) "Retrying" else "${r.pct}%"
                     RunState.DONE -> r.note ?: "Done"
                     RunState.FAILED -> if (r.note == "Cancelled") "Cancelled" else "Failed"
                 }, style = MaterialTheme.typography.labelSmall.merge(Mono), color = if (r.state == RunState.FAILED) c.error else c.onSurfaceVariant)

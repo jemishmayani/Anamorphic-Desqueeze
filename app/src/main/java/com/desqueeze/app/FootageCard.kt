@@ -125,11 +125,11 @@ fun FootageCard(st: AppState, v: VideoInfo, enabled: Boolean, onChange: () -> Un
 
         if (st.videos.size > 1) {
             HorizontalDivider(color = c.outlineVariant)
-            Text("${st.videos.size} clips. The same settings apply to all.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            Text("${st.videos.size} clips. Each has its own settings.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(st.videos) { i, clip ->
                     FilterChip(selected = i == st.selected, onClick = { st.selected = i },
-                        label = { Text(clip.name.substringBeforeLast('.'), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp)) })
+                        label = { Text("${i + 1}. " + clip.name.substringBeforeLast('.'), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp)) })
                 }
             }
         }

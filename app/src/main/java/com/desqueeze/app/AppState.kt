@@ -233,6 +233,10 @@ data class FormatSwitch(val format: OutFormat, val previous: Map<String, Pair<Ex
 enum class RunState { WAITING, RUNNING, DONE, FAILED }
 data class ClipRun(val name: String, val method: ExportMode, val state: RunState = RunState.WAITING, val pct: Int = 0, val note: String? = null,
     /** Shown while waiting, instead of the export method (e.g. "DNG" for photos). */
-    val waitLabel: String? = null)
+    val waitLabel: String? = null,
+    /** The clip's number in the list (1-based), shown in front of its name; 0 hides it. */
+    val num: Int = 0)
 /** Shown after an export finishes, until the user taps Done, so a fast export is never missed. */
-data class ExportSummary(val ok: Int, val failed: Int, val folder: String, val lastUri: android.net.Uri?)
+data class ExportSummary(val ok: Int, val failed: Int, val folder: String, val lastUri: android.net.Uri?,
+    /** Clips that failed, for "Export failed clips again". */
+    val failedUris: List<android.net.Uri> = emptyList())

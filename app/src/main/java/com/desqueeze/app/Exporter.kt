@@ -84,7 +84,15 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
     private data class Attempt(val mime: String, val w: Int, val h: Int, val note: String?)
 
     /** Tries the best settings first, then progressively safer ones if the encoder refuses. */
-    suspend fun export(job0: ExportJob, onProgress: (Int) -> Unit, tagged: Boolean = false): ExportResult {
+    /**
+     * [interruptible]: a failure after the encode was already under way is reported as [Interrupted] (another app took
+     * the phone's video hardware, e.g. a video playing in a floating window) instead of falling back to a smaller size,
+     * another codec or 8-bit. The caller then waits and runs the clip again with the same settings.
+     */
+    suspend fun export(job0: ExportJob, onProgress0: (Int) -> Unit, tagged: Boolean = false, interruptible: Boolean = false): ExportResult {
+        var maxP = 0
+        val onProgress: (Int) -> Unit = { p -> if (p > maxP) maxP = p; onProgress0(p) }
+        fun midRun(e: Throwable): Boolean = interruptible && (maxP >= 2 || Interrupted.looksLikeInterruption(e))
         // Tagged never reframes: formats need the picture stretched into a new frame.
         val job = if (tagged) job0.copy(format = OutFormat.ORIGINAL, fill = false, res = OutRes.AUTO) else job0
         val hevcOk = hasEncoder(MimeTypes.VIDEO_H265)
@@ -126,7 +134,8 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
             } catch (e: kotlinx.coroutines.CancellationException) { throw e
             } catch (e: Throwable) {
                 val why = (e.message ?: e.javaClass.simpleName).replace("\n", " ").take(160)
-                Diag.step("10-bit failed: $why")
+                Diag.step("10-bit failed at $maxP%: $why")
+                if (midRun(e)) throw Interrupted(e)
                 tenBitNote = "10-bit export didn't work on this phone ($why), so this clip was saved in 8-bit. You can turn 10-bit off in Settings."
                 onProgress(0)
             }
@@ -140,8 +149,9 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
                     listOfNotNull(if (tagged) taggedNote(job, a) else null, tenBitNote, a.note, if (i > 0) "First choice failed (${lastError?.code}); retried automatically." else null)
                         .joinToString(" ").ifEmpty { null })
             } catch (e: ExportFailure) {
-                Diag.step("Attempt ${i + 1} failed: ${e.message?.replace("\n", " ")}")
+                Diag.step("Attempt ${i + 1} failed at $maxP%: ${e.message?.replace("\n", " ")}")
                 lastError = e
+                if (midRun(e)) throw Interrupted(e)
                 if (!e.retriable) throw e
                 onProgress(0)
             }
@@ -393,6 +403,20 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         fun align16(f: Float) = maxOf(16, (f.toInt() / 16) * 16)
         fun hasEncoder(mime: String) = DeviceCaps.infos
             .any { it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, true) } }
+    }
+}
+
+/** The encode stopped part-way because something outside the app took the video hardware; worth running again. */
+class Interrupted(cause: Throwable) : Exception("Interrupted: " + (cause.message ?: cause.javaClass.simpleName), cause) {
+    companion object {
+        /** Codec errors Android raises when another app reclaims the hardware codec. */
+        fun looksLikeInterruption(e: Throwable): Boolean = generateSequence(e) { it.cause }.take(8).any { t ->
+            (t is android.media.MediaCodec.CodecException && (t.isTransient || t.isRecoverable ||
+                (android.os.Build.VERSION.SDK_INT >= 23 && t.errorCode == android.media.MediaCodec.CodecException.ERROR_RECLAIMED) ||
+                (android.os.Build.VERSION.SDK_INT >= 23 && t.errorCode == android.media.MediaCodec.CodecException.ERROR_INSUFFICIENT_RESOURCE))) ||
+                (t.message?.contains("reclaim", ignoreCase = true) == true) ||
+                (t.message?.contains("insufficient resource", ignoreCase = true) == true)
+        }
     }
 }
 

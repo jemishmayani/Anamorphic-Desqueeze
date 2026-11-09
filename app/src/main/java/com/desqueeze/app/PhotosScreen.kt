@@ -80,7 +80,8 @@ private fun startPhotoExport(ctx: android.content.Context, st: AppState, setting
     st.photoRuns.clear()
     list.forEach { p ->
         val out = if (p.isDng && fmt == PhotoFormat.DNG) "DNG" else if (fmt == PhotoFormat.PNG) "PNG" else "JPEG"
-        st.photoRuns += ClipRun(p.name, ExportMode.REENCODE, waitLabel = out)
+        st.photoRuns += ClipRun(p.name, ExportMode.REENCODE, waitLabel = out,
+            num = if (st.photos.size > 1) st.photos.indexOfFirst { it.uri == p.uri } + 1 else 0)
     }
     ExportController.scope.launch {
         val exporter = PhotoExporter(app, settings, luts)
@@ -256,6 +257,7 @@ private fun PhotoThumb(p: PhotoItem, modifier: Modifier) {
 
 @Composable
 private fun PhotoRow(st: AppState, luts: LutManager, p: PhotoItem, selected: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)?) {
+    val num = if (st.photos.size > 1) st.photos.indexOfFirst { it.uri == p.uri } + 1 else 0
     val c = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surfaceContainer)
         .border(if (selected) 1.5.dp else 1.dp, if (selected) c.primary else c.outlineVariant, RoundedCornerShape(16.dp))
@@ -263,7 +265,7 @@ private fun PhotoRow(st: AppState, luts: LutManager, p: PhotoItem, selected: Boo
         PhotoThumb(p, Modifier.size(width = 96.dp, height = 64.dp).clip(RoundedCornerShape(10.dp)))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(p.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text((if (num > 0) "$num. " else "") + p.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${p.width} × ${p.height}${if (p.isDng) " · RAW" else ""}", style = MaterialTheme.typography.bodySmall.merge(Mono), color = c.onSurfaceVariant)
             Text(summary(p, st.lookOf(p)) { id -> st.lutList.firstOrNull { it.id == id }?.name }, style = MaterialTheme.typography.bodySmall,
                 color = c.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -418,8 +420,12 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
             Box(Modifier.fillMaxSize().clip(RoundedCornerShape(26.dp)).background(Color.Black)
                 .pointerInput(Unit) {
                     detectTapGestures(onPress = {
-                        val j = scope.launch { delay(200); holding = true }
-                        tryAwaitRelease(); j.cancel(); holding = false
+                        // Not while Before / After is open: dragging its divider used to count as press-and-hold,
+                        // which hid the comparison and squeezed the photo.
+                        if (!comparing) {
+                            val j = scope.launch { delay(200); holding = true }
+                            tryAwaitRelease(); j.cancel(); holding = false
+                        }
                     })
                 }) {
                 Box(Modifier.matchParentSize()) {
@@ -436,7 +442,7 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
                 }
                 Box(Modifier.matchParentSize()) {
                     val s2 = shown
-                    if (comparing && canCompare && s2 != null && !holding) CompareOverlay(s2.plain, s2.after, ratio) { comparing = false }
+                    if (comparing && canCompare && s2 != null && !holding) CompareOverlay(s2.plain, s2.after, outRatio) { comparing = false }
                 }
             }
         }

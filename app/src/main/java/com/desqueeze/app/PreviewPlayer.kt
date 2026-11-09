@@ -112,6 +112,9 @@ fun PreviewPlayer(
     var appliedStrength by remember { mutableFloatStateOf(lutStrength) }
     LaunchedEffect(lutStrength) { delay(350); appliedStrength = lutStrength }
     var effectsFailed by remember(v.uri) { mutableStateOf(false) }
+    // Live-effect failures for this clip. Not reset when the player briefly gets ready, which used to let a
+    // failing LUT preview rebuild the player over and over instead of falling back to the plain preview.
+    var fxFailures by remember(v.uri) { mutableIntStateOf(0) }
     val useLut = lut != null && lutOn && !effectsFailed
     // Orientation overrides rotate the video view itself (instant), instead of rebuilding the player with a GPU effect.
     val useRotate = false
@@ -150,7 +153,8 @@ fun PreviewPlayer(
     var muted by remember { mutableStateOf(true) }
     var error by remember(v.uri) { mutableStateOf<String?>(null) }
     var hint by remember(v.uri) { mutableStateOf(true) }
-    var compare by remember { mutableStateOf<Pair<ImageBitmap, ImageBitmap>?>(null) }
+    // A still belongs to one clip and one look: switching either closes it (it used to keep showing the old one).
+    var compare by remember(v.uri, lut) { mutableStateOf<Pair<ImageBitmap, ImageBitmap>?>(null) }
     // False until the first frame can play (waiting for a decoder, preparing, or rebuffering).
     var ready by remember(player) { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -164,7 +168,10 @@ fun PreviewPlayer(
                     (e.cause?.stackTrace?.take(3)?.joinToString(prefix = " @ ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" } ?: ""))
                 val unsupported = !DeviceCaps.canDecode(v.codec, v.bitDepth) ||
                     (e.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED && autoRetries >= 1)
+                if (usingFx) fxFailures++
                 when {
+                    usingFx && fxFailures >= 2 -> { effectsFailed = true; error = null
+                        Diag.step("Live LUT preview turned off for this clip after $fxFailures failures") }
                     // A decoder that's merely busy (another preview releasing it, another app, a running export)
                     // fails the same way as a missing one, so only blame the phone when it truly has no decoder.
                     unsupported && !usingFx -> error = "This phone has no decoder for ${v.bitDepth}-bit ${v.codec}, so it can't be previewed. Lossless export still works."
@@ -174,7 +181,7 @@ fun PreviewPlayer(
                         autoRetries++
                         scope.launch { delay(wait); attempt++ }
                     }
-                    usingFx -> { effectsFailed = true; error = "Live effects aren't supported on this phone. Use Compare to see the LUT." }
+                    usingFx -> { effectsFailed = true; error = null }
                     else -> { error = "Preview couldn't start: the phone's video decoder is busy (another app or an export may be using it)."; canRetry = true }
                 }
             }
@@ -199,14 +206,32 @@ fun PreviewPlayer(
         }
     }
 
+    var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
+
     fun startCompare() {
         val l = lut ?: return
-        player.playWhenReady = false; comparing = true
+        if (comparing) return
+        player.playWhenReady = false; comparing = true; error = null
         // The player may only be touched on the main thread: read the position here, then grab the frame in the background.
         val atMs = player.currentPosition
+        // Fallback when the phone can't open a second decoder for this clip (common with 4K 10-bit while the preview
+        // holds one): the paused preview frame itself, when it shows the original picture (no live LUT on it).
+        val tv = texture
+        val viewFrame = if (!useLut && tv != null && tv.isAvailable) runCatching {
+            val long = 1280f; val r0 = g.inRatio.coerceAtLeast(0.05f)
+            // The view holds the frame before the extra rotation (the view itself is rotated on screen).
+            val rr = if (g.extraRotation % 180 != 0) 1f / r0 else r0
+            val (w, h) = if (rr >= 1f) long.toInt() to (long / rr).toInt() else (long * rr).toInt() to long.toInt()
+            tv.getBitmap(maxOf(2, w), maxOf(2, h))?.let { b ->
+                if (g.extraRotation % 360 == 0) b
+                else Bitmap.createBitmap(b, 0, 0, b.width, b.height, android.graphics.Matrix().apply { postRotate(g.extraRotation.toFloat()) }, true)
+            }
+        }.getOrNull() else null
         scope.launch {
             val pair = runCatching { withContext(Dispatchers.Default) {
-                val full = Frames.frameAt(ctx, v, atMs, 1280, g.extraRotation, exact = true) ?: return@withContext null
+                val full = Frames.frameAt(ctx, v, atMs, 1280, g.extraRotation, exact = true)
+                    ?: Frames.frameAt(ctx, v, atMs, 1280, g.extraRotation, exact = false)
+                    ?: viewFrame ?: return@withContext null
                 // Same edge crop as the export, so the still matches the preview.
                 val before = if (crop > 0f) {
                     val k = 1f - 2f * crop.coerceIn(0f, 0.4f)
@@ -216,16 +241,17 @@ fun PreviewPlayer(
                 val px = IntArray(before.width * before.height); before.getPixels(px, 0, before.width, 0, 0, before.width, before.height)
                 val after = Bitmap.createBitmap(l.applyTo(px, lutStrength), before.width, before.height, Bitmap.Config.ARGB_8888)
                 before.asImageBitmap() to after.asImageBitmap()
-            } }.getOrNull()
+            } }.onFailure { Diag.step("Compare failed: ${it.javaClass.simpleName}: ${it.message}") }.getOrNull()
             comparing = false
-            if (pair == null) error = "Couldn't grab this frame for comparison." else compare = pair
+            if (pair == null) error = "Couldn't read this frame for Before / After. Pause on another frame and try again." else compare = pair
         }
     }
 
     // "Before / After" button outside the video asks for the full-quality compare still.
     val seenRequest = remember { mutableIntStateOf(compareRequest) }
-    LaunchedEffect(compareRequest) {
-        if (compareRequest != seenRequest.intValue) { seenRequest.intValue = compareRequest; if (lut != null) startCompare() }
+    // Waits for the look if it's still being built when the button is tapped (the tap used to be ignored).
+    LaunchedEffect(compareRequest, lut) {
+        if (compareRequest != seenRequest.intValue && lut != null) { seenRequest.intValue = compareRequest; startCompare() }
     }
 
     // Portrait results (e.g. vertical desqueeze) get a tall frame that hugs the picture, not a wide black box.
@@ -234,7 +260,6 @@ fun PreviewPlayer(
     val videoMod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
 
     // The video view (a TextureView; exposure tools read small frames from it) and the player attached to it.
-    var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
     val attached = remember { arrayOfNulls<ExoPlayer>(1) }
     var scopeData by remember { mutableStateOf<ScopeData?>(null) }
     val statsCb by rememberUpdatedState(onStats)
@@ -283,10 +308,12 @@ fun PreviewPlayer(
                 .pointerInput(player) {
                     detectTapGestures(
                         onPress = {
-                            val j = scope.launch { delay(230); holding = true; hint = false }
-                            tryAwaitRelease(); j.cancel(); holding = false
+                            if (compare == null) {
+                                val j = scope.launch { delay(230); holding = true; hint = false }
+                                tryAwaitRelease(); j.cancel(); holding = false
+                            }
                         },
-                        onTap = { player.playWhenReady = !player.playWhenReady },
+                        onTap = { if (compare == null) player.playWhenReady = !player.playWhenReady },
                     )
                 },
             contentAlignment = Alignment.Center,
@@ -332,6 +359,8 @@ fun PreviewPlayer(
                 Pill(if (showWide) "De-squeezed ${fmtSqueeze(stretchFactor(g))} ${if (g.vertical) "↕" else "↔"}"
                      else if (holding) "Squeezed (holding)" else "Squeezed", accent = showWide)
                 if (useLut) { Spacer(Modifier.width(6.dp)); Pill(lookLabel ?: "LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
+                // The phone couldn't play the look live: say so, and point to the still comparison (which still works).
+                else if (lut != null && lutOn && effectsFailed) { Spacer(Modifier.width(6.dp)); Pill("Look: tap Before / After", accent = false, warm = true) }
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }
@@ -355,7 +384,7 @@ fun PreviewPlayer(
                     Icon(if (playing) AppIcons.Pause else AppIcons.Play, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(22.dp))
                 }
                 Spacer(Modifier.weight(1f))
-                if (lut != null) TextButton(onClick = { startCompare() }) { Text("Compare", color = Color.White) }
+                if (lut != null) TextButton(onClick = { startCompare() }, enabled = !comparing) { Text("Before / After", color = Color.White) }
                 IconButton(onClick = { muted = !muted; player.volume = if (muted) 0f else 1f }) {
                     Icon(if (muted) AppIcons.SoundOff else AppIcons.SoundOn, if (muted) "Unmute" else "Mute", tint = Color.White, modifier = Modifier.size(22.dp))
                 }
@@ -366,7 +395,7 @@ fun PreviewPlayer(
             }
             Box(Modifier.matchParentSize()) {
                 val pair = compare
-                if (pair != null) CompareOverlay(pair.first, pair.second, ratio) { compare = null }
+                if (pair != null) CompareOverlay(pair.first, pair.second, target) { compare = null }
             }
         }
         FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
@@ -405,7 +434,9 @@ fun PreviewPlayer(
 @Composable
 internal fun CompareOverlay(before: ImageBitmap, after: ImageBitmap, ratio: Float, onClose: () -> Unit) {
     var split by remember { mutableFloatStateOf(0.5f) }
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Color.Black)
+        .pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } } },
+        contentAlignment = Alignment.Center) {
         val frame = ratio.coerceIn(0.8f, 4f)
         val mod = if (ratio >= frame) Modifier.fillMaxWidth().aspectRatio(ratio) else Modifier.fillMaxHeight().aspectRatio(ratio, matchHeightConstraintsFirst = true)
         Box(mod.pointerInput(Unit) {

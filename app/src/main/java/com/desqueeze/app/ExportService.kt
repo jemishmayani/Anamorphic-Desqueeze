@@ -28,13 +28,17 @@ object ExportController {
     var state: AppState? = null
     var exporter: Exporter? = null
 
-    fun start(ctx: Context, st: AppState, exporter: Exporter) {
+    /** [only]: export just these clips (e.g. the ones that failed last time); null exports every clip. */
+    fun start(ctx: Context, st: AppState, exporter: Exporter, only: Set<android.net.Uri>? = null) {
         if (st.busy) return                                   // a second tap while exporting does nothing
         val app = ctx.applicationContext
-        val list = st.videos
+        val list = if (only == null) st.videos else st.videos.filter { it.uri in only }
+        if (list.isEmpty()) return
         val n = list.size.coerceAtLeast(1)
         val rid = st.runId + 1; st.runId = rid
-        st.runs.clear(); list.forEach { st.runs += ClipRun(it.name, modeFor(st, exporter, it)) }
+        val numOf = list.associate { it.uri to (st.videos.indexOfFirst { v -> v.uri == it.uri } + 1) }
+        st.runs.clear(); list.forEach { st.runs += ClipRun(it.name, modeFor(st, exporter, it), num = numOf[it.uri] ?: 0) }
+        val failedUris = mutableListOf<android.net.Uri>()
         st.busy = true; st.progress = 0f; st.results = emptyList(); st.status = ""; st.exportDone = null
         exporter.lastSaved = null
         Diag.start()
@@ -43,7 +47,8 @@ object ExportController {
             var ok = 0; var failed = 0
             list.forEachIndexed { i, vid ->
                 val m = st.runs.getOrNull(i)?.method ?: modeFor(st, exporter, vid)
-                st.status = (if (m == ExportMode.LOSSLESS) "Copying" else "Exporting") + if (list.size > 1) " ${i + 1} of ${list.size}" else ""
+                val num = numOf[vid.uri] ?: (i + 1)
+                st.status = (if (m == ExportMode.LOSSLESS) "Copying" else "Exporting") + (if (list.size > 1) " ${i + 1} of ${list.size}" else "") + (if (num != i + 1 || list.size > 1) " · clip $num" else "")
                 if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.RUNNING, pct = 0)
                 try {
                     val j = st.jobFor(vid)
@@ -56,27 +61,46 @@ object ExportController {
                             st.progress = maxOf(st.progress, ((i + p.coerceIn(0, 100) / 100f) / n).coerceAtMost(1f))
                         }
                     } }
-                    Diag.step("Clip ${i + 1}/${list.size}: ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=$m, squeeze=${st.effectiveSqueeze(vid)}, " +
+                    Diag.step("Clip #$num (${i + 1}/${list.size}): ${specLine(vid)}, ${vid.sizeBytes / 1_048_576} MB, mode=$m, squeeze=${st.effectiveSqueeze(vid)}, " +
                         "trim=${j.trim}, format=${j.format}${if (j.fill) " fill" else ""}, lut=${j.lutId != null}, color=${!j.color.isNeutral}, crop=${j.crop}")
-                    val r = when (m) {
-                        ExportMode.LOSSLESS -> exporter.exportLossless(j, prog)
-                        ExportMode.REENCODE -> exporter.export(j, prog)
-                        ExportMode.TAGGED -> exporter.export(j, prog, tagged = true)
+                    // Another app can take the video hardware mid-export (a video in a floating window, the camera).
+                    // Then wait for it and run the clip again with the same settings; the last try may fall back.
+                    val tries = 3
+                    var r: ExportResult? = null
+                    for (t in 1..tries) {
+                        try {
+                            r = when (m) {
+                                ExportMode.LOSSLESS -> exporter.exportLossless(j, prog)
+                                ExportMode.REENCODE -> exporter.export(j, prog, interruptible = t < tries)
+                                ExportMode.TAGGED -> exporter.export(j, prog, tagged = true, interruptible = t < tries)
+                            }
+                            break
+                        } catch (e: Interrupted) {
+                            val wait = if (t == 1) 3000L else 8000L
+                            Diag.step("Clip #$num interrupted (${e.cause?.message?.take(120)}); trying again in ${wait / 1000} s")
+                            val before = st.status
+                            st.status = "Clip $num was interrupted by another app; retrying"
+                            if (i < st.runs.size) st.runs[i] = st.runs[i].copy(pct = 0, note = "Retrying")
+                            delay(wait)
+                            st.status = before
+                            if (t == tries - 1) Diag.step("Clip #$num: last try, fallbacks allowed")
+                        }
                     }
-                    log += "✓  ${r.name}\n    ${r.width} × ${r.height}" + (r.note?.let { "\n    $it" } ?: "")
+                    val res = r!!
+                    log += "✓  #$num  ${res.name}\n    ${res.width} × ${res.height}" + (res.note?.let { "\n    $it" } ?: "")
                     ok++
-                    if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.DONE, pct = 100, note = "${r.width} × ${r.height}")
+                    if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.DONE, pct = 100, note = "${res.width} × ${res.height}")
                 } catch (e: CancellationException) { throw e
                 } catch (e: Throwable) {
                     Diag.step("FAILED: ${e.javaClass.simpleName}: ${e.message}")
-                    log += "✗  ${vid.name}\n    ${e.message ?: e.javaClass.simpleName}"
-                    failed++
+                    log += "✗  #$num  ${vid.name}\n    ${e.message ?: e.javaClass.simpleName}"
+                    failed++; failedUris += vid.uri
                     if (i < st.runs.size) st.runs[i] = st.runs[i].copy(state = RunState.FAILED, note = e.message ?: e.javaClass.simpleName)
                 }
                 st.progress = maxOf(st.progress, (i + 1f) / n)
             }
             st.results = log; st.status = ""
-            st.exportDone = ExportSummary(ok, failed, "Movies/" + Settings(app).folder, exporter.lastSaved)
+            st.exportDone = ExportSummary(ok, failed, "Movies/" + Settings(app).folder, exporter.lastSaved, failedUris.toList())
             st.busy = false
         }
         // Keeps the process alive with a progress notification while the job runs.
