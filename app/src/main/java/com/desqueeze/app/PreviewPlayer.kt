@@ -91,6 +91,8 @@ fun PreviewPlayer(
     onTrimChange: ((Pair<Long, Long>) -> Unit)? = null,
     /** Reports press-and-hold, so the Squeezed / De-squeezed toggle can show what's on screen. */
     onHold: (Boolean) -> Unit = {},
+    /** Shows the Before / After button on the video (only the Colour tool asks for it). */
+    showCompare: Boolean = true,
     modifier: Modifier = Modifier,
     /** Edge crop (fraction from each edge): the preview zooms in by the same amount. */
     crop: Float = 0f,
@@ -115,20 +117,26 @@ fun PreviewPlayer(
     // Live-effect failures for this clip. Not reset when the player briefly gets ready, which used to let a
     // failing LUT preview rebuild the player over and over instead of falling back to the plain preview.
     var fxFailures by remember(v.uri) { mutableIntStateOf(0) }
-    val useLut = lut != null && lutOn && !effectsFailed
+    // Our own GPU shader draws the look between the player and the screen, so a new LUT or strength shows at once
+    // and the player is never rebuilt for it. HDR clips keep the system's own HDR handling (Media3 effects), and so
+    // does any phone where the shader can't start.
+    var glFailed by remember(v.uri) { mutableStateOf(false) }
+    val glPath = !v.isHdr && !glFailed
+    val useLut = lut != null && lutOn && (glPath || !effectsFailed)
     // Orientation overrides rotate the video view itself (instant), instead of rebuilding the player with a GPU effect.
     val useRotate = false
-    val effectsKey = Triple(if (useRotate) g.extraRotation else 0, useLut, if (useLut) (appliedStrength * 20).toInt() else -1)
+    val effectsKey = if (glPath) null else Triple(if (useRotate) g.extraRotation else 0, useLut, if (useLut) (appliedStrength * 20).toInt() else -1)
+    val gfx = remember(v.uri) { GlHolder() }
 
     // Bumped to rebuild the player after a transient decoder failure (or when the user taps Retry).
     var attempt by remember(v.uri) { mutableIntStateOf(0) }
     var autoRetries by remember(v.uri) { mutableIntStateOf(0) }
     var canRetry by remember(v.uri) { mutableStateOf(false) }
-    val player = remember(v.uri, effectsKey, lut, attempt) {
+    val player = remember(v.uri, glPath, effectsKey, if (glPath) null else lut, attempt) {
         ExoPlayer.Builder(ctx).build().apply {
             val fx = mutableListOf<Effect>()
             if (useRotate) fx += ScaleAndRotateTransformation.Builder().setRotationDegrees((360 - g.extraRotation).toFloat()).build()
-            if (useLut) {
+            if (useLut && !glPath) {
                 // Proxy: render the LUT at ~720p so 4K 10-bit stays smooth on phones.
                 // Keep the decoded frame's own shape (the view below has that shape, so nothing is letterboxed).
                 val short = minOf(g.dispW, g.dispH); val s = minOf(1f, 720f / short)
@@ -160,7 +168,7 @@ fun PreviewPlayer(
     var comparing by remember { mutableStateOf(false) }
 
     DisposableEffect(player) {
-        val usingFx = useLut || useRotate
+        val usingFx = !glPath && (useLut || useRotate)
         val l = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
                 Diag.step("Preview error ${e.errorCodeName} (attempt ${attempt + 1}, fx=$usingFx): " +
@@ -202,11 +210,12 @@ fun PreviewPlayer(
             playing = player.playWhenReady; memory.positionMs = pos; memory.playing = playing
             if (player.playbackState == Player.STATE_READY && autoRetries > 0) { autoRetries = 0 }
             ready = player.playbackState == Player.STATE_READY
-            delay(120)
+            delay(if (playing) 50 else 120)   // smoother playhead while playing
         }
     }
 
     var texture by remember { mutableStateOf<android.view.TextureView?>(null) }
+    LaunchedEffect(gfx, lut, lutStrength, useLut) { gfx.look = if (useLut) lut else null; gfx.strength = lutStrength; gfx.applyLook() }
 
     fun startCompare() {
         val l = lut ?: return
@@ -323,7 +332,16 @@ fun PreviewPlayer(
             // the same frame as other changes (that combination crashed Compose when a LUT finished loading).
             // A TextureView stretches the picture to its bounds and lets the exposure tools read frames.
             Box(videoMod.clipToBounds()) {
-                AndroidView(
+                if (glPath) AndroidView(
+                    factory = { c -> android.view.TextureView(c).also { tv -> texture = tv; tv.surfaceTextureListener = gfx.listener(
+                        onReady = { gfx.player?.setVideoSurface(it); gfx.applyLook() },
+                        onFail = { e -> Diag.step("Look shader off for this clip: ${e.message}"); glFailed = true }) } },
+                    update = { _ ->
+                        if (gfx.player !== player) { gfx.player = player; gfx.input?.let { player.setVideoSurface(it) } }
+                    },
+                    onRelease = { _ -> gfx.releaseAll(); texture = null },
+                    modifier = Modifier.fillMaxSize()
+                ) else AndroidView(
                     factory = { c -> android.view.TextureView(c).also { tv -> texture = tv } },
                     update = { tv ->
                         if (attached[0] !== player) {
@@ -360,7 +378,7 @@ fun PreviewPlayer(
                      else if (holding) "Squeezed (holding)" else "Squeezed", accent = showWide)
                 if (useLut) { Spacer(Modifier.width(6.dp)); Pill(lookLabel ?: "LUT ${(appliedStrength * 100).toInt()}%", accent = false, warm = true) }
                 // The phone couldn't play the look live: say so, and point to the still comparison (which still works).
-                else if (lut != null && lutOn && effectsFailed) { Spacer(Modifier.width(6.dp)); Pill("Look: tap Before / After", accent = false, warm = true) }
+                else if (lut != null && lutOn && !glPath && effectsFailed) { Spacer(Modifier.width(6.dp)); Pill("Look: tap Before / After", accent = false, warm = true) }
                 Spacer(Modifier.weight(1f))
                 Pill(g.ratioLabel(target), accent = false)
             }
@@ -384,7 +402,7 @@ fun PreviewPlayer(
                     Icon(if (playing) AppIcons.Pause else AppIcons.Play, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(22.dp))
                 }
                 Spacer(Modifier.weight(1f))
-                if (lut != null) TextButton(onClick = { startCompare() }, enabled = !comparing) { Text("Before / After", color = Color.White) }
+                if (lut != null && showCompare) TextButton(onClick = { startCompare() }, enabled = !comparing) { Text("Before / After", color = Color.White) }
                 IconButton(onClick = { muted = !muted; player.volume = if (muted) 0f else 1f }) {
                     Icon(if (muted) AppIcons.SoundOff else AppIcons.SoundOn, if (muted) "Unmute" else "Mute", tint = Color.White, modifier = Modifier.size(22.dp))
                 }
@@ -398,7 +416,10 @@ fun PreviewPlayer(
                 if (pair != null) CompareOverlay(pair.first, pair.second, target) { compare = null }
             }
         }
-        FilmstripTimeline(v, g, pos, dur, trim) { ms -> player.seekTo(ms); pos = ms }
+        FilmstripTimeline(v, g, pos, dur, trim,
+            // Nearest keyframe while dragging (fast, follows the finger), then the exact frame where you let go.
+            onScrub = { ms -> player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC); player.seekTo(ms) }) { ms ->
+            player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT); player.seekTo(ms); pos = ms }
     }) { m, c ->
         val maxW = c.maxWidth
         val stripH = m[1].minIntrinsicHeight(maxW)
@@ -466,7 +487,9 @@ internal fun CompareOverlay(before: ImageBitmap, after: ImageBitmap, ratio: Floa
 
 /** Thumbnail strip with a playhead: tap or drag to seek. */
 @Composable
-fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pair<Long, Long>? = null, onSeek: (Long) -> Unit) {
+fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pair<Long, Long>? = null,
+    /** Called while dragging (throttled), for a live picture under the finger; [onSeek] gets the final spot. */
+    onScrub: ((Long) -> Unit)? = null, onSeek: (Long) -> Unit) {
     val ctx = LocalContext.current
     val c = MaterialTheme.colorScheme
     val n = 8
@@ -487,6 +510,8 @@ fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pai
     }
     val stripLoading = frames.any { it == null }
     val seek by rememberUpdatedState(onSeek)
+    val scrub by rememberUpdatedState(onScrub)
+    var lastScrub by remember { mutableLongStateOf(0L) }
     var drag by remember { mutableStateOf<Float?>(null) }
     val frac = (drag ?: if (dur > 0) pos.toFloat() / dur else 0f).coerceIn(0f, 1f)
     Column {
@@ -497,7 +522,11 @@ fun FilmstripTimeline(v: VideoInfo, g: Geometry, pos: Long, dur: Long, trim: Pai
                     onDragStart = { drag = (it.x / size.width).coerceIn(0f, 1f) },
                     onDragEnd = { drag?.let { f -> seek((f * dur).toLong()) }; drag = null },
                     onDragCancel = { drag = null },
-                ) { ch, _ -> drag = (ch.position.x / size.width).coerceIn(0f, 1f) }
+                ) { ch, _ ->
+                    val f = (ch.position.x / size.width).coerceIn(0f, 1f); drag = f
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (now - lastScrub > 90) { lastScrub = now; scrub?.invoke((f * dur).toLong()) }
+                }
             }) {
             Row(Modifier.fillMaxSize()) {
                 frames.forEach { f ->
@@ -782,5 +811,35 @@ fun StretchOutline(vertical: Boolean, f: Float, show: Boolean, modifier: Modifie
                 drawLine(arrow, Offset(to - dir * 2f, y), Offset(to - dir * (head + 2f), y + head), 3f)
             }
         }
+    }
+}
+
+/** The look shader for one clip's preview, and the TextureView it draws into. Main thread only. */
+class GlHolder {
+    var player: ExoPlayer? = null
+    var renderer: LookRenderer? = null; private set
+    val input get() = renderer?.input
+    var look: LutManager.CubeLut? = null
+    var strength = 1f
+
+    fun applyLook() { renderer?.setLook(look, strength, look != null) }
+
+    fun listener(onReady: (android.view.Surface) -> Unit, onFail: (Throwable) -> Unit) = object : android.view.TextureView.SurfaceTextureListener {
+        override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, w: Int, h: Int) {
+            renderer?.release()
+            renderer = LookRenderer(st, w, h, onInput = onReady, onError = onFail)
+        }
+        override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, w: Int, h: Int) { renderer?.resize(w, h) }
+        override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean {
+            input?.let { s -> runCatching { player?.clearVideoSurface(s) } }
+            renderer?.release(); renderer = null
+            return true
+        }
+        override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {}
+    }
+
+    fun releaseAll() {
+        input?.let { s -> runCatching { player?.clearVideoSurface(s) } }
+        renderer?.release(); renderer = null; player = null
     }
 }

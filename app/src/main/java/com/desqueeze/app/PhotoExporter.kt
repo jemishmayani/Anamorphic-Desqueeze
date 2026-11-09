@@ -179,7 +179,9 @@ class PhotoExporter(private val ctx: Context, private val settings: Settings, pr
             DngTagger.tag(tmp, look.squeeze, rawHorizontal, look.crop)
             // A new de-squeezed (and cropped) preview, so galleries show the right shape. It can only be as sharp
             // as what this phone can decode from the RAW file.
-            previewNote = runCatching {
+            previewNote = runCatching { developedPreview(tmp) }.onFailure {
+                Diag.step("RAW preview: ${it.javaClass.simpleName}: ${it.message?.take(120)}")
+            }.getOrNull() ?: runCatching {
                 val src = decode(ctx, item.uri, look.copy(lutId = null, color = ColorAdjust()))
                 val (pw, ph) = outputSize(src.width, src.height, look)
                 val pic = render(src, look, null, pw, ph); if (pic !== src) src.recycle()
@@ -206,6 +208,21 @@ class PhotoExporter(private val ctx: Context, private val settings: Settings, pr
             previewNote,
             if (look.lutId != null || !look.color.isNeutral) "LUT and colour aren't applied to RAW; apply them in your RAW editor, or save as JPEG/PNG." else null,
         ).joinToString(" "))
+    }
+
+    /**
+     * Develops the RAW sensor data of the (already tagged) DNG and embeds it as a full-size, de-squeezed, cropped
+     * preview, so galleries show the real shape at full sharpness. Throws if this DNG can't be developed here.
+     */
+    private fun developedPreview(dng: File): String {
+        val im = try { RawDeveloper.develop(dng) } catch (e: OutOfMemoryError) { RawDeveloper.develop(dng, fullLimit = 0) }
+        val base = Bitmap.createBitmap(im.argb, im.width, im.height, Bitmap.Config.ARGB_8888)
+        val pw = (im.width * im.scaleX).roundToInt().coerceAtLeast(1); val ph = (im.height * im.scaleY).roundToInt().coerceAtLeast(1)
+        val pic = if (pw != im.width || ph != im.height) Bitmap.createScaledBitmap(base, pw, ph, true).also { base.recycle() } else base
+        val jpeg = java.io.ByteArrayOutputStream().also { pic.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+        pic.recycle()
+        DngTagger.setPreview(dng, jpeg, pw, ph)
+        return "Gallery preview: $pw×$ph, developed from the RAW and de-squeezed" + (if (im.halfSize) " (half the sensor's resolution, to fit in memory)." else ".")
     }
 
     /** Copies the source's EXIF into [dest]; returns the date taken (ms) for the gallery, if known and kept. */

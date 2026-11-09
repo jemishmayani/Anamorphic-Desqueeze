@@ -36,7 +36,7 @@ import kotlinx.coroutines.withContext
 /** Small previews of the current clip through each LUT, cached so scrolling the picker stays cheap. */
 object LutThumbs {
     private const val MAX_W = 192
-    private val cache = LruCache<String, Bitmap>(48)
+    private val cache = LruCache<String, Bitmap>(160)
     private val small = LruCache<String, Bitmap>(16)
 
     /**
@@ -62,7 +62,7 @@ object LutThumbs {
             val b = base(clipKey, src, ratio, rotation)
             val px = IntArray(b.width * b.height)
             b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
-            val out = luts.load(lutId).applyTo(px, 1f)
+            val out = luts.mini(lutId).applyTo(px, 1f)
             Bitmap.createBitmap(out, b.width, b.height, Bitmap.Config.ARGB_8888).also { cache.put("$lutId|$clipKey", it) }
         } catch (_: Exception) { null }
     }
@@ -106,6 +106,8 @@ fun LutPicker(st: AppState, luts: LutManager, v: VideoInfo, g: Geometry, enabled
     val shape = TileShapeSpec.of(ratio)
     val original = remember(v.thumb, clipKey) { v.thumb?.let { LutThumbs.base(clipKey, it, ratio, rot).asImageBitmap() } }
     val listState = rememberLazyListState()
+    // Make every LUT's small tile copy in the background, so tiles scrolled into view colour in at once.
+    LaunchedEffect(st.lutList) { withContext(Dispatchers.IO) { st.lutList.forEach { runCatching { luts.mini(it.id) } } } }
     // Bring the selected LUT into view when it changes (e.g. right after an import).
     LaunchedEffect(st.lutId, st.lutList.size) {
         val i = st.lutId?.let { id -> st.lutList.indexOfFirst { it.id == id } } ?: -1

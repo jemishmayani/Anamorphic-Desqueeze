@@ -1,6 +1,15 @@
 package com.desqueeze.app
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.*
@@ -18,53 +27,58 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Projector amber: the brand accent and default. */
-val Flare = Color(0xFFF2A33A)
+/** Ice blue: the brand accent and default. */
+val Flare = Color(0xFF7CCBFF)
 
 /**
- * Accent colours over warm, near-black "screening room" neutrals (no colour cast that competes with the footage).
- * Every accent shade is derived from one colour.
+ * Accent colours over "liquid glass": translucent, ice-tinted panels floating over a softly blurred copy of the clip
+ * you're editing (see [GlassBackdrop]). Every accent shade is derived from one colour.
  */
 enum class Accent(val label: String, val argb: Long) {
-    AMBER("Amber", 0xFFF2A33A), FLARE("Flare blue", 0xFF5AA9FF), CYAN("Cyan", 0xFF3DD6E0), MINT("Mint", 0xFF4FD8A4),
+    ICE("Ice", 0xFF7CCBFF), AMBER("Amber", 0xFFF2A33A), MINT("Mint", 0xFF4FD8A4), CYAN("Cyan", 0xFF3DD6E0),
     VIOLET("Violet", 0xFFA98BFF), ROSE("Rose", 0xFFFF7FA3), MONO("Mono", 0xFFE4E6EA),
     DYNAMIC("Wallpaper", 0),
 }
 
-private fun onColor(c: Color) = if (c.luminance() > 0.40f) Color(0xFF120C02) else Color.White
+private fun onColor(c: Color) = if (c.luminance() > 0.40f) Color(0xFF04121F) else Color.White
+
+/** Glass tint: the panel colour seen through, as a fraction of white-ice. */
+private fun glass(alpha: Float) = Color(0xFFC8E6FF).copy(alpha = alpha)
 
 fun darkScheme(accent: Color) = darkColorScheme(
     primary = accent, onPrimary = onColor(accent),
-    primaryContainer = lerp(Color(0xFF14120F), accent, 0.22f), onPrimaryContainer = lerp(accent, Color.White, 0.55f),
-    secondary = lerp(accent, Color(0xFFA39A8C), 0.5f), onSecondary = Color(0xFF120C02),
-    secondaryContainer = lerp(Color(0xFF14120F), accent, 0.22f), onSecondaryContainer = lerp(accent, Color.White, 0.55f),
-    tertiary = Color(0xFFEEE9E1), onTertiary = Color(0xFF120C02),
-    background = Color(0xFF080807), onBackground = Color(0xFFEEE9E1),
-    surface = Color(0xFF080807), onSurface = Color(0xFFEEE9E1),
-    surfaceVariant = Color(0xFF1F1B16), onSurfaceVariant = Color(0xFFA39A8C),
-    surfaceContainerLowest = Color(0xFF050504), surfaceContainerLow = Color(0xFF100E0C),
-    surfaceContainer = Color(0xFF15130F), surfaceContainerHigh = Color(0xFF1C1915), surfaceContainerHighest = Color(0xFF25211B),
+    primaryContainer = lerp(Color(0xFF0E1724), accent, 0.26f), onPrimaryContainer = lerp(accent, Color.White, 0.6f),
+    secondary = lerp(accent, Color(0xFFA9B8C9), 0.5f), onSecondary = Color(0xFF04121F),
+    secondaryContainer = lerp(Color(0xFF0E1724), accent, 0.26f), onSecondaryContainer = lerp(accent, Color.White, 0.6f),
+    tertiary = Color(0xFFEEF6FF), onTertiary = Color(0xFF04121F),
+    background = Color(0xFF05090F), onBackground = Color(0xFFEEF6FF),
+    surface = Color(0xFF05090F), onSurface = Color(0xFFEEF6FF),
+    // Panels and cards are glass (the backdrop glows through); menus and dialogs stay solid so they're readable.
+    surfaceVariant = glass(0.12f), onSurfaceVariant = Color(0xFFAFC0D2),
+    surfaceContainerLowest = glass(0.04f), surfaceContainerLow = glass(0.07f),
+    surfaceContainer = glass(0.10f), surfaceContainerHigh = Color(0xFF142131), surfaceContainerHighest = Color(0xFF1B2A3C),
     surfaceTint = accent,
-    outline = Color(0xFF3A332A), outlineVariant = Color(0xFF2B2620),
-    inverseSurface = Color(0xFFEEE9E1), inverseOnSurface = Color(0xFF15130F),
-    error = Color(0xFFFF8A73), onError = Color(0xFF1A0705), errorContainer = Color(0xFF3A1A14), onErrorContainer = Color(0xFFFFD9D0),
+    outline = glass(0.36f), outlineVariant = glass(0.20f),
+    inverseSurface = Color(0xFFEEF6FF), inverseOnSurface = Color(0xFF0E1724),
+    error = Color(0xFFFF8A80), onError = Color(0xFF1A0505), errorContainer = Color(0xFF3A1616), onErrorContainer = Color(0xFFFFDAD6),
 )
 
 fun lightScheme(accent: Color): ColorScheme {
-    // Darken the accent just enough for text and icons on paper to reach WCAG AA (4.5:1).
+    // Darken the accent just enough for text and icons on frosted white to reach WCAG AA (4.5:1).
     fun contrastOnWhite(c: Color) = 1.05f / (c.luminance() + 0.05f)
     var p = accent; var i = 0
     while (contrastOnWhite(p) < 4.6f && i++ < 30) p = lerp(p, Color.Black, 0.06f)
+    val frost = Color.White
     return lightColorScheme(
         primary = p, onPrimary = onColor(p),
-        primaryContainer = lerp(Color.White, accent, 0.22f), onPrimaryContainer = lerp(p, Color.Black, 0.45f),
-        secondaryContainer = lerp(Color.White, accent, 0.22f), onSecondaryContainer = lerp(p, Color.Black, 0.45f),
-        background = Color(0xFFF4F0E8), onBackground = Color(0xFF1A160F),
-        surface = Color(0xFFF4F0E8), onSurface = Color(0xFF1A160F),
-        surfaceVariant = Color(0xFFE9E3D7), onSurfaceVariant = Color(0xFF6B6255),
-        surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFFBF8F2),
-        surfaceContainer = Color(0xFFFFFFFF), surfaceContainerHigh = Color(0xFFEFE9DE), surfaceContainerHighest = Color(0xFFE7E0D2),
-        outline = Color(0xFFCFC6B6), outlineVariant = Color(0xFFE2DACB),
+        primaryContainer = lerp(Color.White, accent, 0.26f), onPrimaryContainer = lerp(p, Color.Black, 0.45f),
+        secondaryContainer = lerp(Color.White, accent, 0.26f), onSecondaryContainer = lerp(p, Color.Black, 0.45f),
+        background = Color(0xFFE9F0F7), onBackground = Color(0xFF0E1726),
+        surface = Color(0xFFE9F0F7), onSurface = Color(0xFF0E1726),
+        surfaceVariant = frost.copy(alpha = 0.55f), onSurfaceVariant = Color(0xFF475668),
+        surfaceContainerLowest = frost.copy(alpha = 0.35f), surfaceContainerLow = frost.copy(alpha = 0.45f),
+        surfaceContainer = frost.copy(alpha = 0.6f), surfaceContainerHigh = Color(0xFFF6F9FC), surfaceContainerHighest = Color(0xFFEDF3F9),
+        outline = Color(0xFF0A2540).copy(alpha = 0.22f), outlineVariant = Color(0xFF0A2540).copy(alpha = 0.12f),
     )
 }
 
@@ -97,12 +111,12 @@ val AppShapes = Shapes(
 )
 
 @Composable
-fun AppTheme(dark: Boolean, accent: Accent = Accent.AMBER, content: @Composable () -> Unit) {
+fun AppTheme(dark: Boolean, accent: Accent = Accent.ICE, content: @Composable () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scheme = if (accent == Accent.DYNAMIC && android.os.Build.VERSION.SDK_INT >= 31) {
         if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
     } else {
-        val a = Color(if (accent == Accent.DYNAMIC) Accent.AMBER.argb else accent.argb)
+        val a = Color(if (accent == Accent.DYNAMIC) Accent.ICE.argb else accent.argb)
         if (dark) darkScheme(a) else lightScheme(a)
     }
     MaterialTheme(colorScheme = scheme, typography = AppType, shapes = AppShapes, content = content)
@@ -121,3 +135,29 @@ fun FlareLine(modifier: Modifier = Modifier, alpha: Float = 1f) {
 }
 
 val Mono = TextStyle(fontFamily = MonoFamily, fontFeatureSettings = "tnum")
+
+/**
+ * What the glass floats over: the clip you're working on, heavily blurred and dimmed (Android 12+), with soft
+ * ice-coloured light behind it. Older phones get the light alone.
+ */
+@Composable
+fun GlassBackdrop(image: androidx.compose.ui.graphics.ImageBitmap?, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    val dark = c.background.luminance() < 0.3f
+    Box(modifier.fillMaxSize().background(c.background)) {
+        Crossfade(image, Modifier.fillMaxSize(), animationSpec = tween(600), label = "backdrop") { img ->
+            if (img != null && android.os.Build.VERSION.SDK_INT >= 31) Image(img, null,
+                Modifier.fillMaxSize().blur(70.dp).alpha(if (dark) 0.5f else 0.4f), contentScale = ContentScale.Crop)
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width; val h = size.height
+            fun glow(col: Color, a: Float, cx: Float, cy: Float, r: Float) = drawCircle(
+                Brush.radialGradient(listOf(col.copy(alpha = a), col.copy(alpha = 0f)), Offset(cx, cy), r), r, Offset(cx, cy))
+            glow(c.primary, 0.30f, w * 0.05f, h * 0.30f, w * 0.75f)
+            glow(Color(0xFF6E64FF), 0.22f, w * 1.0f, h * 0.55f, w * 0.75f)
+            glow(Color(0xFF28C8DC), if (dark) 0.18f else 0.22f, w * 0.45f, h * 1.02f, w * 0.75f)
+            // A gentle scrim keeps text crisp over bright footage.
+            drawRect(Brush.verticalGradient(listOf(c.background.copy(alpha = if (dark) 0.25f else 0.2f), c.background.copy(alpha = if (dark) 0.45f else 0.35f))))
+        }
+    }
+}

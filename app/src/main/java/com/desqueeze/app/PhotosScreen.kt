@@ -429,7 +429,7 @@ private fun PhotoPreviewBox(st: AppState, luts: LutManager, item: PhotoItem, loo
                     })
                 }) {
                 Box(Modifier.matchParentSize()) {
-                    val img = shown?.let { if (holding) it.original else it.after }
+                    val img = shown?.after   // hold only changes the shape (as shot); the look stays on
                     if (img != null) Image(img, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
                 }
                 StretchOutline(look.vertical, look.squeeze, show = !holding, Modifier.matchParentSize())

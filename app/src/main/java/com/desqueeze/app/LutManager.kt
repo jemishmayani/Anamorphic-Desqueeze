@@ -67,7 +67,8 @@ class LutManager(private val ctx: Context) {
     }
     fun rename(id: String, newName: String) = names.edit().putString(id, newName.trim()).apply()
     fun delete(id: String) {
-        File(dir, "$id.cube").delete(); File(dir, "$id.lutbin").delete(); synchronized(cache) { cache.remove(id) }
+        File(dir, "$id.cube").delete(); File(dir, "$id.lutbin").delete(); File(dir, "$id.mini").delete()
+        synchronized(cache) { cache.remove(id) }; minis.remove(id)
         names.edit().remove(id).apply()
     }
 
@@ -87,6 +88,21 @@ class LutManager(private val ctx: Context) {
             ?: parse(cube.readText()).also { runCatching { writeBin(bin, it) } }
         synchronized(cache) { cache[id] = lut }
         return lut
+    }
+
+    private val minis = java.util.concurrent.ConcurrentHashMap<String, CubeLut>()
+
+    /**
+     * A 17-point copy of the LUT for the picker's small tiles: ~60 KB instead of up to 3 MB, kept in memory for
+     * every LUT and saved next to it, so tiles colour in almost at once instead of loading each full LUT.
+     */
+    fun mini(id: String): CubeLut {
+        minis[id]?.let { return it }
+        val cube = File(dir, "$id.cube"); val f = File(dir, "$id.mini")
+        val m = (if (f.exists() && f.lastModified() >= cube.lastModified()) runCatching { readBin(f) }.getOrNull() else null)
+            ?: load(id).let { if (it.size <= MINI) it else it.resample(MINI) }.also { runCatching { writeBin(f, it) } }
+        minis[id] = m
+        return m
     }
 
     private fun writeBin(f: File, l: CubeLut) {
@@ -111,6 +127,26 @@ class LutManager(private val ctx: Context) {
     }
 
     class CubeLut(val size: Int, val data: FloatArray, val domainMin: FloatArray, val domainMax: FloatArray) {
+        /** The same LUT sampled at [n] points per axis (trilinear). */
+        fun resample(n: Int): CubeLut {
+            val s = size; val sm = s - 1; val out = FloatArray(n * n * n * 3)
+            fun at(r: Int, g: Int, b: Int, c: Int) = data[(r + g * s + b * s * s) * 3 + c]
+            var o = 0
+            for (bi in 0 until n) for (gi in 0 until n) for (ri in 0 until n) {
+                val rf = ri.toFloat() / (n - 1) * sm; val gf = gi.toFloat() / (n - 1) * sm; val bf = bi.toFloat() / (n - 1) * sm
+                val r0 = rf.toInt().coerceAtMost(sm - 1); val g0 = gf.toInt().coerceAtMost(sm - 1); val b0 = bf.toInt().coerceAtMost(sm - 1)
+                val dr = rf - r0; val dg = gf - g0; val db = bf - b0
+                for (c in 0..2) {
+                    val c00 = at(r0, g0, b0, c) * (1 - dr) + at(r0 + 1, g0, b0, c) * dr
+                    val c10 = at(r0, g0 + 1, b0, c) * (1 - dr) + at(r0 + 1, g0 + 1, b0, c) * dr
+                    val c01 = at(r0, g0, b0 + 1, c) * (1 - dr) + at(r0 + 1, g0, b0 + 1, c) * dr
+                    val c11 = at(r0, g0 + 1, b0 + 1, c) * (1 - dr) + at(r0 + 1, g0 + 1, b0 + 1, c) * dr
+                    out[o++] = (c00 * (1 - dg) + c10 * dg) * (1 - db) + (c01 * (1 - dg) + c11 * dg) * db
+                }
+            }
+            return CubeLut(n, out, domainMin.copyOf(), domainMax.copyOf())
+        }
+
         /** Applies the LUT on the CPU (trilinear) to ARGB pixels, blended by [strength]. For still-frame compare. */
         fun applyTo(px: IntArray, strength: Float): IntArray {
             val n = size; val nm = n - 1; val s = strength.coerceIn(0f, 1f); val out = IntArray(px.size)
@@ -158,6 +194,7 @@ class LutManager(private val ctx: Context) {
     }
 
     companion object {
+        const val MINI = 17
         fun parse(text: String): CubeLut {
             // Hand-rolled scan (no regex, no boxed floats): a 65-point LUT has ~275,000 lines.
             var size = 0; val min = floatArrayOf(0f, 0f, 0f); val max = floatArrayOf(1f, 1f, 1f)

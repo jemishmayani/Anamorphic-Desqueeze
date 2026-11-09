@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,7 +82,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dark = when (state.theme) { ThemeMode.DARK -> true; ThemeMode.LIGHT -> false; else -> isSystemInDarkTheme() }
             AppTheme(dark, state.accent) {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                // Liquid glass: everything floats over a blurred copy of the clip (or photo) you're working on.
+                val backdrop = when (state.screen) {
+                    Screen.Photos -> null
+                    else -> state.videos.getOrNull(state.selected)?.thumb
+                }
+                val backdropImg = remember(backdrop) { backdrop?.asImageBitmap() }
+                Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) {
+                    GlassBackdrop(backdropImg)
                     state.crashLog?.let { log -> CrashDialog(log) { state.crashLog = null } }
                     BackHandler(state.screen != Screen.Main) {
                         state.screen = when (state.screen) { Screen.Limits -> Screen.Settings; Screen.Luts -> state.lutsBack; else -> Screen.Main }
@@ -366,7 +374,7 @@ fun PickerRow(label: String?, value: String, options: List<String>, enabled: Boo
                 modifier = if (label == null) Modifier.weight(1f) else Modifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Icon(Icons.Default.KeyboardArrowDown, null, tint = c.onSurfaceVariant)
         }
-        DropdownMenu(open, { open = false }) {
+        DropdownMenu(open, { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
             options.forEachIndexed { i, o -> DropdownMenuItem(text = { Text(o) }, onClick = { open = false; onPick(i) }) }
         }
     }

@@ -123,7 +123,7 @@ fun SettingChoiceRow(icon: ImageVector, title: String, subtitle: String?, value:
     var open by remember { mutableStateOf(false) }
     Box {
         SettingRow(icon, title, subtitle, value, tint, divider, onClick = { open = true })
-        DropdownMenu(open, { open = false }, Modifier.align(Alignment.CenterEnd)) {
+        DropdownMenu(open, { open = false }, Modifier.align(Alignment.CenterEnd), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
             options.forEachIndexed { i, o -> DropdownMenuItem(text = { Text(o) }, onClick = { open = false; onPick(i) }) }
         }
     }
