@@ -187,8 +187,8 @@ fun SettingsScreen(st: AppState, s: Settings, luts: LutManager) {
             }
 
             SettingsGroup("Colour & bit depth") {
-                SettingRow(AppIcons.Hdr, "10-bit for log clips",
-                    if (TenBitPipeline.main10Available) "Keeps D-Log and other 10-bit footage 10-bit (HEVC)"
+                SettingRow(AppIcons.Hdr, "Keep 10-bit clips 10-bit",
+                    if (TenBitPipeline.main10Available) "D-Log, normal 10-bit and HLG clips stay 10-bit (HEVC)"
                     else "No 10-bit HEVC encoder on this phone", tint = Warm,
                     onClick = { s.tenBit = !s.tenBit; refresh() }, trailing = { Switch(s.tenBit && TenBitPipeline.main10Available, { s.tenBit = it; refresh() },
                         enabled = TenBitPipeline.main10Available) })

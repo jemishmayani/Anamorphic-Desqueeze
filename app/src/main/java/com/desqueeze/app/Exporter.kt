@@ -116,7 +116,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         var lastError: ExportFailure? = null
         Diag.step("Re-encode plan: " + attempts.joinToString { "${it.mime.removePrefix("video/")} ${it.w}x${it.h}" })
 
-        // 10-bit SDR clips (log footage): our own 10-bit pipeline first, at the best HEVC size.
+        // 10-bit clips (log, normal 10-bit, and HLG / HDR10 when Keep HDR is on): our own 10-bit pipeline first, at the best HEVC size.
         // Anything it can't do falls through to the regular export below, which is 8-bit for these clips.
         var tenBitNote: String? = null
         if (TenBitPipeline.appliesTo(job.video, settings)) {
@@ -125,10 +125,11 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
                 Diag.step("10-bit: start ${a.w}x${a.h}")
                 val rep = runTenBit(job, a, onProgress, tagged)
                 Speed.recordEncode(ctx, a.w.toLong() * a.h * (job.lengthMs / 1000.0 * (if (fps > 0) fps else 30f)), (System.nanoTime() - started) / 1e9)
-                val main10 = rep.profile == null || rep.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10
+                val main10 = rep.profile == null || rep.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 ||
+                    rep.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10
                 return ExportResult(outName(job, tagged), a.w, a.h, listOfNotNull(
                     if (tagged) taggedNote(job, a) else null,
-                    if (main10) "10-bit HEVC (Main 10)." else "Encoded with the 10-bit pipeline, but the encoder reported profile ${rep.profile}.",
+                    if (main10) "10-bit HEVC (Main 10)" + (job.video.footage.hdr?.takeIf { settings.keepHdr }?.let { ", kept as $it." } ?: ".") else "Encoded with the 10-bit pipeline, but the encoder reported profile ${rep.profile}.",
                     if (!rep.yuvSampling) "This phone's graphics driver converted the colours itself, which may limit precision to 8-bit." else null,
                     a.note).joinToString(" "))
             } catch (e: kotlinx.coroutines.CancellationException) { throw e
@@ -326,7 +327,7 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         try {
             val lut = withContext(Dispatchers.IO) { lookCube(job) }
             val spec = TenBitPipeline.Spec(job.video, job.geo, a.w, a.h, job.format, job.fill, job.trim, lut, 1f,
-                bitrateFor(a.w, a.h, job.video.fps, MimeTypes.VIDEO_H265), job.crop)
+                bitrateFor(a.w, a.h, job.video.fps, MimeTypes.VIDEO_H265), job.crop, keepHdr = job.video.isHdr && settings.keepHdr)
             val rep = withContext(Dispatchers.IO) {
                 val scope = this
                 val pipe = TenBitPipeline(ctx).apply { isCancelled = { !scope.isActive } }

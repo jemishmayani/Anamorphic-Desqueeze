@@ -2,6 +2,16 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.42 — 2026-11-17
+
+### Changed
+- **Normal 10-bit clips (HLG / HDR10) now export in 10-bit too.** Before, the app's own 10-bit pipeline only took 10-bit SDR clips such as D-Log. HDR clips went through a different export path that didn't reliably keep them 10-bit.
+  - Now every 10-bit clip goes through the same pipeline when Keep HDR is on: D-Log, normal 10-bit SDR, and DJI's 10-bit Normal colour (HLG).
+  - HDR signal values pass through unchanged, and the file is tagged with the source's HLG / HDR10 transfer and BT.2020 colours. HDR10 also gets the Main 10 HDR10 profile and its brightness metadata when the encoder supports them.
+  - If the phone can't read HDR frames unaltered on the GPU, the app uses the previous HDR export instead.
+  - Dolby Vision clips keep the previous path.
+- The setting **"10-bit for log clips"** is renamed **"Keep 10-bit clips 10-bit"**. The export check now shows "10-bit HEVC (Main 10), kept as HLG" for HDR clips.
+
 ## v1.41 — 2026-11-09
 
 ### Fixed

@@ -46,6 +46,8 @@ class TenBitPipeline(private val ctx: Context) {
         val lut: LutManager.CubeLut?, val lutStrength: Float, val bitrate: Long,
         /** Fraction cut from every edge (scaled back up to fill). */
         val crop: Float = 0f,
+        /** HDR source (HLG / HDR10) kept HDR: same signal values out, tagged with the source's transfer. */
+        val keepHdr: Boolean = false,
     )
 
     /** What actually happened, for the diagnostics log and the result note. */
@@ -75,6 +77,17 @@ class TenBitPipeline(private val ctx: Context) {
         // Color aspects of the source, for the YUV -> RGB matrix and the output tags.
         val standard = inFormat.intOr(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
         val fullRange = inFormat.intOr(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED) == MediaFormat.COLOR_RANGE_FULL
+        // HDR kept as HDR: the pipeline only converts YUV -> RGB -> YUV with the source's own matrix, so HLG / PQ
+        // signal values pass through unchanged; the output just has to carry the same tags.
+        val srcTransfer = inFormat.intOr(MediaFormat.KEY_COLOR_TRANSFER, -1).takeIf { it == MediaFormat.COLOR_TRANSFER_HLG || it == MediaFormat.COLOR_TRANSFER_ST2084 }
+            ?: when (spec.video.footage.transfer) { 18 -> MediaFormat.COLOR_TRANSFER_HLG; 16 -> MediaFormat.COLOR_TRANSFER_ST2084; else -> null }
+        val hdrTransfer = if (spec.keepHdr) srcTransfer else null
+        val pq = hdrTransfer == MediaFormat.COLOR_TRANSFER_ST2084
+        val hdrStatic = if (pq && inFormat.containsKey(MediaFormat.KEY_HDR_STATIC_INFO)) runCatching { inFormat.getByteBuffer(MediaFormat.KEY_HDR_STATIC_INFO) }.getOrNull() else null
+        val hdr10Profile = pq && runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.first { it.name == encoderName }
+                .getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC).profileLevels.any { it.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10 }
+        }.getOrDefault(false)
 
         val egl = Egl10Bit()
         var decoder: MediaCodec? = null; var encoder: MediaCodec? = null; var muxer: MediaMuxer? = null
@@ -89,10 +102,11 @@ class TenBitPipeline(private val ctx: Context) {
                 setInteger(MediaFormat.KEY_BIT_RATE, spec.bitrate.toInt())
                 setFloat(MediaFormat.KEY_FRAME_RATE, fps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10)
+                setInteger(MediaFormat.KEY_PROFILE, if (hdr10Profile) MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10 else MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10)
                 main10Level(encoderName)?.let { setInteger(MediaFormat.KEY_LEVEL, it) }
-                setInteger(MediaFormat.KEY_COLOR_STANDARD, if (standard == MediaFormat.COLOR_STANDARD_BT2020) standard else MediaFormat.COLOR_STANDARD_BT709)
-                setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
+                setInteger(MediaFormat.KEY_COLOR_STANDARD, if (standard == MediaFormat.COLOR_STANDARD_BT2020 || hdrTransfer != null) MediaFormat.COLOR_STANDARD_BT2020 else MediaFormat.COLOR_STANDARD_BT709)
+                setInteger(MediaFormat.KEY_COLOR_TRANSFER, hdrTransfer ?: MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
+                hdrStatic?.let { setByteBuffer(MediaFormat.KEY_HDR_STATIC_INFO, it) }
                 setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
             }
             val enc = MediaCodec.createByCodecName(encoderName).also { encoder = it }
@@ -105,6 +119,8 @@ class TenBitPipeline(private val ctx: Context) {
             val gl = GlPrograms(egl.hasExtension("GL_EXT_YUV_target"), standard, fullRange, egl.halfFloatTarget)
             gl.prepare(srcW, srcH, spec.lut, spec.lutStrength)
             val yuv = gl.yuvActive
+            // Without raw YUV sampling the driver may tone-map HDR on its way into GL; then let the regular HDR export do it.
+            if (hdrTransfer != null && !yuv) throw TenBitUnavailable("This phone can't read HDR frames unaltered in GL")
 
             // Decoder renders into a SurfaceTexture on our GL context. Rotation is left to us (pass 2).
             val tex = SurfaceTexture(gl.oesTex).also { st = it }
@@ -265,7 +281,8 @@ class TenBitPipeline(private val ctx: Context) {
 
         /** True when Re-encode will try 10-bit for this clip (10-bit, not HDR, HEVC chosen, phone has a Main 10 encoder, setting on). */
         fun appliesTo(v: VideoInfo, settings: Settings): Boolean =
-            settings.tenBit && v.bitDepth >= 10 && !v.isHdr && settings.codec == Codec.HEVC && main10Available
+            settings.tenBit && v.bitDepth >= 10 && (!v.isHdr || (settings.keepHdr && !v.footage.dolbyVision)) &&
+                settings.codec == Codec.HEVC && main10Available
 
         val main10Available: Boolean by lazy { runCatching { findMain10Encoder() != null }.getOrDefault(false) }
     }

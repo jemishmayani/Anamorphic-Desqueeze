@@ -91,9 +91,11 @@ fun compatFor(st: AppState, exporter: Exporter, v: VideoInfo, mode0: ExportMode)
             else issues += Status.WARN to "10-bit becomes 8-bit: " + when {
                 !TenBitPipeline.main10Available -> "this phone has no 10-bit HEVC encoder."
                 st.codec != Codec.HEVC -> "10-bit needs HEVC (Codec in Settings)."
-                else -> "\"10-bit for log clips\" is off in Settings."
+                else -> "\"Keep 10-bit clips 10-bit\" is off in Settings."
             } + " Lossless keeps 10-bit."
         }
+        if (v.footage.hdr != null && st.keepHdrSetting && st.tenBitReencode(v))
+            rows += "Bit depth" to "10-bit HEVC (Main 10), kept as ${v.footage.hdr}"
         if (v.footage.hdr != null && !st.keepHdrSetting)
             issues += Status.WARN to "HDR will be converted to SDR (Keep HDR is off in Settings)."
     }
