@@ -103,10 +103,14 @@ object ExportController {
             st.exportDone = ExportSummary(ok, failed, "Movies/" + Settings(app).folder, exporter.lastSaved, failedUris.toList())
             st.busy = false
         }
-        // Keeps the process alive with a progress notification while the job runs.
+        keepAlive(app)
+    }
+
+    /** Keeps the process alive with a progress notification while video or photo saving runs. */
+    fun keepAlive(ctx: Context) {
         try {
-            val i = Intent(app, ExportService::class.java)
-            if (Build.VERSION.SDK_INT >= 26) app.startForegroundService(i) else app.startService(i)
+            val i = Intent(ctx.applicationContext, ExportService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) ctx.applicationContext.startForegroundService(i) else ctx.applicationContext.startService(i)
         } catch (e: Exception) {
             Diag.step("Background service not started: $e") // export still runs while the app is open
         }
@@ -127,7 +131,10 @@ class ExportService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val st = ExportController.state
-        if (intent?.action == ACTION_CANCEL) { st?.let { ExportController.cancel(it) }; finish(cancelled = true); return START_NOT_STICKY }
+        if (intent?.action == ACTION_CANCEL) {
+            st?.let { if (it.busy) ExportController.cancel(it); if (it.photoBusy) it.photoCancel = true }
+            finish(cancelled = true); return START_NOT_STICKY
+        }
         channel()
         val type = when {
             Build.VERSION.SDK_INT >= 35 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
@@ -142,7 +149,7 @@ class ExportService : Service() {
         watcher?.cancel()
         watcher = ExportController.scope.launch {
             val nm = getSystemService(NotificationManager::class.java)
-            while (st != null && st.busy) { nm.notify(ID, progress(st)); delay(1000) }
+            while (st != null && (st.busy || st.photoBusy)) { nm.notify(ID, progress(st)); delay(1000) }
             finish(cancelled = false)
         }
         return START_NOT_STICKY
@@ -159,7 +166,13 @@ class ExportService : Service() {
         val st = ExportController.state
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
-        if (!cancelled && st != null && st.results.isNotEmpty()) {
+        val photos = st != null && !st.busy && st.photoRuns.isNotEmpty() && st.photoRuns.none { it.state == RunState.RUNNING || it.state == RunState.WAITING } && st.results.isEmpty()
+        if (!cancelled && photos && st != null) {
+            val ok = st.photoRuns.count { it.state == RunState.DONE }; val bad = st.photoRuns.size - ok
+            nm.notify(ID_DONE, base().setContentTitle(if (bad == 0) "Photos saved" else "Photos saved with problems")
+                .setContentText(if (bad == 0) "$ok saved to Pictures" else "$ok saved, $bad failed. Tap for details.")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done).setAutoCancel(true).build())
+        } else if (!cancelled && st != null && st.results.isNotEmpty()) {
             val ok = st.results.count { it.startsWith("✓") }; val bad = st.results.size - ok
             nm.notify(ID_DONE, base().setContentTitle(if (bad == 0) "Export finished" else "Export finished with problems")
                 .setContentText(if (bad == 0) "$ok saved to Movies" else "$ok saved, $bad failed. Tap for details.")
@@ -186,8 +199,9 @@ class ExportService : Service() {
     private fun progress(st: AppState?): Notification {
         val cancel = PendingIntent.getService(this, 1, Intent(this, ExportService::class.java).setAction(ACTION_CANCEL),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val pct = ((st?.progress ?: 0f) * 100).toInt()
-        return base().setContentTitle(st?.status?.ifBlank { null } ?: "Exporting")
+        val photo = st != null && !st.busy && st.photoBusy
+        val pct = (((if (photo) st?.photoProgress else st?.progress) ?: 0f) * 100).toInt()
+        return base().setContentTitle(if (photo) "Saving photos" else st?.status?.ifBlank { null } ?: "Exporting")
             .setContentText("$pct%  ·  you can keep using your phone")
             .setSmallIcon(android.R.drawable.stat_sys_upload).setOngoing(true).setOnlyAlertOnce(true)
             .setProgress(100, pct, false)

@@ -94,13 +94,15 @@ private fun startPhotoExport(ctx: android.content.Context, st: AppState, setting
                 st.photoRuns[i] = st.photoRuns[i].copy(state = RunState.DONE, pct = 100, note = "${r.width} × ${r.height}")
                 notes += "✓  ${r.name}" + (r.note?.let { "\n    $it" } ?: "")
             } catch (e: Throwable) {
-                st.photoRuns[i] = st.photoRuns[i].copy(state = RunState.FAILED, note = "Failed")
+                st.photoRuns[i] = st.photoRuns[i].copy(state = RunState.FAILED, note = (e.message ?: e.javaClass.simpleName).take(80))
                 notes += "✗  ${p.name}: ${e.message ?: e.javaClass.simpleName}"
             }
             st.photoProgress = (i + 1f) / list.size
         }
         st.photoResults = notes; st.photoBusy = false
     }
+    // Keeps saving going (DNG work can take a while) if you switch apps or the screen turns off.
+    ExportController.keepAlive(app)
 }
 
 /** De-squeeze anamorphic photos in three pages: pick, edit each photo, save. */
@@ -214,8 +216,7 @@ private fun PhotosPage(st: AppState, luts: LutManager, pick: () -> Unit) {
                         PhotoRow(st, luts, p, selected = i == st.photoSel, onClick = { st.photoSel = i; st.photoStep = PhotoStep.Edit },
                             onRemove = if (st.photoBusy) null else ({
                                 st.photoLooks.remove(p.uri.toString())
-                                st.photos = st.photos.filterIndexed { j, _ -> j != i }
-                                st.photoSel = st.photoSel.coerceAtMost((st.photos.size - 1).coerceAtLeast(0))
+                                st.removePhoto(i)
                             }))
                     }
                 }

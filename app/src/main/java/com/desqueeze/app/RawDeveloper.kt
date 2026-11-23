@@ -84,7 +84,8 @@ object RawDeveloper {
         fun v(y: Int, x: Int): Float {
             var s = data[y * w + x].toInt() and 0xFFFF
             if (lin != null && s < lin.size) s = lin[s]
-            val bi = (y % bRows) * bCols + (x % bCols)
+            // The black-level pattern starts at the active area's top-left (DNG spec), not the image's.
+            val bi = (Math.floorMod(y - aTop, bRows)) * bCols + Math.floorMod(x - aLeft, bCols)
             val n = (s - black.getOrElse(bi % black.size) { 0.0 }) / span[bi]
             return (n * mul[cfa(y, x)]).coerceIn(0.0, 1.0).toFloat()
         }

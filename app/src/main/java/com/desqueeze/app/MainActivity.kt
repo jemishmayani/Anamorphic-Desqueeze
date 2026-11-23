@@ -323,6 +323,8 @@ fun importClips(ctx: android.content.Context, st: AppState, settings: Settings, 
                 }
             }
         } finally { st.importing = null }
+        // Never swap the list out from under a running export (e.g. clips shared to the app meanwhile): add them.
+        val append = append || st.busy
         val known = if (append) st.videos.map { it.uri }.toSet() else emptySet()
         val fresh = found.filter { it.uri !in known }
         val before = if (append) st.videos.size else 0

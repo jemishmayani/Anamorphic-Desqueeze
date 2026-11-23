@@ -2,6 +2,18 @@
 
 All notable changes to Anamorphic De-Squeeze. Newest first.
 
+## v1.43 — 2026-11-23
+
+### Fixed
+- **Edge crop and orientation overrides didn't show in the live preview** (since v1.39). The preview's GPU view was drawn without the crop zoom and the rotation, so a cropped or rotated clip looked uncropped or sideways in Frame and Look. The export itself was always right.
+- **Preview after a retry or fallback:** a new video player could try to draw into the preview's surface before the old player had let go, which could leave the picture frozen or black. The old player is now detached first.
+- **Removing a clip or photo above the selected one changed the selection** to a different item. It now stays on the item you had selected.
+- **Clips shared to the app during an export** replaced the list being exported. They're now added to it instead.
+- **Saving photos is kept running in the background** like video exports, with a progress notification and a "Photos saved" notification at the end. Before, Android could stop a long save (DNG previews) when you switched apps or the screen went off. Failed photos now show their reason in the list instead of just "Failed".
+- **Slight squash when the phone's encoder needed a smaller size:** shrunk sizes were rounded down to multiples of 16 (e.g. 1920×1072 instead of 1920×1080). The exact size is now tried first.
+- **LUT copies could get corrupted** when the thumbnail warm-up and the preview saved the same LUT at the same moment. Each now writes its own temp file, and any copy whose length isn't exactly right is ignored and rebuilt.
+- **DNG previews:** black levels that repeat in a pattern are now read from the sensor's active area, as the DNG spec defines, which matters for sensors with an odd-sized masked border.
+
 ## v1.42 — 2026-11-17
 
 ### Changed

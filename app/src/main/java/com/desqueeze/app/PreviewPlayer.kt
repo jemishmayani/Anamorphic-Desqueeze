@@ -347,10 +347,20 @@ fun PreviewPlayer(
                         onReady = { gfx.player?.setVideoSurface(it); gfx.applyLook() },
                         onFail = { e -> Diag.step("Look shader off for this clip: ${e.message}"); glFailed = true }) } },
                     update = { _ ->
-                        if (gfx.player !== player) { gfx.player = player; gfx.input?.let { player.setVideoSurface(it) } }
+                        if (gfx.player !== player) {
+                            // Detach the old player first: two decoders can't feed one surface, and the old player
+                            // may not be released yet when the new one arrives (retry, fallback).
+                            gfx.input?.let { s -> gfx.player?.let { old -> runCatching { old.clearVideoSurface(s) } } }
+                            gfx.player = player; gfx.input?.let { player.setVideoSurface(it) }
+                        }
                     },
                     onRelease = { _ -> gfx.releaseAll(); texture = null },
+                    // Same placement as the plain view below: edge-crop zoom, squeezed layout stretched on screen
+                    // (the view's buffer keeps one size while the shape animates), orientation override.
+                    // v1.39–1.42 drew this view without them, so crop and rotation didn't show in the preview.
                     modifier = Modifier.fillMaxSize()
+                        .graphicsLayer { val z = 1f / (1f - 2f * crop.coerceIn(0f, 0.4f)); scaleX = z; scaleY = z }
+                        .squeezedThenStretched(g.inRatio, ratio).rotatedContent(g.extraRotation),
                 ) else AndroidView(
                     factory = { c -> android.view.TextureView(c).also { tv -> texture = tv } },
                     update = { tv ->

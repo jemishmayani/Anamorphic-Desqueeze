@@ -222,6 +222,21 @@ class AppState(settings: Settings, luts: LutManager) {
     var frameTool by mutableIntStateOf(0)
     var lookTool by mutableIntStateOf(0)
 
+    /** Removes clip [i]; the selection stays on the same clip (it used to jump to the next one down). */
+    fun removeVideo(i: Int) {
+        if (i !in videos.indices) return
+        videos = videos.filterIndexed { j, _ -> j != i }
+        selected = (if (i < selected) selected - 1 else selected).coerceIn(0, (videos.size - 1).coerceAtLeast(0))
+    }
+    /** Removes photo [i], keeping the same photo selected. */
+    fun removePhoto(i: Int) {
+        if (i !in photos.indices) return
+        val gone = photos[i]
+        photos = photos.filterIndexed { j, _ -> j != i }
+        photoLooks.remove(gone.uri.toString())
+        photoSel = (if (i < photoSel) photoSel - 1 else photoSel).coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+    }
+
     fun jobFor(v: VideoInfo) = ExportJob(v, effectiveSqueeze(v), lutFor(v), strengthFor(v), colorFor(v), cropFor(v), orientationOf(v), directionOf(v),
         trim = trimFor(v), format = formatOf(v), fill = fillOf(v), res = resOf(v))
 }

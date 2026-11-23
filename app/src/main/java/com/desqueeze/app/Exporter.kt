@@ -74,8 +74,10 @@ class Exporter(private val ctx: Context, private val settings: Settings, private
         if (w0 <= maxW && DeviceCaps.supports(mime, w0, h0, f)) return Triple(w0, h0, null)
         var s = minOf(1f, maxW.toFloat() / w0)
         while (s > 0.2f) {
-            val w = align16(w0 * s); val h = align16(h0 * s)
-            if (DeviceCaps.supports(mime, w, h, f)) return Triple(w, h, "Scaled to ${w}×${h} to fit this phone's encoder (shape kept).")
+            // Exact (even) size first, so the shape is kept exactly (multiples of 16 turned 1080 into 1072);
+            // then multiples of 16 for encoders that insist on them.
+            for ((w, h) in listOf(even(w0 * s) to even(h0 * s), align16(w0 * s) to align16(h0 * s)))
+                if (w <= maxW && DeviceCaps.supports(mime, w, h, f)) return Triple(w, h, "Scaled to ${w}×${h} to fit this phone's encoder (shape kept).")
             s -= 0.005f
         }
         return Triple(align16(w0 * 0.5f), align16(h0 * 0.5f), "Scaled down to fit this phone's encoder.")

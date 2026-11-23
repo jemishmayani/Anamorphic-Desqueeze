@@ -110,9 +110,13 @@ class LutManager(private val ctx: Context) {
         b.putInt(0x4C555431); b.putInt(l.size)   // "LUT1"
         l.domainMin.forEach { b.putFloat(it) }; l.domainMax.forEach { b.putFloat(it) }
         b.asFloatBuffer().put(l.data); b.position(b.capacity()); b.flip()
-        val tmp = File(f.path + ".tmp")
-        java.io.FileOutputStream(tmp).channel.use { ch -> while (b.hasRemaining()) ch.write(b) }
-        tmp.renameTo(f)
+        // A temp name of its own: the tile warm-up and the preview can write the same LUT's copy at the same time,
+        // and sharing one temp file could interleave them into a corrupt copy.
+        val tmp = File(f.path + ".${Thread.currentThread().id}.${System.nanoTime()}.tmp")
+        try {
+            java.io.FileOutputStream(tmp).channel.use { ch -> while (b.hasRemaining()) ch.write(b) }
+            if (!tmp.renameTo(f)) tmp.delete()
+        } catch (e: Exception) { tmp.delete(); throw e }
     }
 
     private fun readBin(f: File): CubeLut? = java.io.RandomAccessFile(f, "r").channel.use { ch ->
@@ -121,7 +125,7 @@ class LutManager(private val ctx: Context) {
         val n = m.getInt(); if (n !in 2..65) return@use null
         val min = FloatArray(3) { m.getFloat() }; val max = FloatArray(3) { m.getFloat() }
         val data = FloatArray(n * n * n * 3)
-        if (m.remaining() < data.size * 4) return@use null
+        if (m.remaining() != data.size * 4) return@use null   // truncated or padded: not ours, re-parse the .cube
         m.asFloatBuffer().get(data)
         CubeLut(n, data, min, max)
     }

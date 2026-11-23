@@ -362,8 +362,7 @@ fun ClipsStep(st: AppState, panes: Panes, onPick: () -> Unit, onAdd: () -> Unit)
                 st.videos.forEachIndexed { i, v ->
                     ClipRow(v, selected = i == st.selected, num = if (st.videos.size > 1) i + 1 else 0, onClick = { st.selected = i },
                         onRemove = if (st.busy) null else ({
-                            st.videos = st.videos.filterIndexed { j, _ -> j != i }
-                            st.selected = st.selected.coerceAtMost((st.videos.size - 1).coerceAtLeast(0))
+                            st.removeVideo(i)
                         }))
                 }
             }
